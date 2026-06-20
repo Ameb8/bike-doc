@@ -1,0 +1,1807 @@
+openapi: 3.0.3
+info:
+  title: Bike Doc API Contract
+  version: 0.2.0
+  description: |
+    V1 app/server contract for Bike Doc.
+
+    The Android app talks to this product-level API, not directly to ADK
+    sessions, prompts, tools, or model internals. The backend is the source of
+    truth for repair-session state, phase transitions, safety escalation,
+    report persistence, and agent orchestration.
+
+    V1 is online-only. The contract supports resumable server-sent events by
+    accepting user turns with `POST /turns` and streaming persisted events with
+    `GET /events?after=...`.
+
+    Authentication: this contract assumes bearer tokens are issued by an
+    external identity provider (e.g., Firebase Auth) and only validates them
+    here via `bearerAuth`. Login, signup, token refresh, and credential
+    management are out of scope for this API and are intentionally not listed
+    under the Auth tag.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://api.bikedoc.example
+    description: Production placeholder
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Bikes
+  - name: Artifacts
+  - name: Repair Sessions
+  - name: Turns and Events
+  - name: Decisions
+  - name: Reports
+
+paths:
+  /v1/me:
+    get:
+      tags: [Auth]
+      summary: Get the authenticated user profile
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/bikes:
+    get:
+      tags: [Bikes]
+      summary: List bike profiles for the authenticated user
+      operationId: listBikeProfiles
+      parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Bike profiles
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BikeProfile"
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Pass as `cursor` to fetch the next page. Null when no more results.
+    post:
+      tags: [Bikes]
+      summary: Create a bike profile
+      operationId: createBikeProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BikeProfileCreate"
+      responses:
+        "201":
+          description: Bike profile created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BikeProfile"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/bikes/{bikeId}:
+    parameters:
+      - $ref: "#/components/parameters/BikeId"
+    get:
+      tags: [Bikes]
+      summary: Get a bike profile
+      operationId: getBikeProfile
+      responses:
+        "200":
+          description: Bike profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BikeProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags: [Bikes]
+      summary: Update a bike profile
+      operationId: updateBikeProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BikeProfilePatch"
+      responses:
+        "200":
+          description: Bike profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BikeProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags: [Bikes]
+      summary: Delete a bike profile
+      operationId: deleteBikeProfile
+      responses:
+        "204":
+          description: Bike profile deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/bikes/{bikeId}/repair-history:
+    parameters:
+      - $ref: "#/components/parameters/BikeId"
+    get:
+      tags: [Bikes]
+      summary: List repair history entries for a bike
+      operationId: listRepairHistory
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Repair history entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RepairHistoryEntry"
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Pass as `cursor` to fetch the next page. Null when no more results.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/artifacts:
+    post:
+      tags: [Artifacts]
+      summary: Upload a media artifact
+      description: |
+        V1 uses server-proxied uploads for simplicity. The backend stores the
+        binary in GCS and returns an artifact reference usable in repair turns.
+
+        `repair_session_id` and `bike_id` are conditionally required based on
+        `purpose`:
+
+        - `diagnostic_photo` / `verification_photo`: `repair_session_id` is
+          required; `bike_id` must be omitted.
+        - `bike_profile_photo`: `bike_id` is required; `repair_session_id`
+          must be omitted.
+        - `repair_reference` / `other`: both are optional.
+
+        Violating these rules returns `422 Validation Error`.
+      operationId: uploadArtifact
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, purpose]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                purpose:
+                  $ref: "#/components/schemas/ArtifactPurpose"
+                repair_session_id:
+                  type: string
+                  nullable: true
+                bike_id:
+                  type: string
+                  nullable: true
+                client_artifact_id:
+                  type: string
+                  description: Optional client-generated idempotency key.
+      responses:
+        "201":
+          description: Artifact uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [artifact]
+                properties:
+                  artifact:
+                    $ref: "#/components/schemas/ArtifactRef"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/artifacts/{artifactId}:
+    parameters:
+      - $ref: "#/components/parameters/ArtifactId"
+    get:
+      tags: [Artifacts]
+      summary: Get artifact metadata
+      operationId: getArtifact
+      responses:
+        "200":
+          description: Artifact metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArtifactRef"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/repair-sessions:
+    get:
+      tags: [Repair Sessions]
+      summary: List repair sessions
+      operationId: listRepairSessions
+      parameters:
+        - name: bike_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/RepairSessionStatus"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Repair sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RepairSession"
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Pass as `cursor` to fetch the next page. Null when no more results.
+    post:
+      tags: [Repair Sessions]
+      summary: Create a repair session
+      operationId: createRepairSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepairSessionCreate"
+      responses:
+        "201":
+          description: Repair session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepairSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/repair-sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [Repair Sessions]
+      summary: Get repair-session state
+      operationId: getRepairSession
+      responses:
+        "200":
+          description: Repair session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RepairSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/repair-sessions/{sessionId}/turns:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Turns and Events]
+      summary: Submit a user turn
+      description: |
+        Accepts a user text/photo turn and starts backend processing for the
+        session's current phase. The response includes the event cursor the
+        client should pass to `GET /events?after=...`.
+
+        `client_turn_id` is required for idempotency. Retrying the same request
+        with the same `client_turn_id` returns the original accepted turn.
+
+        All turns submitted within the same phase are applied to a single
+        underlying ADK session for that phase, so the agent retains
+        conversational context across turns. That context is discarded — not
+        carried forward — when the session transitions to the next phase; see
+        the `phase.transitioned` event.
+      operationId: createRepairSessionTurn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TurnCreate"
+      responses:
+        "202":
+          description: Turn accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurnAccepted"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/repair-sessions/{sessionId}/events:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [Turns and Events]
+      summary: Stream persisted repair-session events
+      description: |
+        Opens a server-sent event stream for the repair session.
+
+        The `after` query parameter is the last event id the client fully
+        processed. The server sends newer persisted events first, then keeps the
+        connection open for live events. If `after` is omitted, the stream starts
+        after the session's current latest event cursor.
+
+        SSE wire format:
+
+        - `id`: event id, monotonically increasing within the session
+        - `event`: one of the `RepairSessionEventType` values
+        - `data`: JSON-encoded `RepairSessionEvent`
+      operationId: streamRepairSessionEvents
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: Last consumed event id. Use `0` to replay all retained events.
+          schema:
+            type: string
+        - name: timeout_seconds
+          in: query
+          required: false
+          description: Optional server-side stream timeout for mobile reconnect loops.
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 120
+            default: 30
+        - name: Last-Event-ID
+          in: header
+          required: false
+          description: Standard EventSource resume header. `after` takes precedence.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Server-sent event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                inputRequested:
+                  summary: SSE frame
+                  value: |
+                    id: 42
+                    event: input.requested
+                    data: {"id":"42","session_id":"rs_123","turn_id":"turn_123","type":"input.requested","sequence":42,"created_at":"2026-06-20T12:00:00Z","data":{"input_request":{"id":"req_123","type":"photo","prompt":"Upload a rear-drive-side photo of the derailleur.","required":true,"accepted_media_types":["image/jpeg","image/png"],"choices":[],"created_at":"2026-06-20T12:00:00Z"}}}
+        "404":
+          $ref: "#/components/responses/NotFound"
+      x-sse-events:
+        - turn.started
+        - assistant.delta
+        - assistant.message.completed
+        - input.requested
+        - artifact.referenced
+        - phase.report.created
+        - phase.transitioned
+        - safety.escalated
+        - execution.step.updated
+        - turn.completed
+        - error
+        - heartbeat
+
+  /v1/repair-sessions/{sessionId}/decision:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Decisions]
+      summary: Record the user's DIY or shop decision
+      description: |
+        The AI plan report recommends a path, but the user's decision is stored
+        separately as authoritative user state. Choosing `shop` transitions the
+        session to `shop_referred` and may create a `ShopReferralReport`.
+
+        Safety severity is server-enforced here, independent of model output:
+
+        - If any currently active safety flag on the session has
+          `severity: blocking`, the server rejects `decision: diy` with
+          `422 Validation Error` (`error.code: blocking_safety_flag`),
+          regardless of `acknowledged_safety_flags`. Only `shop` or `not_now`
+          are accepted while a blocking flag is active.
+        - If the highest currently active severity is `warning`,
+          `decision: diy` requires `acknowledged_safety_flags: true`. Omitting
+          it returns `422 Validation Error` (`error.code: safety_ack_required`).
+        - `caution` and `info` severity flags do not affect which decisions
+          are accepted.
+      operationId: createRepairDecision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepairDecisionCreate"
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/RepairSession"
+                  shop_referral_report:
+                    nullable: true
+                    allOf:
+                      - $ref: "#/components/schemas/PhaseReportEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/repair-sessions/{sessionId}/completion:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Repair Sessions]
+      summary: Complete or close a repair session
+      description: |
+        Finalizes the session and persists any repair-history update.
+      operationId: completeRepairSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RepairCompletionCreate"
+      responses:
+        "200":
+          description: Session completed or closed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session]
+                properties:
+                  session:
+                    $ref: "#/components/schemas/RepairSession"
+                  repair_history_entry:
+                    nullable: true
+                    allOf:
+                      - $ref: "#/components/schemas/RepairHistoryEntry"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/repair-sessions/{sessionId}/reports:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [Reports]
+      summary: List phase reports for a repair session
+      operationId: listRepairSessionReports
+      parameters:
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Phase reports
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PhaseReportEnvelope"
+                  next_cursor:
+                    type: string
+                    nullable: true
+                    description: Pass as `cursor` to fetch the next page. Null when no more results.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/repair-sessions/{sessionId}/reports/{reportId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - $ref: "#/components/parameters/ReportId"
+    get:
+      tags: [Reports]
+      summary: Get a phase report
+      operationId: getRepairSessionReport
+      responses:
+        "200":
+          description: Phase report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PhaseReportEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    BikeId:
+      name: bikeId
+      in: path
+      required: true
+      schema:
+        type: string
+    ArtifactId:
+      name: artifactId
+      in: path
+      required: true
+      schema:
+        type: string
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    ReportId:
+      name: reportId
+      in: path
+      required: true
+      schema:
+        type: string
+    PageLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    PageCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque pagination cursor from a previous response's `next_cursor`.
+      schema:
+        type: string
+
+  responses:
+    Unauthorized:
+      description: Authentication is required or invalid
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Request conflicts with current session state
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    PayloadTooLarge:
+      description: Uploaded media is too large
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: validation_error
+              description: |
+                Machine-readable error code. Notable values used by this API
+                include `validation_error`, `blocking_safety_flag` (decision
+                rejected due to an active blocking-severity safety flag), and
+                `safety_ack_required` (decision requires
+                `acknowledged_safety_flags: true`).
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+              nullable: true
+
+    User:
+      type: object
+      required: [id, email, display_name, skill_level, created_at]
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+        skill_level:
+          $ref: "#/components/schemas/UserSkillLevel"
+        created_at:
+          type: string
+          format: date-time
+
+    UserSkillLevel:
+      type: string
+      enum: [unknown, beginner, intermediate, advanced]
+
+    BikeProfile:
+      type: object
+      required:
+        - id
+        - user_id
+        - display_name
+        - bike_type
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        display_name:
+          type: string
+        make:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        model_year:
+          type: integer
+          nullable: true
+        bike_type:
+          type: string
+          enum: [unknown, road, gravel, mountain, hybrid, commuter, cargo, ebike, other]
+        frame_material:
+          type: string
+          enum: [unknown, aluminum, steel, carbon, titanium, other]
+        drivetrain:
+          type: string
+          nullable: true
+          example: Shimano 105 2x11
+        brake_type:
+          type: string
+          enum: [unknown, rim, mechanical_disc, hydraulic_disc, coaster, other]
+        wheel_size:
+          type: string
+          nullable: true
+          example: 700c
+        tire_size:
+          type: string
+          nullable: true
+          example: 700x32
+        notes:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    BikeProfileCreate:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+        make:
+          type: string
+        model:
+          type: string
+        model_year:
+          type: integer
+        bike_type:
+          type: string
+          enum: [unknown, road, gravel, mountain, hybrid, commuter, cargo, ebike, other]
+          default: unknown
+        frame_material:
+          type: string
+          enum: [unknown, aluminum, steel, carbon, titanium, other]
+          default: unknown
+        drivetrain:
+          type: string
+        brake_type:
+          type: string
+          enum: [unknown, rim, mechanical_disc, hydraulic_disc, coaster, other]
+          default: unknown
+        wheel_size:
+          type: string
+        tire_size:
+          type: string
+        notes:
+          type: string
+
+    BikeProfilePatch:
+      type: object
+      properties:
+        display_name:
+          type: string
+        make:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        model_year:
+          type: integer
+          nullable: true
+        bike_type:
+          type: string
+          enum: [unknown, road, gravel, mountain, hybrid, commuter, cargo, ebike, other]
+        frame_material:
+          type: string
+          enum: [unknown, aluminum, steel, carbon, titanium, other]
+        drivetrain:
+          type: string
+          nullable: true
+        brake_type:
+          type: string
+          enum: [unknown, rim, mechanical_disc, hydraulic_disc, coaster, other]
+        wheel_size:
+          type: string
+          nullable: true
+        tire_size:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    RepairHistoryEntry:
+      type: object
+      required: [id, bike_id, title, summary, components, service_date, created_at]
+      properties:
+        id:
+          type: string
+        bike_id:
+          type: string
+        repair_session_id:
+          type: string
+          nullable: true
+        title:
+          type: string
+        summary:
+          type: string
+        components:
+          type: array
+          items:
+            type: string
+        parts_used:
+          type: array
+          items:
+            type: string
+        tools_used:
+          type: array
+          items:
+            type: string
+        mileage:
+          type: integer
+          nullable: true
+        service_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+
+    ArtifactPurpose:
+      type: string
+      enum:
+        - diagnostic_photo
+        - verification_photo
+        - bike_profile_photo
+        - repair_reference
+        - other
+
+    ArtifactRef:
+      type: object
+      required:
+        - id
+        - user_id
+        - purpose
+        - media_type
+        - mime_type
+        - filename
+        - byte_size
+        - status
+        - created_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        repair_session_id:
+          type: string
+          nullable: true
+        bike_id:
+          type: string
+          nullable: true
+        purpose:
+          $ref: "#/components/schemas/ArtifactPurpose"
+        media_type:
+          type: string
+          enum: [image, video, audio, document, other]
+        mime_type:
+          type: string
+          example: image/jpeg
+        filename:
+          type: string
+        byte_size:
+          type: integer
+          minimum: 0
+        width:
+          type: integer
+          nullable: true
+        height:
+          type: integer
+          nullable: true
+        duration_seconds:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [uploaded, processing, ready, rejected]
+        rejection_reason:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    RepairSessionPhase:
+      type: string
+      enum: [diagnostic, planning, execution, completed, shop_referred, cancelled]
+
+    RepairSessionStatus:
+      type: string
+      enum:
+        - created
+        - running
+        - awaiting_user
+        - awaiting_decision
+        - blocked_safety
+        - completed
+        - failed
+        - cancelled
+
+    SafetyState:
+      type: string
+      enum: [ok, caution, shop_recommended, blocked]
+
+    ExecutionProgress:
+      type: object
+      required: [current_step_index, total_steps]
+      description: |
+        Lightweight progress summary for the execution phase, so clients can
+        render "step N of M" without reconstructing it from accumulated
+        execution.step.updated events. Null fields mean the session hasn't
+        reached the execution phase yet, or the step count isn't known yet.
+      properties:
+        current_step_index:
+          type: integer
+          nullable: true
+          minimum: 1
+        total_steps:
+          type: integer
+          nullable: true
+          minimum: 1
+
+    RepairSession:
+      type: object
+      required:
+        - id
+        - user_id
+        - bike_id
+        - phase
+        - status
+        - safety_state
+        - latest_reports
+        - latest_event_id
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        bike_id:
+          type: string
+        phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        status:
+          $ref: "#/components/schemas/RepairSessionStatus"
+        safety_state:
+          $ref: "#/components/schemas/SafetyState"
+        current_input_request:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/InputRequest"
+        execution_progress:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ExecutionProgress"
+        latest_reports:
+          $ref: "#/components/schemas/LatestReports"
+        latest_event_id:
+          type: string
+          description: Last persisted event id for resumable SSE.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LatestReports:
+      type: object
+      required:
+        - diagnostic_report_id
+        - plan_report_id
+        - execution_report_id
+        - shop_referral_report_id
+      properties:
+        diagnostic_report_id:
+          type: string
+          nullable: true
+        plan_report_id:
+          type: string
+          nullable: true
+        execution_report_id:
+          type: string
+          nullable: true
+        shop_referral_report_id:
+          type: string
+          nullable: true
+
+    RepairSessionCreate:
+      type: object
+      required: [bike_id]
+      properties:
+        bike_id:
+          type: string
+        client_session_id:
+          type: string
+          description: Optional client-generated idempotency key.
+
+    InputRequest:
+      type: object
+      required: [id, type, prompt, required, accepted_media_types, choices, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [text, photo, multiple_choice, decision, confirmation, none]
+        prompt:
+          type: string
+        required:
+          type: boolean
+        accepted_media_types:
+          type: array
+          items:
+            type: string
+          example: [image/jpeg, image/png]
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/InputChoice"
+        min_artifacts:
+          type: integer
+          nullable: true
+        max_artifacts:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    InputChoice:
+      type: object
+      required: [value, label]
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+          nullable: true
+
+    TurnCreate:
+      type: object
+      required: [schema_version, client_turn_id, message]
+      properties:
+        schema_version:
+          type: string
+          enum: [ai_turn.v1]
+        client_turn_id:
+          type: string
+          description: Client-generated idempotency key for this turn.
+        message:
+          $ref: "#/components/schemas/UserTurnMessage"
+        responds_to_input_request_id:
+          type: string
+          nullable: true
+
+    UserTurnMessage:
+      type: object
+      required: [artifact_ids]
+      properties:
+        text:
+          type: string
+          nullable: true
+        artifact_ids:
+          type: array
+          items:
+            type: string
+
+    TurnAccepted:
+      type: object
+      required: [turn_id, repair_session_id, start_event_id, event_stream_url, session]
+      properties:
+        turn_id:
+          type: string
+        repair_session_id:
+          type: string
+        start_event_id:
+          type: string
+          description: Pass this as `after` to stream events for this turn.
+        event_stream_url:
+          type: string
+          example: /v1/repair-sessions/rs_123/events?after=41
+        session:
+          $ref: "#/components/schemas/RepairSession"
+
+    RepairSessionEventType:
+      type: string
+      enum:
+        - turn.started
+        - assistant.delta
+        - assistant.message.completed
+        - input.requested
+        - artifact.referenced
+        - phase.report.created
+        - phase.transitioned
+        - safety.escalated
+        - execution.step.updated
+        - turn.completed
+        - error
+        - heartbeat
+
+    RepairSessionEvent:
+      type: object
+      required: [id, session_id, type, sequence, created_at, data]
+      properties:
+        id:
+          type: string
+        session_id:
+          type: string
+        turn_id:
+          type: string
+          nullable: true
+        type:
+          $ref: "#/components/schemas/RepairSessionEventType"
+        sequence:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        data:
+          oneOf:
+            - $ref: "#/components/schemas/TurnStartedEventData"
+            - $ref: "#/components/schemas/AssistantDeltaEventData"
+            - $ref: "#/components/schemas/AssistantMessageCompletedEventData"
+            - $ref: "#/components/schemas/InputRequestedEventData"
+            - $ref: "#/components/schemas/ArtifactReferencedEventData"
+            - $ref: "#/components/schemas/PhaseReportCreatedEventData"
+            - $ref: "#/components/schemas/PhaseTransitionedEventData"
+            - $ref: "#/components/schemas/SafetyEscalatedEventData"
+            - $ref: "#/components/schemas/ExecutionStepUpdatedEventData"
+            - $ref: "#/components/schemas/TurnCompletedEventData"
+            - $ref: "#/components/schemas/ErrorEventData"
+            - $ref: "#/components/schemas/HeartbeatEventData"
+
+    TurnStartedEventData:
+      type: object
+      required: [turn_id, phase]
+      properties:
+        turn_id:
+          type: string
+        phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+
+    AssistantDeltaEventData:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+
+    AssistantMessageCompletedEventData:
+      type: object
+      required: [message_id, full_text, artifact_ids]
+      properties:
+        message_id:
+          type: string
+        full_text:
+          type: string
+        artifact_ids:
+          type: array
+          items:
+            type: string
+        display_safety_level:
+          type: string
+          enum: [normal, caution, warning]
+          default: normal
+
+    InputRequestedEventData:
+      type: object
+      required: [input_request]
+      properties:
+        input_request:
+          $ref: "#/components/schemas/InputRequest"
+
+    ArtifactReferencedEventData:
+      type: object
+      required: [artifact]
+      properties:
+        artifact:
+          $ref: "#/components/schemas/ArtifactRef"
+
+    PhaseReportCreatedEventData:
+      type: object
+      required: [report_id, report_type, schema_version, phase, summary]
+      properties:
+        report_id:
+          type: string
+        report_type:
+          $ref: "#/components/schemas/PhaseReportType"
+        schema_version:
+          type: string
+        phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        summary:
+          type: string
+
+    PhaseTransitionedEventData:
+      type: object
+      required: [from_phase, to_phase, status]
+      properties:
+        from_phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        to_phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        status:
+          $ref: "#/components/schemas/RepairSessionStatus"
+
+    SafetyEscalatedEventData:
+      type: object
+      required:
+        - safety_state
+        - safety_flags
+        - user_message
+        - blocks_repair_instructions
+      properties:
+        safety_state:
+          $ref: "#/components/schemas/SafetyState"
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+        user_message:
+          type: string
+        blocks_repair_instructions:
+          type: boolean
+        shop_referral_report_id:
+          type: string
+          nullable: true
+
+    ExecutionStepUpdatedEventData:
+      type: object
+      required: [step]
+      properties:
+        step:
+          $ref: "#/components/schemas/ExecutionStepRecord"
+        input_request:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/InputRequest"
+        progress:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ExecutionProgress"
+
+    TurnCompletedEventData:
+      type: object
+      required: [turn_id, session]
+      properties:
+        turn_id:
+          type: string
+        session:
+          $ref: "#/components/schemas/RepairSession"
+
+    ErrorEventData:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        retryable:
+          type: boolean
+          default: false
+
+    HeartbeatEventData:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          enum: [true]
+
+    PhaseReportType:
+      type: string
+      enum: [diagnostic, plan, execution, shop_referral]
+
+    PhaseReportEnvelope:
+      type: object
+      required:
+        - id
+        - repair_session_id
+        - type
+        - schema_version
+        - phase
+        - summary
+        - safety_flags
+        - source_artifact_ids
+        - created_at
+        - payload
+      properties:
+        id:
+          type: string
+        repair_session_id:
+          type: string
+        type:
+          $ref: "#/components/schemas/PhaseReportType"
+        schema_version:
+          type: string
+          example: diagnostic_report.v1
+        phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        summary:
+          type: string
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+        source_artifact_ids:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        payload:
+          oneOf:
+            - $ref: "#/components/schemas/DiagnosticReportV1"
+            - $ref: "#/components/schemas/PlanReportV1"
+            - $ref: "#/components/schemas/ExecutionReportV1"
+            - $ref: "#/components/schemas/ShopReferralReportV1"
+          discriminator:
+            propertyName: schema_version
+            mapping:
+              diagnostic_report.v1: "#/components/schemas/DiagnosticReportV1"
+              plan_report.v1: "#/components/schemas/PlanReportV1"
+              execution_report.v1: "#/components/schemas/ExecutionReportV1"
+              shop_referral_report.v1: "#/components/schemas/ShopReferralReportV1"
+
+    Confidence:
+      type: string
+      enum: [unknown, low, medium, high]
+
+    SafetyFlag:
+      type: object
+      required: [code, severity, phase, message, blocks_repair_instructions]
+      properties:
+        code:
+          type: string
+          example: uncertain_torque_spec
+        severity:
+          type: string
+          enum: [info, caution, warning, blocking]
+          description: |
+            `blocking` severity prevents `decision: diy` from being accepted
+            on the session's `/decision` endpoint, server-side, regardless of
+            `acknowledged_safety_flags`. `warning` requires
+            `acknowledged_safety_flags: true` to accept a `diy` decision.
+        phase:
+          $ref: "#/components/schemas/RepairSessionPhase"
+        message:
+          type: string
+        blocks_repair_instructions:
+          type: boolean
+
+    DiagnosticReportV1:
+      type: object
+      required:
+        - schema_version
+        - primary_diagnosis
+        - alternate_hypotheses
+        - evidence_summary
+        - key_artifact_ids
+        - user_skill_level
+        - safety_flags
+        - diagnostic_session_id
+      properties:
+        schema_version:
+          type: string
+          enum: [diagnostic_report.v1]
+        primary_diagnosis:
+          $ref: "#/components/schemas/Diagnosis"
+        alternate_hypotheses:
+          type: array
+          items:
+            $ref: "#/components/schemas/AlternateHypothesis"
+        evidence_summary:
+          type: string
+        key_artifact_ids:
+          type: array
+          items:
+            type: string
+        user_skill_level:
+          $ref: "#/components/schemas/UserSkillLevel"
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+        diagnostic_session_id:
+          type: string
+          description: Internal archive/session id, not an ADK concept for the app.
+
+    Diagnosis:
+      type: object
+      required: [component, issue, confidence]
+      properties:
+        component:
+          type: string
+          example: rear derailleur hanger
+        issue:
+          type: string
+          example: Bent, causing inconsistent shifting
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        diy_suitability:
+          type: string
+          enum: [unknown, reasonable, caution, shop_recommended, blocked]
+          default: unknown
+
+    AlternateHypothesis:
+      type: object
+      required: [component, issue, confidence]
+      properties:
+        component:
+          type: string
+        issue:
+          type: string
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        ruled_out_by:
+          type: string
+          nullable: true
+
+    PlanReportV1:
+      type: object
+      required:
+        - schema_version
+        - diagnosis_summary
+        - parts_needed
+        - tools_needed
+        - diy_estimate
+        - shop_estimate
+        - recommendation
+        - recommendation_basis
+        - requires_user_decision
+        - safety_concerns
+      properties:
+        schema_version:
+          type: string
+          enum: [plan_report.v1]
+        diagnosis_summary:
+          type: string
+        parts_needed:
+          type: array
+          items:
+            $ref: "#/components/schemas/PartNeeded"
+        tools_needed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolNeeded"
+        diy_estimate:
+          $ref: "#/components/schemas/CostEstimate"
+        shop_estimate:
+          $ref: "#/components/schemas/CostEstimate"
+        user_time_estimate:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TimeEstimate"
+        shop_time_estimate:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TimeEstimate"
+        recommendation:
+          type: string
+          enum: [diy_reasonable, shop_recommended, insufficient_info]
+        recommendation_basis:
+          type: string
+        requires_user_decision:
+          type: boolean
+          enum: [true]
+        safety_concerns:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+
+    PartNeeded:
+      type: object
+      required: [item, quantity, required]
+      properties:
+        item:
+          type: string
+        specification:
+          type: string
+          nullable: true
+        quantity:
+          type: integer
+          minimum: 1
+        required:
+          type: boolean
+        estimated_price:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CostEstimate"
+        price_lookup_result_id:
+          type: string
+          nullable: true
+
+    ToolNeeded:
+      type: object
+      required: [item, category, source, action]
+      properties:
+        item:
+          type: string
+          description: Tool requirement generated for this plan.
+        catalog_tool_id:
+          type: string
+          nullable: true
+          description: Matching preset catalog item, when the planner can identify one.
+        catalog_match_confidence:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Confidence"
+        source:
+          type: string
+          enum: [catalog_match, generated]
+        category:
+          type: string
+          enum: [general, drivetrain, brake, wheel_tire, torque, measuring, specialty, other]
+        action:
+          type: string
+          enum: [confirm_available, buy, borrow_recommended, rent_recommended, shop_only]
+        quantity:
+          type: integer
+          minimum: 1
+          default: 1
+        unit:
+          type: string
+          nullable: true
+          example: tool
+        estimated_price:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CostEstimate"
+        notes:
+          type: string
+          nullable: true
+
+    CostEstimate:
+      type: object
+      required: [currency, confidence, source]
+      properties:
+        currency:
+          type: string
+          default: "USD"
+        min_amount:
+          type: number
+          nullable: true
+        max_amount:
+          type: number
+          nullable: true
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        source:
+          type: string
+          enum: [manual_table, labor_reference_table, search_provider, cached_lookup, unavailable]
+        notes:
+          type: string
+          nullable: true
+
+    TimeEstimate:
+      type: object
+      required: [confidence]
+      properties:
+        min_minutes:
+          type: integer
+          nullable: true
+        max_minutes:
+          type: integer
+          nullable: true
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        notes:
+          type: string
+          nullable: true
+
+    ExecutionReportV1:
+      type: object
+      required:
+        - schema_version
+        - outcome
+        - completed_steps
+        - verification_checkpoints
+        - unresolved_concerns
+        - tools_used
+      properties:
+        schema_version:
+          type: string
+          enum: [execution_report.v1]
+        outcome:
+          type: string
+          enum: [in_progress, completed, stopped_safety, stopped_user]
+        completed_steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExecutionStepRecord"
+        verification_checkpoints:
+          type: array
+          items:
+            $ref: "#/components/schemas/VerificationCheckpoint"
+        unresolved_concerns:
+          type: array
+          items:
+            type: string
+        final_repair_summary:
+          type: string
+          nullable: true
+        tools_used:
+          type: array
+          items:
+            type: string
+        repair_history_entry_id:
+          type: string
+          nullable: true
+
+    ExecutionStepRecord:
+      type: object
+      required: [index, title, status, verification_required]
+      properties:
+        index:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+        instruction:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, active, awaiting_verification, verified, failed, skipped]
+        verification_required:
+          type: boolean
+        verification_artifact_ids:
+          type: array
+          items:
+            type: string
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+
+    VerificationCheckpoint:
+      type: object
+      required: [step_index, status]
+      properties:
+        step_index:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [pending, passed, failed, inconclusive]
+        artifact_ids:
+          type: array
+          items:
+            type: string
+        notes:
+          type: string
+          nullable: true
+
+    ShopReferralReportV1:
+      type: object
+      required:
+        - schema_version
+        - reason
+        - urgency
+        - service_overview
+        - services_needed
+        - evidence_summary
+        - suggested_questions
+        - safety_flags
+      properties:
+        schema_version:
+          type: string
+          enum: [shop_referral_report.v1]
+        reason:
+          type: string
+          example: Repair is safety-critical and cannot be confidently verified from photos.
+        urgency:
+          type: string
+          enum: [stop_riding, soon, routine]
+        service_overview:
+          type: string
+          description: User/shareable summary of what the shop should inspect or repair.
+        services_needed:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShopServiceNeed"
+        evidence_summary:
+          type: string
+        suggested_questions:
+          type: array
+          items:
+            type: string
+        loose_price_estimate:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CostEstimate"
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+        shareable_summary:
+          type: string
+          nullable: true
+
+    ShopServiceNeed:
+      type: object
+      required: [component, requested_service]
+      properties:
+        component:
+          type: string
+        requested_service:
+          type: string
+        notes:
+          type: string
+          nullable: true
+
+    RepairDecisionCreate:
+      type: object
+      required: [schema_version, decision]
+      properties:
+        schema_version:
+          type: string
+          enum: [repair_decision.v1]
+        decision:
+          type: string
+          enum: [diy, shop, not_now]
+        notes:
+          type: string
+          nullable: true
+        acknowledged_safety_flags:
+          type: boolean
+          description: |
+            Required `true` when choosing `decision: diy` while a
+            `warning`-severity safety flag is active. Has no effect when a
+            `blocking`-severity flag is active — `diy` is rejected outright
+            in that case regardless of this value.
+          default: false
+
+    RepairCompletionCreate:
+      type: object
+      required: [schema_version, outcome]
+      properties:
+        schema_version:
+          type: string
+          enum: [repair_completion.v1]
+        outcome:
+          type: string
+          enum: [completed, abandoned, stopped_safety, referred_to_shop]
+        final_notes:
+          type: string
+          nullable: true
+        artifact_ids:
+          type: array
+          items:
+            type: string
+          default: []
