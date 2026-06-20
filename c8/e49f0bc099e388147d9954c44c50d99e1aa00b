@@ -1,0 +1,14 @@
+.gitignore
+  h_11a994996f9bb9 1-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c8e49f0bc099e388147d9954c44c50d99e1aa00b",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
