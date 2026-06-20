@@ -1,0 +1,95 @@
+# ====================================================================
+# Global / IDE / OS Garbage
+# ====================================================================
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Local environment variables (Crucial for backend/mobile secrets)
+.env
+.env.*
+!.env.example
+
+# ====================================================================
+# Android / Kotlin App Frontend
+# ====================================================================
+**/build/
+**/captures/
+**/*.apk
+**/*.aar
+**/*.ap_
+**/*.aab
+**/local.properties
+**/*.jks
+**/*.keystore
+**/signing/*.pk8
+**/signing/*.x509.pem
+**/google-services.json
+**/FirebaseAppDistribution/
+.gradle/
+**/gradlew.bat
+**/obj/
+**/libs/
+
+# ====================================================================
+# Python Backend
+# ====================================================================
+# Byte-compiled / optimized / DLL files
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+
+# Virtual Environments (Never commit your local env)
+**/.venv/
+**/venv/
+**/env/
+**/ENV/
+**/env.bak/
+**/venv.bak/
+
+# Distribution / Packaging
+**/dist/
+**/build/
+**/*.egg-info/
+**/.eggs/
+
+# Testing and Coverage
+**/.pytest_cache/
+**/.coverage
+**/htmlcov/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Jupyter Notebook checkpoints
+**/.ipynb_checkpoints/
+
+# ====================================================================
+# Databases & Local Infrastructure
+# ====================================================================
+# SQLite & local DB files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Local Docker database data volumes
+**/data/
+**/db_data/
+**/postgres_data/
+**/mysql_data/
+*.rdb
+*.dump
+*.sql.gz
+
+# ====================================================================
+# Containerization & Logging
+# ====================================================================
+.docker/
+logs/
+*.log
