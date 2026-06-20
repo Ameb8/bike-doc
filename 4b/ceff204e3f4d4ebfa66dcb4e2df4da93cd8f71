@@ -1,0 +1,26 @@
+docs/specs/bike-doc.md
+  h_11a994996f9bb9 3,6-10,79-91,136-145,315,317-333,363-368,384-390
+  s_7cb7ab0acbda29::t_8285d8d10d0219 169,273-275,351-352
+  s_7cb7ab0acbda29::t_c22ad131218bcd 25-26,45,47-48,182,191-198,252,265-271,286-288,293,423-424
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "4bceff204e3f4d4ebfa66dcb4e2df4da93cd8f71",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7cb7ab0acbda29": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee620-8e78-7ba0-93cd-4fc2dace5cf3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
