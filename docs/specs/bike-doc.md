@@ -1,7 +1,12 @@
 # Bike Doc High-Level Design Spec
 
-Status: Draft v0.1  
+Status: Draft v0.2
 Last updated: 2026-06-20
+
+*v0.2 revises v0.1 per design review: clarifies the phase/session/turn
+relationship, makes safety severity a server-enforced invariant rather than a
+prompting convention, names vendor concentration risk explicitly, and adds
+notes on price-lookup staleness and agent-loop backpressure.*
 
 ## 1. Purpose
 
@@ -17,8 +22,8 @@ common bicycle maintenance tasks.
 ## 2. Product Goals
 
 - Help non-expert riders describe and diagnose common bike issues.
-- Reuse saved bike profile, tool inventory, skill level, and repair history
-  instead of re-asking static questions.
+- Reuse saved bike profile, skill level, and repair history instead of
+  re-asking static questions.
 - Separate diagnosis, planning, and repair execution into clear workflow
   phases.
 - Use photos as first-class diagnostic and verification inputs.
@@ -37,8 +42,10 @@ The MVP includes:
 - Android app written in Kotlin.
 - Google ADK Python backend embedded inside a custom FastAPI service.
 - Phase-based agent orchestration.
-- Bike profiles, tool inventory, repair history, and session records stored in
+- Bike profiles, repair history, phase reports, and session records stored in
   Postgres.
+- Preset tool catalog used for planning and cost estimation. User-owned tool
+  inventory is deferred beyond V1.
 - Uploaded media stored in Google Cloud Storage through ADK
   `GcsArtifactService`.
 - Server-sent events for streaming assistant responses to the Android client.
@@ -68,6 +75,20 @@ Each phase gets a fresh ADK session/invocation. The next phase receives only
 the prior phase's structured report, plus durable user/bike data needed for
 that phase. Full transcripts and media are archived, not replayed into every
 future phase.
+
+**Clarification: phase vs. session vs. turn.** A phase is not a single
+request/response. Within a phase the user and assistant typically exchange
+several turns — for example, the assistant asks a diagnostic question, the
+user replies and uploads a photo, the assistant asks a follow-up. All turns
+within one phase share a single ADK session/invocation, so the agent keeps
+full conversational context for the duration of that phase. When the phase
+produces its structured report, that ADK session is closed and archived. The
+next phase opens a brand-new ADK session and is seeded only with the
+structured report and durable user/bike data — never with the raw turns from
+the prior session. The API contract reflects this: one `repair session`
+resource spans all phases, multiple `turns` can occur within a phase, and
+`phase.transitioned` events mark the session-boundary moments where context is
+intentionally discarded.
 
 ### 4.2 Structured Reports Over Full Transcripts
 
@@ -112,6 +133,16 @@ The backend does not run `adk api_server` as the application server. Instead,
 it owns authentication, app data routes, media upload, and agent streaming in a
 single FastAPI application.
 
+**Vendor concentration.** This design deliberately concentrates on Google's
+stack: ADK for orchestration, Gemini for inference, and GCS for artifact
+storage via ADK's built-in `GcsArtifactService`. This is consistent with the
+"keep infrastructure boring" principle and is the right trade for a solo
+project, but it is a single-vendor dependency across the entire AI/storage
+path — there is currently no fallback model provider, no alternate artifact
+store, and no abstraction layer between ADK and the orchestration code. This
+is an accepted risk for V1, not an oversight; revisit if priorities shift
+toward portability.
+
 ## 6. Backend Design
 
 ### 6.1 Runtime
@@ -135,7 +166,7 @@ for each phase and seeds that phase with:
 
 - The current user's identity and permissions.
 - The active bike profile.
-- Relevant durable state, such as tool inventory and repair history.
+- Relevant durable state, such as repair history.
 - The immediately preceding structured phase report.
 
 The orchestration layer should not rely on ADK `SequentialAgent` chaining for
@@ -148,19 +179,23 @@ Agents access app data and external services through explicit backend tools.
 Important tool interfaces include:
 
 - `get_bike_profile`
-- `list_owned_tools`
+- `lookup_tool_catalog`
 - `lookup_repair_history`
 - `save_diagnostic_report`
 - `save_plan_report`
 - `save_repair_progress`
-- `update_tool_inventory`
 - `append_repair_history`
 - `price_lookup`
 - `lookup_repair_reference`
 
-`price_lookup` and `lookup_repair_reference` are intentionally provider-neutral
-interfaces. The initial implementation can be simple or stubbed, but the agent
-contract should exist from the start.
+`lookup_tool_catalog`, `price_lookup`, and `lookup_repair_reference` are
+intentionally provider-neutral interfaces. The initial implementation can be
+simple or stubbed, but the agent contract should exist from the start.
+
+V1 does not maintain a per-user owned-tool inventory. During the planning and
+cost phase, the agent generates the tools required for the repair and maps each
+tool to a preset catalog item when possible. Unmatched tools stay as
+plan-scoped generated requirements with lower confidence.
 
 ## 7. Android Client Design
 
@@ -178,7 +213,6 @@ Tech stack:
 Primary screens:
 
 - Bike list and bike profile editor
-- Tool inventory
 - New repair intake
 - Diagnostic chat
 - Plan and cost review
@@ -196,7 +230,6 @@ backend should expose:
 
 - Authentication routes
 - Bike profile CRUD
-- Tool inventory CRUD
 - Repair history reads
 - Repair session creation and lookup
 - Media upload and artifact reference creation
@@ -216,7 +249,7 @@ Core application entities:
 
 - User
 - Bike profile
-- Tool inventory item
+- Preset tool catalog item
 - Repair session
 - Diagnostic report
 - Plan report
@@ -229,9 +262,17 @@ Core application entities:
 GCS stores large media artifacts such as photos and future video uploads.
 Postgres stores metadata and references to those artifacts.
 
-ADK Memory is not used for bike profile, tool inventory, or repair history.
-Those domains require precise reads and transactional writes, so they belong in
-relational tables exposed to agents through tools.
+ADK Memory is not used for bike profile or repair history. Those domains
+require precise reads and transactional writes, so they belong in relational
+tables exposed to agents through tools.
+
+The preset tool catalog may live in a database table, seed file, or admin-only
+data source. It is not user-owned state in V1, and the public app API does not
+need user tool CRUD.
+
+At minimum, preset tool catalog entries should include an ID, display name,
+category, aliases or matching terms, pricing metadata, and any constraints
+that affect planning.
 
 ## 10. Phase Reports
 
@@ -242,14 +283,14 @@ confidence, safety flags, key media references, and the diagnostic session ID.
 
 ### 10.2 Plan Report
 
-Captures parts needed, tools needed, owned vs missing inventory, estimated DIY
-cost, estimated shop cost, rough time estimate, safety concerns, and the user's
-DIY/shop decision.
+Captures parts needed, plan-scoped tools needed, catalog matches or generated
+tool requirements, estimated DIY cost, estimated shop cost, rough time
+estimate, safety concerns, and the user's DIY/shop decision.
 
 ### 10.3 Execution Report
 
 Captures completed steps, verification checkpoints, unresolved concerns, final
-repair summary, new tools acquired, and repair-history updates.
+repair summary, tools used when relevant, and repair-history updates.
 
 The report schemas should be versioned early, even if the first versions are
 simple.
@@ -271,6 +312,25 @@ The assistant may continue with general education after a shop referral, but it
 should not provide step-by-step repair instructions for repairs it has deemed
 unsafe for DIY.
 
+### 11.1 Severity and Decision Enforcement
+
+Safety flags carry a `severity` (`info`, `caution`, `warning`, `blocking`) and
+a `blocks_repair_instructions` flag. Severity is not advisory text only — it
+has a server-enforced effect on what the user is allowed to do next:
+
+- **`blocking`**: the backend rejects `decision: diy` outright (HTTP 422),
+  regardless of `acknowledged_safety_flags`. Only `shop` or `not_now` are
+  accepted. The execution phase will not produce step-by-step instructions
+  while a blocking flag from planning remains active.
+- **`warning`**: `decision: diy` is allowed only if the request sets
+  `acknowledged_safety_flags: true`. The assistant should still bias its own
+  recommendation toward shop referral, but the user retains the final call.
+- **`caution` / `info`**: advisory only. No effect on what decisions the API
+  accepts.
+
+This turns "safety is always active" from a prompting convention into an
+invariant the backend enforces independent of model output quality.
+
 ## 12. RAG and Repair References
 
 RAG is deferred, but the product should not be designed in a way that blocks it.
@@ -288,8 +348,8 @@ confidence or refer the user to a shop/manual.
 ## 13. Pricing
 
 Parts and tool pricing should be treated as estimates, not quotes. The backend
-should expose a `price_lookup(part_name)` interface and hide the provider
-choice from agent code.
+should expose a `price_lookup(item_name, item_type)` interface and hide the
+provider choice from agent code.
 
 The first implementation may use:
 
@@ -299,6 +359,12 @@ The first implementation may use:
 
 Because search provider pricing and terms can change, provider-specific SDKs
 should stay behind the backend interface.
+
+Cached price lookups should carry a staleness window (for example, 14–30 days
+depending on item type) after which the backend re-queries rather than reusing
+a stored `price_lookup_result`. The exact window is a follow-up detail, but the
+persistence model should store a timestamp on each cached result so this can
+be enforced later without a schema change.
 
 ## 14. Deployment
 
@@ -314,6 +380,14 @@ Recommended v1 deployment:
 by the project. It does not mean Gemini model inference runs locally, and it
 does not remove the GCS dependency for artifact storage in the recommended
 v1 design.
+
+The single-container design assumes turn volume low enough that synchronous
+Gemini calls inside the FastAPI process don't starve SSE delivery for other
+concurrent sessions. This is fine at expected V1 traffic. If p95 turn latency
+degrades or concurrent active sessions grow past what one process comfortably
+serves, the next step is a background task queue for agent execution, with the
+FastAPI process only handling HTTP/SSE — an addition, not a re-architecture.
+No need to build this prematurely.
 
 ## 15. Repository Layout
 
@@ -346,7 +420,8 @@ Core evaluation scenarios should cover:
 - Escalating safety-critical repairs to a shop.
 - Avoiding invented torque specs.
 - Producing complete parts/tool plans.
-- Respecting owned tool inventory.
+- Producing catalog-grounded tool requirements while allowing generated
+  plan-scoped tools when no catalog match exists.
 - Stopping execution when verification photos reveal unexpected damage.
 - Producing clean structured reports between phases.
 
