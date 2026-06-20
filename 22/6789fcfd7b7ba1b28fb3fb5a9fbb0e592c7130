@@ -1,0 +1,14 @@
+docs/initial-plan.md
+  h_11a994996f9bb9 1-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "226789fcfd7b7ba1b28fb3fb5a9fbb0e592c7130",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
