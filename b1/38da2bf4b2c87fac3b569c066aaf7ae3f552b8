@@ -1,0 +1,28 @@
+docker-compose.yml
+  s_3da1f535c721f9::t_fe1f3efbc36939 1-52
+apps/api/Dockerfile.dev
+  s_3da1f535c721f9::t_fe1f3efbc36939 1-19
+.dockerignore
+  s_3da1f535c721f9::t_fe1f3efbc36939 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "b138da2bf4b2c87fac3b569c066aaf7ae3f552b8",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_3da1f535c721f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee90d-bb74-7d61-a475-87f352c9aa5c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
