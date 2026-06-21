@@ -90,7 +90,7 @@ Include:
 - Error cases and exact status codes for the diagnostic slice.
 - Whether any endpoint can be implemented as a no-agent stub in Stage 2.
 
-Definition of done:
+#### Definition of Done
 
 - `openapi.yaml` is either unchanged and confirmed sufficient, or patched to
   match the slice.
@@ -137,7 +137,7 @@ Minimum diagnostic tables:
 - `artifact_refs`
 - `phase_reports`
 
-Definition of done:
+#### Definition of Done
 
 - The spec is concrete enough to write one Alembic migration without guessing
   column types, constraints, or indexes.
@@ -169,7 +169,7 @@ Recommended decision:
   the public API from ADK implementation details and keeps future report
   evolution manageable.
 
-Definition of done:
+#### Definition of Done
 
 - A diagnostic report produced by the agent can be validated before it is
   persisted and before it is exposed through the API.
@@ -207,7 +207,7 @@ Include:
   memory.
 - Replay retention policy for V1.
 
-Definition of done:
+#### Definition of Done
 
 - API tests can assert event replay behavior without needing an ADK model call.
 
@@ -236,7 +236,7 @@ Recommended decision:
   diagnostic use case requires authoritative service/manual data. The current
   design points that tool at execution.
 
-Definition of done:
+#### Definition of Done
 
 - ADK tool modules can be implemented as thin wrappers without inventing
   behavior.
@@ -255,7 +255,7 @@ Include:
 - Validation behavior for malformed or contradictory model-produced safety
   flags.
 
-Definition of done:
+#### Definition of Done
 
 - `services/safety.py` can be unit tested without ADK.
 
@@ -276,7 +276,7 @@ Include:
 - Error behavior for invalid token, missing token, and known token with no
   mapped user.
 
-Definition of done:
+#### Definition of Done
 
 - API tests can authenticate deterministically.
 
@@ -296,7 +296,7 @@ Include:
 - GCS object naming strategy for future production use.
 - Relationship between artifacts, repair sessions, bikes, and users.
 
-Definition of done:
+#### Definition of Done
 
 - Upload endpoint behavior can be implemented and tested without real GCS.
 
@@ -326,7 +326,7 @@ Recommended decision for this slice:
   multipart uploads, keep generated output as a contract check and write manual
   Pydantic models for the slice.
 
-Definition of done:
+#### Definition of Done
 
 - The team can regenerate without overwriting hand-written behavior.
 
@@ -336,7 +336,7 @@ Definition of done:
 
 Goal: know the current scaffold state before changing behavior.
 
-Tasks:
+#### Tasks
 
 - Confirm `apps/api` starts as an empty FastAPI shell.
 - Run existing tests, even if only placeholders exist.
@@ -355,7 +355,7 @@ uv run ruff check .
 uv run ruff format --check .
 ```
 
-Definition of done:
+#### Definition of Done
 
 - You know whether failures are pre-existing scaffold issues or caused by later
   implementation.
@@ -364,7 +364,7 @@ Definition of done:
 
 Goal: remove ambiguity before code starts encoding accidental decisions.
 
-Tasks:
+#### Tasks
 
 - Write the nine specs listed above.
 - Patch `docs/specs/openapi.yaml` if the diagnostic API delta spec finds drift.
@@ -376,7 +376,7 @@ Tasks:
   - SSE events are persisted and replayable
   - idempotency is backed by database constraints
 
-Definition of done:
+#### Definition of Done
 
 - OpenAPI, DB shape, report schema, event semantics, auth, artifact behavior,
   and codegen policy are explicit enough to implement.
@@ -386,7 +386,14 @@ Definition of done:
 Goal: validate that the OpenAPI file can generate usable code before hand
 writing or importing schemas.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-codegen.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Run codegen into an isolated output.
 - Inspect generated models for:
@@ -423,7 +430,7 @@ Decision point:
   write manual Pydantic models for only the diagnostic slice, with contract
   tests comparing app OpenAPI to `docs/specs/openapi.yaml`.
 
-Definition of done:
+#### Definition of Done
 
 - Codegen has been evaluated, and the project has a deliberate choice instead
   of generated code owning the architecture by accident.
@@ -432,7 +439,15 @@ Definition of done:
 
 Goal: create the durable data model before endpoint behavior depends on it.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement SQLAlchemy models for the minimum diagnostic tables:
   - `models/user.py`
@@ -456,7 +471,7 @@ Code generation:
 - Do not generate SQLAlchemy models from OpenAPI. The OpenAPI schemas are API
   contracts, not persistence contracts.
 
-Definition of done:
+#### Definition of Done
 
 - `uv run alembic upgrade head` creates all diagnostic tables.
 - Repository tests can insert and read users, bikes, sessions, events,
@@ -466,7 +481,15 @@ Definition of done:
 
 Goal: establish request and response models for the diagnostic slice.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-codegen.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - If generated models were accepted, import them from
   `bike_doc_api.generated`.
@@ -494,7 +517,7 @@ Code generation:
 - Do not copy generated files into `schemas/`. Either import from
   `generated/` or write manual owned models.
 
-Definition of done:
+#### Definition of Done
 
 - The diagnostic slice has stable API models and mapping functions.
 
@@ -503,7 +526,17 @@ Definition of done:
 Goal: turn the OpenAPI contract into executable expectations before route
 behavior exists.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-auth-dev.md`
+- `docs/specs/apps/api-artifacts-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Add API tests under `apps/api/tests/api`.
 - Add contract tests under `apps/api/tests/contract`.
@@ -524,7 +557,7 @@ Code generation:
 - If generated routers exist, use them only as a reference for route signatures.
 - Keep production route modules hand-written.
 
-Definition of done:
+#### Definition of Done
 
 - Tests are red for missing behavior but reflect the intended API precisely.
 
@@ -533,7 +566,15 @@ Definition of done:
 Goal: make route tests authenticate without committing to a full production
 identity provider.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-auth-dev.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `core/security.py` primitives.
 - Implement `services/auth.py`.
@@ -546,7 +587,7 @@ Code generation:
 
 - None.
 
-Definition of done:
+#### Definition of Done
 
 - API tests can resolve a current user and reject missing or invalid auth.
 
@@ -554,7 +595,14 @@ Definition of done:
 
 Goal: create and read diagnostic repair sessions without ADK.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `repositories/users.py`, `repositories/bikes.py`, and
   `repositories/repair_sessions.py` paths needed for session creation.
@@ -574,7 +622,7 @@ Code generation:
 
 - Do not generate route behavior.
 
-Definition of done:
+#### Definition of Done
 
 - Repair session create/get tests pass.
 
@@ -582,7 +630,15 @@ Definition of done:
 
 Goal: persist and replay repair-session events before ADK is wired.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `repositories/events.py`.
 - Implement `services/events.py`:
@@ -605,7 +661,7 @@ Code generation:
 - Generated event schemas may be useful here if they are clean.
 - SSE streaming implementation should be hand-written.
 
-Definition of done:
+#### Definition of Done
 
 - Event replay works without ADK or live model output.
 
@@ -613,7 +669,15 @@ Definition of done:
 
 Goal: support diagnostic photos through the product artifact boundary.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-artifacts-diagnostic.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement provider interface in `providers/storage/base.py`.
 - Implement local/stub storage for tests and local development.
@@ -637,7 +701,7 @@ Code generation:
 - Do not rely on generated multipart route handlers. Multipart and storage
   behavior should remain hand-written.
 
-Definition of done:
+#### Definition of Done
 
 - Diagnostic photo upload returns an `ArtifactRef` and persists metadata.
 
@@ -645,7 +709,15 @@ Definition of done:
 
 Goal: accept user diagnostic turns and create events without ADK.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `repair_turns` repository support.
 - Implement `services/turns.py`:
@@ -667,7 +739,7 @@ Code generation:
 - Generated request and response schemas may be used.
 - Route behavior remains hand-written.
 
-Definition of done:
+#### Definition of Done
 
 - Text-only diagnostic turns can be accepted and replayed through the event
   endpoint.
@@ -676,7 +748,17 @@ Definition of done:
 
 Goal: persist and expose diagnostic reports before ADK produces them.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `repositories/reports.py`.
 - Implement `services/reports.py`:
@@ -697,7 +779,7 @@ Code generation:
 - If generated union/discriminator behavior is poor, use manual report models
   and preserve contract tests.
 
-Definition of done:
+#### Definition of Done
 
 - A schema-valid diagnostic report can be persisted and retrieved over the API.
 
@@ -705,7 +787,14 @@ Definition of done:
 
 Goal: enforce server-side safety semantics independent of prompts.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `services/safety.py`.
 - Validate model-produced safety flags before persistence.
@@ -724,7 +813,7 @@ Code generation:
 
 - None.
 
-Definition of done:
+#### Definition of Done
 
 - Safety behavior is tested without ADK.
 
@@ -732,7 +821,16 @@ Definition of done:
 
 Goal: expose backend capabilities to the diagnostic agent through thin tools.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/adk-diagnostic-tools.md`
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/bike-doc.md`
+
+#### Tasks
 
 - Implement `adk/tools/bike_profile.py`.
 - Implement `adk/tools/repair_history.py`.
@@ -747,7 +845,7 @@ Code generation:
 - Do not use OpenAPI endpoint stubs for ADK tools.
 - Internal tool schemas may reuse internal Pydantic report models if clean.
 
-Definition of done:
+#### Definition of Done
 
 - Diagnostic tools are unit-testable without model calls.
 
@@ -755,7 +853,15 @@ Definition of done:
 
 Goal: create the diagnostic agent behind the internal ADK boundary.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/adk-diagnostic-tools.md`
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/bike-doc.md`
+
+#### Tasks
 
 - Implement `adk/agents/diagnostic.py`.
 - Fill `adk/prompts/diagnostic.md`.
@@ -782,7 +888,7 @@ Code generation:
 
 - None.
 
-Definition of done:
+#### Definition of Done
 
 - The diagnostic agent can be invoked in isolation with fake service/tool
   dependencies.
@@ -791,7 +897,19 @@ Definition of done:
 
 Goal: connect turn acceptance to ADK and event streaming.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/adk-diagnostic-tools.md`
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/bike-doc.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Implement `adk/sessions.py` for phase-scoped ADK sessions.
 - Implement `adk/runner.py` wrapper.
@@ -811,7 +929,7 @@ Code generation:
 
 - None.
 
-Definition of done:
+#### Definition of Done
 
 - A real diagnostic turn can produce persisted assistant events and, when
   complete, a persisted diagnostic report.
@@ -820,7 +938,14 @@ Definition of done:
 
 Goal: test model behavior separately from backend unit and API tests.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/adk-diagnostic-tools.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/bike-doc.md`
+
+#### Tasks
 
 - Create `evals/bike-doc` structure if missing.
 - Add cases for:
@@ -841,7 +966,7 @@ Code generation:
 
 - None.
 
-Definition of done:
+#### Definition of Done
 
 - Agent behavior can regress or improve independently of backend API tests.
 
@@ -849,7 +974,21 @@ Definition of done:
 
 Goal: prove the full vertical slice without Android.
 
-Tasks:
+#### Relevant Specs for Implementation
+
+- `docs/specs/apps/adk-diagnostic-tools.md`
+- `docs/specs/apps/api.md`
+- `docs/specs/apps/api-auth-dev.md`
+- `docs/specs/apps/api-artifacts-diagnostic.md`
+- `docs/specs/apps/api-codegen.md`
+- `docs/specs/apps/api-db-diagnostic.md`
+- `docs/specs/apps/api-diagnostic.md`
+- `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/apps/diagnostic-report-v1.md`
+- `docs/specs/apps/safety-diagnostic.md`
+- `docs/specs/openapi.yaml`
+
+#### Tasks
 
 - Use API tests or an integration script to run:
   - create or resolve user
@@ -876,7 +1015,7 @@ Code generation:
 - If generated output is committed, verify there is no unexpected diff.
 - If generated output is not committed, verify generation still succeeds.
 
-Definition of done:
+#### Definition of Done
 
 - The diagnostic slice is demonstrable with only HTTP/SSE and no Android UI.
 
