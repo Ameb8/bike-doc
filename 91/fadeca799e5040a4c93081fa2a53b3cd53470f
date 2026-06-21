@@ -1,0 +1,26 @@
+docs/specs/apps/diagnostic-implementation-plan.md
+  s_d7cc5395cf9166::t_b41cc6cf88e962 390-395,443-448,485-491,530-537,570-576,599-603,634-640,673-678
+  s_d7cc5395cf9166::t_65fe9fb91c0469 713-719,753-760,792-796,826-832,857-862,901-911,943-947,978-989
+  h_11a994996f9bb9 93,140,172,210,239,258,279,299,329,339,358,367,379,389,396,433,442,450,474,484,492,520,529,539,560,569,577,590,598,605,625,633,641,664,672,680,704,712,720,742,751,761,782,790,797,816,824,833,848,856,864,891,900,912,932,941,948,969,977,991,1018
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "91fadeca799e5040a4c93081fa2a53b3cd53470f",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_d7cc5395cf9166": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eeb7a-25ff-7360-8934-c8417101511f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
