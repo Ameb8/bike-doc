@@ -1,0 +1,52 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile.dev
+    command:
+      - uv
+      - run
+      - uvicorn
+      - bike_doc_api.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /workspace/apps/api/src
+      - --reload-dir
+      - /workspace/docs/specs
+    environment:
+      BIKE_DOC_API_APP_NAME: Bike Doc API
+      BIKE_DOC_API_ENVIRONMENT: local
+      BIKE_DOC_API_DEBUG: "true"
+      BIKE_DOC_API_DATABASE_URL: postgresql+asyncpg://bikedoc:bikedoc@db:5432/bikedoc
+      BIKE_DOC_API_CORS_ORIGINS: '["http://localhost:3000","http://localhost:8080"]'
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./apps/api:/workspace/apps/api
+      - ./docs:/workspace/docs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bikedoc
+      POSTGRES_PASSWORD: bikedoc
+      POSTGRES_DB: bikedoc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bikedoc -d bikedoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
