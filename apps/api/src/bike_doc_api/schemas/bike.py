@@ -1,0 +1,1 @@
+"""Bike API schema boundary."""

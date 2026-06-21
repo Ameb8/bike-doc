@@ -1,0 +1,1 @@
+"""GCS storage provider boundary."""

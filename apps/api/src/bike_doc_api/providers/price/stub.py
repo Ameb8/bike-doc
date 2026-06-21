@@ -1,0 +1,1 @@
+"""Stub price provider boundary."""

@@ -1,0 +1,1 @@
+"""Report API schema boundary."""

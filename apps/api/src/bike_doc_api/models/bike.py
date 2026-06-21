@@ -1,0 +1,1 @@
+"""Bike persistence model boundary."""

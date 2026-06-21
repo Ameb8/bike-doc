@@ -1,0 +1,1 @@
+"""Artifact API schema boundary."""

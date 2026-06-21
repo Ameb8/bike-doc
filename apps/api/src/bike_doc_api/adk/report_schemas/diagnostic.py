@@ -1,0 +1,1 @@
+"""Diagnostic report schema boundary."""

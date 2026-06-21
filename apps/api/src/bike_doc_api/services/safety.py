@@ -1,0 +1,1 @@
+"""Safety invariant service boundary."""

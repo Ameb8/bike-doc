@@ -1,0 +1,1 @@
+"""Plan report schema boundary."""

@@ -1,0 +1,1 @@
+"""Price provider interface boundary."""

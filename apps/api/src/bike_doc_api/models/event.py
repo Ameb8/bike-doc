@@ -1,0 +1,1 @@
+"""Event persistence model boundary."""

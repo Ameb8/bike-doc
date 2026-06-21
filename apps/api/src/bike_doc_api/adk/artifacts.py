@@ -1,0 +1,1 @@
+"""ADK artifact integration boundary."""
