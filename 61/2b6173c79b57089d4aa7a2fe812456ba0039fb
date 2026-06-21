@@ -1,0 +1,14 @@
+apps/api/AGENTS.md
+  h_11a994996f9bb9 55-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "612b6173c79b57089d4aa7a2fe812456ba0039fb",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
