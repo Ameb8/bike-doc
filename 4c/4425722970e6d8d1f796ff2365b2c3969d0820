@@ -1,0 +1,26 @@
+docs/specs/openapi.yaml
+  s_8bc3843e76f051::t_4be5b55669c08b 236-241,297-298,316-317,320-321,339-340,377-378,444-447,578-579,598-599,1831
+docs/specs/apps/api-diagnostic.md
+  s_8bc3843e76f051::t_46df234756c2d5 1-503
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "4c4425722970e6d8d1f796ff2365b2c3969d0820",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_8bc3843e76f051": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee96f-41bf-7ff1-b705-026be8cf637a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
