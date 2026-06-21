@@ -1,0 +1,75 @@
+apps/api/src/bike_doc_api/core/logging.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-12
+apps/api/src/bike_doc_api/api/router.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-25
+apps/api/src/bike_doc_api/api/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/api/v1/turns.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/api/v1/me.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/core/errors.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-7
+apps/api/src/bike_doc_api/api/v1/bikes.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/core/config.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-31
+apps/api/src/bike_doc_api/db/migrations/versions/.gitkeep
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/db/migrations/README.md
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-3
+apps/api/src/bike_doc_api/db/migrations/env.py
+  s_cb6dca6bedf236::t_ad232a282ad473 37
+  s_cb6dca6bedf236::t_53c236aec1c436 8
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-2,4-6,10-36,46,48-52,55,62-67
+  s_cb6dca6bedf236::t_19942002628cb6 3,7,9,38-45,47,53-54,56-61
+apps/api/src/bike_doc_api/core/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/db/base.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-7
+apps/api/src/bike_doc_api/main.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-36
+apps/api/src/bike_doc_api/api/v1/reports.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/db/session.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-17
+apps/api/src/bike_doc_api/api/v1/repair_sessions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/api/deps.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/api/v1/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/api/v1/decisions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/api/v1/events.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/core/security.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/api/v1/artifacts.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-5
+apps/api/src/bike_doc_api/db/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8c81b77081c1cf6eb7291f5ffbbecd788521cd1f",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_cb6dca6bedf236": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee75f-4c86-76e0-a0cc-2147fd272f50",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
