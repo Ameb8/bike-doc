@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bike-doc-api"
+version = "0.1.0"
+description = "Bike Doc FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "alembic>=1.16",
+  "asyncpg>=0.30",
+  "fastapi>=0.115",
+  "pydantic-settings>=2.9",
+  "python-multipart>=0.0.20",
+  "sqlalchemy[asyncio]>=2.0",
+  "uvicorn[standard]>=0.34",
+]
+
+[dependency-groups]
+dev = [
+  "httpx>=0.28",
+  "pytest>=8.4",
+  "pytest-asyncio>=1.0",
+  "ruff>=0.12",
+]
+codegen = [
+  "fastapi-code-generator>=0.5",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bike_doc_api"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+fix = true
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes (syntax, undefined names)
+    "I",     # isort (import sorting)
+    "UP",    # pyupgrade (modern Python syntax upgrades)
+    "B",     # flake8-bugbear (common design flaws/bugs)
+    "SIM",   # flake8-simplify (suggests cleaner code idioms)
+    "N",     # pep8-naming (naming conventions)
+    "ASYNC", # flake8-async (prevents blocking calls in async def)
+    "RUF",   # Ruff-specific rules
+    "T20",   # flake8-print (forbids print statements in production)
+]
+
+ignore = [
+    # Add explicit rule codes here if you ever find a rule too strict
+]
+
+[tool.ruff.lint.isort]
+# Combines your internal package into its own known first-party section for cleaner import blocks
+known-first-party = ["bike_doc_api"]
+
+[tool.ruff.lint.per-file-ignores]
+# Ignore unused imports in __init__.py files
+"**/__init__.py" = ["F401"]
+# Allow print statements or assert statements in tests
+"tests/**/*.py" = ["T201", "S101"]
+
+[tool.bike-doc.codegen]
+openapi_schema = "../../docs/specs/openapi.yaml"
+output_package = "src/bike_doc_api/generated"
+command = "uv run --group codegen fastapi-codegen --input ../../docs/specs/openapi.yaml --output src/bike_doc_api/generated --generate-routers --output-model-type pydantic_v2.BaseModel --python-version 3.12 --use-annotated --strict-nullable --disable-timestamp"
+
+
