@@ -1,0 +1,39 @@
+apps/api/tests/unit/.gitkeep
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/alembic.ini
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-40
+apps/api/.gitignore
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-12
+apps/api/pyproject.toml
+  h_11a994996f9bb9 46,50-60,63-76,81-82
+  s_cb6dca6bedf236::t_2ab4989f3aed61 80
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-45,47-49,61-62,77-79
+apps/api/tests/api/.gitkeep
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/tests/contract/.gitkeep
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/.env.example
+  s_cb6dca6bedf236::t_19942002628cb6 5
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "f0986fc929893bbf46bdd8d829935d3687054929",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_cb6dca6bedf236": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee75f-4c86-76e0-a0cc-2147fd272f50",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
