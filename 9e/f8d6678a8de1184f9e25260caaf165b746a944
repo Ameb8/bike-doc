@@ -1,0 +1,26 @@
+docs/specs/apps/api-db-diagnostic.md
+  s_c8255eb6f6d812::t_2ee23a6eff0c57 1-148,159-167,169-248,254-352,363-442,448-456,458-473,475-489,496-572,581-682,685-719,724-885,920-923,926-936,942-945,947-949,956-971,978-1032
+  h_11a994996f9bb9 149-158,249-253,353-362,443-447,490-495,573-580,683-684,720-723,886-919,924-925,937-941,946,950-955,972-977
+  s_c8255eb6f6d812::t_67b3ab3153947b 168,457,474
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "9ef8d6678a8de1184f9e25260caaf165b746a944",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_c8255eb6f6d812": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eeb4b-bd62-7d42-8e73-48d61cefb739",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
