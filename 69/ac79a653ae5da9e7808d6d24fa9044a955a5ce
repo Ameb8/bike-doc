@@ -1,0 +1,166 @@
+apps/api/src/bike_doc_api/providers/repair_reference/stub.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/safety.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/prompts/execution.md
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-3
+apps/api/src/bike_doc_api/services/reports.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/repair_sessions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/bike.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/storage/base.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/report.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/event.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/repair_reference.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/agents/diagnostic.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/repair_sessions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/repair_history.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/runner.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/price/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/turns.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/artifact.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/tool_catalog.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/agents/execution.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/orchestration.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/repair_reference.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/reports.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/repair_session.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/user.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/decision.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/storage/gcs.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/sessions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/artifact.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/auth.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/users.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/repair_session.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/tool_catalog.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/tool_catalog.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/phase_report.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/bikes.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/repair_reference/base.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/prompts/diagnostic.md
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-3
+apps/api/src/bike_doc_api/adk/report_schemas/diagnostic.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/reports.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/prompts/planning.md
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1-3
+apps/api/src/bike_doc_api/repositories/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/price_lookup.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/storage/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/report_schemas/plan.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/artifacts.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/repair_history.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/common.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/price/base.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/events.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/repositories/events.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/report_schemas/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/bike.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/agents/planning.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/repair_history.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/price_lookup.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/models/event.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/turn.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/artifacts.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/services/decisions.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/price/stub.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/artifacts.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/agents/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/providers/repair_reference/__init__.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/report_schemas/execution.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/schemas/user.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_cb6dca6bedf236::t_5e7b6f4a32df01 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "69ac79a653ae5da9e7808d6d24fa9044a955a5ce",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_cb6dca6bedf236": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ee75f-4c86-76e0-a0cc-2147fd272f50",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
