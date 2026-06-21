@@ -1,0 +1,26 @@
+docs/specs/apps/diagnostic-report-v1.md
+  s_92f1fdb21df15d::t_35f9a6ab3b98ef 1-327
+docs/specs/apps/api-diagnostic.md
+  s_92f1fdb21df15d::t_12f63701be1f7c 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1ee0a01624c556285f8fede774e325bdd841f41f",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_92f1fdb21df15d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eeb73-0577-7a32-afb5-91069482edd3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
