@@ -12,6 +12,7 @@ agent-internal schemas.
 
 - Backend scaffold: `docs/specs/apps/api.md`
 - Public API contract: `docs/specs/openapi.yaml`
+- Diagnostic report schema: `docs/specs/apps/diagnostic-report-v1.md`
 - Implementation plan: `docs/specs/apps/diagnostic-implementation-plan.md`
 - Product design: `docs/specs/bike-doc.md`
 
@@ -500,4 +501,3 @@ Completion must also:
 - Safety flags in report envelopes and event payloads use the OpenAPI
   `SafetyFlag` schema exactly.
 - Error responses use the OpenAPI `ErrorResponse` envelope.
-
