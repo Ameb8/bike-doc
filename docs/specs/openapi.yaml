@@ -233,6 +233,12 @@ paths:
                 properties:
                   artifact:
                     $ref: "#/components/schemas/ArtifactRef"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "422":
@@ -288,6 +294,8 @@ paths:
                     type: string
                     nullable: true
                     description: Pass as `cursor` to fetch the next page. Null when no more results.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       tags: [Repair Sessions]
       summary: Create a repair session
@@ -305,8 +313,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RepairSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
 
@@ -324,6 +336,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RepairSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -360,6 +374,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TurnAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -425,6 +441,10 @@ paths:
                     data: {"id":"42","session_id":"rs_123","turn_id":"turn_123","type":"input.requested","sequence":42,"created_at":"2026-06-20T12:00:00Z","data":{"input_request":{"id":"req_123","type":"photo","prompt":"Upload a rear-drive-side photo of the derailleur.","required":true,"accepted_media_types":["image/jpeg","image/png"],"choices":[],"created_at":"2026-06-20T12:00:00Z"}}}
         "404":
           $ref: "#/components/responses/NotFound"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
       x-sse-events:
         - turn.started
         - assistant.delta
@@ -555,6 +575,8 @@ paths:
                     type: string
                     nullable: true
                     description: Pass as `cursor` to fetch the next page. Null when no more results.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -573,6 +595,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PhaseReportEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
