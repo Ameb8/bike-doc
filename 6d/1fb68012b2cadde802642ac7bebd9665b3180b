@@ -1,0 +1,25 @@
+docs/specs/apps/safety-diagnostic.md
+  s_40e66c86fca3d8::t_ba6a5800016207 1-112,116-346,348-355
+  s_40e66c86fca3d8::t_2e0b61cef440cb 113-115,347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "6d1fb68012b2cadde802642ac7bebd9665b3180b",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_40e66c86fca3d8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eee1c-6d45-7930-bb3c-a363b001e6bc",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
