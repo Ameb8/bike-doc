@@ -1,0 +1,24 @@
+docs/specs/apps/api-auth-dev.md
+  s_4b85577d5eac42::t_f259573b68f55d 1-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c832723e5dcf4a7461fe5ad0211eb130d6f166a9",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_4b85577d5eac42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eecb4-ec52-7fe2-9252-d535ccb7ada4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
