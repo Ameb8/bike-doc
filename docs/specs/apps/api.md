@@ -1,7 +1,7 @@
 # Bike Doc Backend Scaffold Spec
 
 Status: Draft v0.1
-Last updated: 2026-06-20
+Last updated: 2026-06-22
 
 Backend root: `apps/api`
 
@@ -13,7 +13,8 @@ those details should be covered by follow-up specs and implementation plans.
 The backend is a custom FastAPI service that imports Google ADK as a library.
 It must not expose ADK sessions, prompts, tools, or model internals directly to
 the Android app. The public contract remains the product-level API in
-`docs/specs/openapi.yaml`.
+`docs/specs/openapi.yaml`. Cross-cutting public error behavior is defined in
+`docs/specs/apps/api-errors.md`.
 
 ## 1. Goals
 
