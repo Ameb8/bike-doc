@@ -17,6 +17,8 @@ each stage, and when OpenAPI code generation should be used.
 
 - Product design: `docs/specs/bike-doc.md`
 - Backend scaffold: `docs/specs/apps/api.md`
+- Diagnostic event and SSE semantics:
+  `docs/specs/apps/api-events-diagnostic.md`
 - Public API contract: `docs/specs/openapi.yaml`
 - Backend root: `apps/api`
 - Existing codegen setup: `apps/api/pyproject.toml`
@@ -177,6 +179,8 @@ Recommended decision:
 ### 4. Diagnostic Event And SSE Spec
 
 Suggested path: `docs/specs/apps/api-events-diagnostic.md`
+
+Status: written in `docs/specs/apps/api-events-diagnostic.md`.
 
 Include:
 

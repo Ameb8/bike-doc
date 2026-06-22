@@ -16,6 +16,8 @@ storage strategy.
 
 - Backend scaffold: `docs/specs/apps/api.md`
 - Diagnostic API delta: `docs/specs/apps/api-diagnostic.md`
+- Diagnostic event and SSE semantics:
+  `docs/specs/apps/api-events-diagnostic.md`
 - Public API contract: `docs/specs/openapi.yaml`
 - Design prompt used as guidance: `db-prompt.md`
 

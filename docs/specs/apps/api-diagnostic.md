@@ -13,6 +13,8 @@ agent-internal schemas.
 - Backend scaffold: `docs/specs/apps/api.md`
 - Public API contract: `docs/specs/openapi.yaml`
 - Diagnostic report schema: `docs/specs/apps/diagnostic-report-v1.md`
+- Diagnostic event and SSE semantics:
+  `docs/specs/apps/api-events-diagnostic.md`
 - Implementation plan: `docs/specs/apps/diagnostic-implementation-plan.md`
 - Product design: `docs/specs/bike-doc.md`
 
@@ -264,6 +266,8 @@ turn response with `202 Accepted`.
 ## `GET /v1/repair-sessions/{sessionId}/events`
 
 Streams persisted repair-session events using `text/event-stream`.
+Detailed event identity, cursor, heartbeat, timeout, persistence, and replay
+retention rules are defined in `docs/specs/apps/api-events-diagnostic.md`.
 
 Request:
 
