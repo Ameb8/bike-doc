@@ -1,0 +1,32 @@
+apps/api/README.md
+  s_b5a2d165bfbdb9::t_0d0fdaba285e53 11-17
+.env.example
+  s_b5a2d165bfbdb9::t_4dff24397fbcf1 1-4,6-7,9-13,15-16,18-19,21-29
+docs/specs/apps/api.md
+  s_b5a2d165bfbdb9::t_22713e5119055e 572-581
+apps/api/AGENTS.md
+  s_b5a2d165bfbdb9::t_0e0061a8416ee7 66
+docs/specs/apps/config-setup.md
+  s_b5a2d165bfbdb9::t_3eacfc3fb22fe1 8-9,21,52-53,58-62,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "a6e6f8782b6775c0dee034468db9ca149d9c4fbf",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_b5a2d165bfbdb9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eeeaa-d0d3-7111-8d66-50519832b23d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
