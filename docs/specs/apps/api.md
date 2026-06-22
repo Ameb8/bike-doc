@@ -79,7 +79,6 @@ apps/api/
   README.md
   pyproject.toml
   uv.lock
-  .env.example
   alembic.ini
 
   src/
@@ -570,21 +569,16 @@ uv run pytest
 uv run alembic upgrade head
 ```
 
-Environment variables should be documented in `.env.example`. The initial
-scaffold should prefer explicit placeholders over hidden defaults for external
-services.
+Environment variables should be documented in the repository root
+`.env.example`, next to `docker-compose.yml`. Local development should use a
+single repository root `.env` copied from that template. Docker Compose may read
+that file for interpolation, but it should still pass API configuration
+explicitly under the API service's `environment` section.
 
-Likely settings:
-
-- `BIKE_DOC_ENV`
-- `DATABASE_URL`
-- `GCP_PROJECT_ID`
-- `GCP_LOCATION`
-- `GCS_ARTIFACT_BUCKET`
-- `GEMINI_MODEL`
-- `AUTH_JWKS_URL`
-- `AUTH_AUDIENCE`
-- `AUTH_ISSUER`
+The baseline API settings are defined in `docs/specs/apps/config-setup.md`.
+Feature-specific settings, such as database, auth, model, storage, or provider
+configuration, should be added only when the corresponding feature is
+implemented.
 
 ## 14. Dependency Conventions
 
