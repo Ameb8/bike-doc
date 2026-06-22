@@ -1,0 +1,25 @@
+docs/specs/apps/adk-diagnostic-tools.md
+  s_697f490ff3ed64::t_413db75cfd67aa 317-320,448,542
+  s_697f490ff3ed64::t_20da352238d2c5 1-316,321-447,449-541,543-612
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "17be1079baf08c2a8168259e691f724753b23cae",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_697f490ff3ed64": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eecad-44b1-7a23-863b-6bb0c2bbceca",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
