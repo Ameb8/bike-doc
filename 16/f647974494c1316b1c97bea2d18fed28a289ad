@@ -1,0 +1,29 @@
+docs/specs/apps/api-diagnostic.md
+  s_aec6cf672bfc04::t_c86096f3386dc4 4,15,92-94
+apps/api/AGENTS.md
+  s_aec6cf672bfc04::t_61e9278a87ae80 11,42-43,47,50,73-74
+  s_aec6cf672bfc04::t_4538671304abad 44-46,48-49
+docs/specs/apps/api.md
+  s_aec6cf672bfc04::t_06e9bdaff62d59 4,16-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "16f647974494c1316b1c97bea2d18fed28a289ad",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_aec6cf672bfc04": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef198-5605-7201-870b-182d0165ba00",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
