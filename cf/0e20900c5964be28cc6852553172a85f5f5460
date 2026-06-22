@@ -1,0 +1,25 @@
+docs/specs/apps/api-errors.md
+  s_aec6cf672bfc04::t_c2eec468d05647 58
+  s_aec6cf672bfc04::t_6497ab8bf99c55 1-57,59-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "cf0e20900c5964be28cc6852553172a85f5f5460",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_aec6cf672bfc04": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef198-5605-7201-870b-182d0165ba00",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
