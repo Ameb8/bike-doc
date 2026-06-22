@@ -1,0 +1,26 @@
+docs/specs/apps/logging-setup.md
+  s_027ed4c2b02189::t_1e834ef4d74a2f 1-266
+apps/api/AGENTS.md
+  s_027ed4c2b02189::t_1e834ef4d74a2f 64,66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "d668204b602624fa8a3efc1ccb217d47da4c878e",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_027ed4c2b02189": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eee4e-a238-7540-8141-27cdac20e8bc",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
