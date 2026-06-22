@@ -61,5 +61,6 @@ handlers, direct SQL in ADK tools, and FastAPI request objects in providers.
 - **SQLAlchemy 2.0 Style:** Use modern SQLAlchemy 2.0 execution syntax (e.g., `select()`, `scalars()`) inside an `async with async_session()` context block. Always explicitely fetch or load relationships using `selectinload` or `joinedload` to avoid lazy-loading errors in async mode.
 - **Dependency Injection:** Leverage FastAPI's `Depends()` framework for database sessions, authentication, and shared logic. Never manually instantiate database sessions or handle global application state inside router endpoints.
 - **Explicit Error Handling:** Raise native FastAPI `HTTPException` instances with accurate status codes (from `fastapi.status`) and clear detail strings for client-facing errors. Never allow raw database or internal exceptions to bubble up to the client.
+- **Logging:** Use `structlog.get_logger(__name__)` with stable event names and structured keyword fields.
 - **Google ADK:** When using Google ADK, run `agents-cli lint --fix` to validate your ADK 2.0 graph mappings, state transitions, and tool signatures as they are written.
 - **Google ADK Dry Run:** When using Google ADK and the agent is in a usable state, run local dry-runs and schema checks using `agents-cli deploy --dry-run` to catch structural errors, malformed graph nodes, and dependency conflicts statically.
