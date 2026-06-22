@@ -1,0 +1,30 @@
+docs/specs/apps/api-events-diagnostic.md
+  s_406033501537ce::t_f60c9112a8bfac 1-305
+docs/specs/apps/api-diagnostic.md
+  s_406033501537ce::t_f60c9112a8bfac 16-17,269-270
+docs/specs/apps/diagnostic-implementation-plan.md
+  s_406033501537ce::t_f60c9112a8bfac 20-21,183
+docs/specs/apps/api-db-diagnostic.md
+  s_406033501537ce::t_53e38e92996272 19-20,1034
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "0a41f54b0729ee7f20e4d7033c9245735502a46c",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_406033501537ce": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019eeb89-19ba-7492-8518-ed2d33d85fbd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
