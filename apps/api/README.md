@@ -8,6 +8,13 @@ generated server code has not been created yet.
 
 ## Setup
 
+Local Docker Compose configuration is documented in the repository root
+`.env.example`. Copy it to a root `.env` before running Compose:
+
+```bash
+cp ../../.env.example ../../.env
+```
+
 ```bash
 cd apps/api
 uv sync --group dev --group codegen

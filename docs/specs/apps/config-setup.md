@@ -5,6 +5,8 @@ Last updated: 2026-06-22
 
 Backend root: `apps/api`
 
+Local environment template: `.env.example` at the repository root
+
 This spec defines the baseline configuration pattern for the Bike Doc FastAPI
 backend. It covers how settings are loaded, shared, and documented. It does not
 define feature-specific or provider-specific settings; those should be added by
@@ -16,7 +18,7 @@ the specs and implementation work that introduce each feature.
 - Keep configuration loading in `bike_doc_api.core.config`.
 - Read runtime configuration from environment variables.
 - Make app setup, tests, and local development use the same settings path.
-- Document available settings in `.env.example`.
+- Document available settings in the repository root `.env.example`.
 
 ## Settings Class
 
@@ -47,11 +49,16 @@ settings cache when they intentionally mutate environment variables.
 ## Runtime Source
 
 The backend reads process environment variables. Docker Compose may read a
-root-level `.env` file, but Compose should pass the API settings explicitly
-under the API service's `environment` section.
+repository root `.env` file, but Compose should pass the API settings
+explicitly under the API service's `environment` section.
 
 The application should not depend on a whole `.env` file being mounted or
 loaded inside the container.
+
+Local development uses a single repository root `.env` file copied from the
+single repository root `.env.example` template. Do not add app-local `.env`
+templates; API-owned variables and Compose-only local infrastructure variables
+are documented together at the root so setup has one source of truth.
 
 ## Baseline Settings
 
@@ -87,6 +94,6 @@ When adding a new setting:
 1. Add the typed field to `Settings`.
 2. Add validation or mode restrictions if the setting is only valid in certain
    environments.
-3. Add the variable to `.env.example`.
+3. Add the variable to the repository root `.env.example`.
 4. Pass the value into the code that needs it instead of reading the environment
    directly from that code.
