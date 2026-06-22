@@ -8,6 +8,7 @@ evals.
 
 - Backend scaffold and ownership: `docs/specs/apps/api.md`
 - Product API contract: `docs/specs/openapi.yaml`
+- API error handling: `docs/specs/apps/api-errors.md`
 - Product behavior and workflow: `docs/specs/bike-doc.md`
 
 ## Backend Shape
@@ -38,6 +39,15 @@ Expected boundaries:
 - Keep backend tests under `apps/api/tests`; agent behavior evaluations belong
   under `evals/bike-doc`.
 
+## Error Handling
+
+When adding or changing API error behavior, read
+`docs/specs/apps/api-errors.md` first. Endpoint-specific expected errors live in
+feature specs such as `docs/specs/apps/api-diagnostic.md`.
+
+Public HTTP errors must use the OpenAPI `ErrorResponse` envelope, with response
+mapping centralized in `core/errors.py`.
+
 ## Import Direction
 
 Prefer:
@@ -60,7 +70,8 @@ handlers, direct SQL in ADK tools, and FastAPI request objects in providers.
 - **Pydantic V2 Usage:** Exclusively use Pydantic V2 idioms for schemas and settings. Use `Field` for validations, and avoid mixing database models with request/response schemas—always use distinct Pydantic models for the API layer.
 - **SQLAlchemy 2.0 Style:** Use modern SQLAlchemy 2.0 execution syntax (e.g., `select()`, `scalars()`) inside an `async with async_session()` context block. Always explicitely fetch or load relationships using `selectinload` or `joinedload` to avoid lazy-loading errors in async mode.
 - **Dependency Injection:** Leverage FastAPI's `Depends()` framework for database sessions, authentication, and shared logic. Never manually instantiate database sessions or handle global application state inside router endpoints.
-- **Explicit Error Handling:** Raise native FastAPI `HTTPException` instances with accurate status codes (from `fastapi.status`) and clear detail strings for client-facing errors. Never allow raw database or internal exceptions to bubble up to the client.
+- **Explicit Error Handling:** Follow the Error Handling section above and keep
+  HTTP error response mapping centralized in `core/errors.py`.
 - **Logging:** Use `structlog.get_logger(__name__)` with stable event names and structured keyword fields.
 - **Configuration Access:** Read settings through `bike_doc_api.core.config.Settings`/`get_settings()` at app setup or dependency boundaries; do not read environment variables directly in routes, services, repositories, or providers.
 - **Configuration Changes:** Add new config fields to `Settings` with typed validation, use the `BIKE_DOC_API_` env prefix, and document each variable in the repository root `.env.example`.

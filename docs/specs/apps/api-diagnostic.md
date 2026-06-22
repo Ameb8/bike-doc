@@ -1,7 +1,7 @@
 # Bike Doc Diagnostic API Delta Spec
 
 Status: Draft v0.1
-Last updated: 2026-06-21
+Last updated: 2026-06-22
 
 This spec defines the public API subset needed for the diagnostic vertical
 slice. It is a delta on top of `docs/specs/apps/api.md` and
@@ -12,6 +12,7 @@ agent-internal schemas.
 
 - Backend scaffold: `docs/specs/apps/api.md`
 - Public API contract: `docs/specs/openapi.yaml`
+- API error handling: `docs/specs/apps/api-errors.md`
 - Diagnostic report schema: `docs/specs/apps/diagnostic-report-v1.md`
 - Diagnostic event and SSE semantics:
   `docs/specs/apps/api-events-diagnostic.md`
@@ -88,25 +89,9 @@ be final diagnostic reasoning.
 
 ## Common Error Rules
 
-All endpoints require bearer authentication. Missing, expired, malformed, or
-unverifiable credentials return:
-
-```json
-{
-  "error": {
-    "code": "unauthorized",
-    "message": "Authentication is required."
-  }
-}
-```
-
-Owner-scoped resources that do not exist or are not owned by the authenticated
-user return `404 Not Found`, not `403 Forbidden`, to avoid leaking resource
-existence.
-
-Validation failures return `422 Validation Error` with `error.code:
-validation_error`. State-machine or idempotency-key payload conflicts return
-`409 Conflict`.
+All diagnostic-slice errors use the public behavior defined in
+`docs/specs/apps/api-errors.md`. Endpoint tables below list the expected
+diagnostic-specific cases and stable `error.code` values.
 
 ## `POST /v1/repair-sessions`
 
