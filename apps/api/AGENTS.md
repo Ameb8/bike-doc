@@ -39,6 +39,23 @@ Expected boundaries:
 - Keep backend tests under `apps/api/tests`; agent behavior evaluations belong
   under `evals/bike-doc`.
 
+## Unit Tests
+
+- Keep unit tests under `apps/api/tests/unit`. Keep integration tests separate
+  when that suite is added.
+- Do not perform real database, network, storage, provider, or ADK calls in unit
+  tests.
+- Prefer service-layer unit tests for business rules. Keep route unit tests
+  focused on HTTP adaptation, validation, dependency wiring, and response
+  mapping.
+- For route tests, use `create_app(Settings(...))` and FastAPI dependency
+  overrides instead of mutating global application state.
+- For configuration tests, use `Settings(...)` or `monkeypatch` with
+  `BIKE_DOC_API_` environment variables.
+- For API error tests, assert the public OpenAPI `ErrorResponse` envelope.
+- Do not make unit tests depend on generated OpenAPI output unless the behavior
+  under test is specifically code generation or generated contract alignment.
+
 ## Error Handling
 
 When adding or changing API error behavior, read
