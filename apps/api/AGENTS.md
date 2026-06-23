@@ -8,8 +8,27 @@ evals.
 
 - Backend scaffold and ownership: `docs/specs/apps/api.md`
 - Product API contract: `docs/specs/openapi.yaml`
-- API error handling: `docs/specs/apps/api-errors.md`
 - Product behavior and workflow: `docs/specs/bike-doc.md`
+
+### App Spec Lookup
+
+Read only the files relevant to the change:
+
+- `docs/specs/apps/api.md`: Backend scaffold, package layout, and layer boundaries.
+- `docs/specs/apps/config-setup.md`: Settings/env loading and `.env.example` rules.
+- `docs/specs/apps/logging-setup.md`: Structlog setup and request logging.
+- `docs/specs/apps/api-errors.md`: Public error envelope and status/code mapping.
+- `docs/specs/apps/api-auth-dev.md`: Auth boundary, user mapping, and local/test auth.
+- `docs/specs/apps/api-testing.md`: Test layout, fixtures, fakes, and assertions.
+- `docs/specs/apps/api-codegen.md`: OpenAPI codegen policy and drift-check command.
+- `docs/specs/apps/diagnostic-implementation-plan.md`: Diagnostic slice build order.
+- `docs/specs/apps/api-diagnostic.md`: Diagnostic endpoint behavior and errors.
+- `docs/specs/apps/api-db-diagnostic.md`: Diagnostic tables, IDs, constraints, indexes.
+- `docs/specs/apps/api-events-diagnostic.md`: Event persistence, SSE replay, cursors.
+- `docs/specs/apps/api-artifacts-diagnostic.md`: Diagnostic photo upload and storage.
+- `docs/specs/apps/diagnostic-report-v1.md`: Diagnostic report schema and validation.
+- `docs/specs/apps/adk-diagnostic-tools.md`: Internal diagnostic ADK tool contracts.
+- `docs/specs/apps/safety-diagnostic.md`: Diagnostic safety flags and state rules.
 
 ## Backend Shape
 
