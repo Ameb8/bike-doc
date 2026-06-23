@@ -21,6 +21,7 @@ dependencies = [
 [dependency-groups]
 dev = [
   "httpx>=0.28",
+  "mypy>=2.1.0",
   "pytest>=8.4",
   "pytest-asyncio>=1.0",
   "ruff>=0.12",
@@ -39,6 +40,16 @@ package = true
 addopts = "-q"
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+packages = ["bike_doc_api"]
+strict = true
+warn_unused_configs = true
+warn_return_any = true
+warn_unreachable = true
+show_error_codes = true
+pretty = true
 
 [tool.ruff]
 line-length = 88
@@ -78,5 +89,4 @@ known-first-party = ["bike_doc_api"]
 openapi_schema = "../../docs/specs/openapi.yaml"
 output_package = "src/bike_doc_api/generated"
 command = "uv run --group codegen fastapi-codegen --input ../../docs/specs/openapi.yaml --output src/bike_doc_api/generated --generate-routers --output-model-type pydantic_v2.BaseModel --python-version 3.12 --use-annotated --strict-nullable --disable-timestamp"
-
 

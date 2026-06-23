@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     environment: str = Field(default="local", min_length=1)
     debug: bool = False
     cors_origins: list[str] = Field(default_factory=list)
+    database_url: str = Field(
+        default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
+        min_length=1,
+    )
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
 
@@ -40,6 +44,15 @@ class Settings(BaseSettings):
         if any(not origin for origin in origins):
             raise ValueError("cors_origins must not contain blank values")
         return origins
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        """Normalize the SQLAlchemy database URL."""
+        database_url = value.strip()
+        if not database_url:
+            raise ValueError("database_url must not be empty")
+        return database_url
 
     @field_validator("log_level", mode="before")
     @classmethod

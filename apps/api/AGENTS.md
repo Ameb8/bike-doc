@@ -58,6 +58,22 @@ Expected boundaries:
 - Keep backend tests under `apps/api/tests`; agent behavior evaluations belong
   under `evals/bike-doc`.
 
+## Local Backend Commands
+
+Use the root `Taskfile.yml` for local backend development and verification.
+Prefer these commands over direct `uv`, `ruff`, `pytest`, or Docker commands
+unless the task specifically requires Docker or production parity.
+
+- `task sync`: install or update API dependencies.
+- `task run`: run the FastAPI backend locally using the repo-root `.env`.
+- `task format`: format API code.
+- `task check`: run the standard verification suite: format check, lint,
+  typecheck, and tests.
+- `task build`: build the API package when packaging behavior is relevant.
+
+After changing backend code, run `task format` and `task check` before handing
+off.
+
 ## Unit Tests
 
 - Keep unit tests under `apps/api/tests/unit`. Keep integration tests separate
@@ -101,7 +117,8 @@ handlers, direct SQL in ADK tools, and FastAPI request objects in providers.
 
 ## Code Standards
 - **Type Hinting:** Enforce strict type hinting for all function/method signatures (arguments and return types). Avoid cluttering the code with type hints on obvious or local variables unless strictly necessary for IDE clarity.
-- **Linting & Formatting:** All Python code must be styled and validated using Ruff (`ruff check --fix` and `ruff format`) prior to committing. Never use Black, Flake8, or isort.
+- **Linting & Formatting:** All Python code must be styled and validated through
+  the root `Taskfile.yml` (`task format` and `task check`) prior to committing.
 - **Asynchronous Architecture:** All API endpoints and database operations must be natively asynchronous using FastAPI's `async def` and SQLAlchemy's `asyncio` extension. Avoid blocking synchronous calls.
 - **Pydantic V2 Usage:** Exclusively use Pydantic V2 idioms for schemas and settings. Use `Field` for validations, and avoid mixing database models with request/response schemas—always use distinct Pydantic models for the API layer.
 - **SQLAlchemy 2.0 Style:** Use modern SQLAlchemy 2.0 execution syntax (e.g., `select()`, `scalars()`) inside an `async with async_session()` context block. Always explicitely fetch or load relationships using `selectinload` or `joinedload` to avoid lazy-loading errors in async mode.
