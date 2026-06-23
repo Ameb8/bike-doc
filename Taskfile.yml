@@ -7,6 +7,12 @@ tasks:
     cmds:
       - uv sync --group dev --group codegen
 
+  ci:sync:
+    desc: Install API dependencies from the lockfile for CI.
+    dir: apps/api
+    cmds:
+      - uv sync --frozen --group dev --group codegen
+
   run:
     desc: Run the FastAPI app locally with the repo-root .env.
     cmds:
@@ -55,3 +61,10 @@ tasks:
     dir: apps/api
     cmds:
       - uv build
+
+  ci:
+    desc: Run the non-Docker CI verification suite.
+    cmds:
+      - task: ci:sync
+      - task: check
+      - task: build
