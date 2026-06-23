@@ -1,0 +1,25 @@
+docs/specs/apps/api-artifacts-diagnostic.md
+  s_96d60ff05d7621::t_f96d41abf0012d 337-338
+  s_96d60ff05d7621::t_271f44739351aa 1-336,339-486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "9aa2ce1bc3dba7e5f1dbf31621b2a84cbe032318",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_96d60ff05d7621": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef1d3-3176-7f13-b717-da4cb42d46a3",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
