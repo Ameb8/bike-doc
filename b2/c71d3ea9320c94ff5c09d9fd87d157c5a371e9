@@ -1,0 +1,16 @@
+docs/specs/apps/logging-setup.md
+  h_11a994996f9bb9 243
+docs/specs/apps/api.md
+  h_11a994996f9bb9 577
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "b2c71d3ea9320c94ff5c09d9fd87d157c5a371e9",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
