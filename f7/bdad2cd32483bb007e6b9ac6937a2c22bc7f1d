@@ -1,0 +1,24 @@
+Taskfile.yml
+  s_c3be01ec75f71e::t_f43e6798103c5f 39-44,48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "f7bdad2cd32483bb007e6b9ac6937a2c22bc7f1d",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_c3be01ec75f71e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef3ab-9537-7a62-bad7-adb3042aa4c5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
