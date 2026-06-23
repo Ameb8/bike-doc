@@ -574,7 +574,7 @@ uv run alembic upgrade head
 ```
 
 Environment variables should be documented in the repository root
-`.env.example`, next to `docker-compose.yml`. Local development should use a
+`.env.example`, next to `compose.yaml`. Local development should use a
 single repository root `.env` copied from that template. Docker Compose may read
 that file for interpolation, but it should still pass API configuration
 explicitly under the API service's `environment` section.

@@ -240,7 +240,7 @@ apps/api/src/bike_doc_api/api/middleware.py
 apps/api/src/bike_doc_api/main.py
 apps/api/pyproject.toml
 apps/api/Dockerfile.dev
-docker-compose.yml
+compose.yaml
 ```
 
 `api/middleware.py` should expose a small installer function, for example:
