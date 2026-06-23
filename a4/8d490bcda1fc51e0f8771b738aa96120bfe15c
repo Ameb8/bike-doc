@@ -1,0 +1,34 @@
+apps/api/src/bike_doc_api/repositories/repair_sessions.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-184
+apps/api/src/bike_doc_api/repositories/artifacts.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-83
+apps/api/src/bike_doc_api/repositories/events.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-88
+apps/api/src/bike_doc_api/repositories/users.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-37
+apps/api/src/bike_doc_api/repositories/reports.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-74
+apps/api/src/bike_doc_api/repositories/bikes.py
+  s_1a1952d92b15c5::t_a992381b62cf95 1-54
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "a48d490bcda1fc51e0f8771b738aa96120bfe15c",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_1a1952d92b15c5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef599-98ed-7253-80fb-3ccd06b42a98",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
