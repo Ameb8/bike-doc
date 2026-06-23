@@ -1,0 +1,24 @@
+docs/specs/apps/api-testing.md
+  s_a8bae586f6e2a1::t_7f3955867f230c 1-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "602134289511121bb87741b765b47bcd87a5155d",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_a8bae586f6e2a1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef1cb-0d35-7d40-b224-cd55980d8e31",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
