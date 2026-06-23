@@ -1,0 +1,24 @@
+.github/workflows/backend-ci.yml
+  s_bda8c8637396dd::t_a14c449a8490c0 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "babff86b1a303cae06121b59926eccb536ef0d83",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_bda8c8637396dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef3c2-bfbf-7842-bca9-2d82690d1671",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
