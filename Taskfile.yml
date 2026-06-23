@@ -1,0 +1,50 @@
+version: "3"
+
+tasks:
+  sync:
+    desc: Install or update API dependencies.
+    dir: apps/api
+    cmds:
+      - uv sync --group dev --group codegen
+
+  run:
+    desc: Run the FastAPI app locally with the repo-root .env.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run uvicorn bike_doc_api.main:app --reload
+
+  test:
+    desc: Run API tests.
+    dir: apps/api
+    cmds:
+      - uv run pytest
+
+  lint:
+    desc: Run API lint checks.
+    dir: apps/api
+    cmds:
+      - uv run ruff check .
+
+  typecheck:
+    desc: Run API static type checks.
+    dir: apps/api
+    cmds:
+      - uv run mypy
+
+  format:
+    desc: Format API code.
+    dir: apps/api
+    cmds:
+      - uv run ruff format .
+
+  check:
+    desc: Run the standard local verification suite.
+    deps:
+      - lint
+      - typecheck
+      - test
+
+  build:
+    desc: Build the API package.
+    dir: apps/api
+    cmds:
+      - uv build
