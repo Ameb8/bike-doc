@@ -8,6 +8,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import bike_doc_api.models  # noqa: F401
 from bike_doc_api.core.config import get_settings
 from bike_doc_api.db.base import Base
 
