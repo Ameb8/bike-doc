@@ -1,0 +1,24 @@
+apps/api/tests/unit/schemas/test_diagnostic_schemas.py
+  s_9cf0398a6ba8d1::t_d8060aa6fb1b96 1-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c78eb8db1a1e798b58c584994af35d9a8d0bfff5",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_9cf0398a6ba8d1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef5ce-e2e1-7381-8e6d-896e379661ec",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
