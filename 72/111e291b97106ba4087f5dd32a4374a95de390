@@ -1,0 +1,30 @@
+apps/api/src/bike_doc_api/core/config.py
+  s_91206cb2b9dfa8::t_76d885fa168d68 23-26,48-55
+.env.example
+  s_91206cb2b9dfa8::t_76d885fa168d68 16-18
+compose.yaml
+  s_91206cb2b9dfa8::t_76d885fa168d68 25
+apps/api/tests/unit/test_config.py
+  s_91206cb2b9dfa8::t_76d885fa168d68 19-22,36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "72111e291b97106ba4087f5dd32a4374a95de390",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_91206cb2b9dfa8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef379-332f-7193-894a-8df54c5b70f9",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
