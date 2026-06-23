@@ -48,8 +48,7 @@ def _operation_summary(operation: dict[str, Any]) -> dict[str, Any]:
         "status_codes": sorted(responses),
         "request_schema_refs": _schema_refs(request_body),
         "response_schema_refs": {
-            status: _schema_refs(response)
-            for status, response in responses.items()
+            status: _schema_refs(response) for status, response in responses.items()
         },
     }
 

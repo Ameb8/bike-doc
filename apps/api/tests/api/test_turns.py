@@ -62,8 +62,7 @@ async def test_submit_valid_diagnostic_turn_returns_accepted(
     assert body["repair_session_id"] == OWNED_SESSION_ID
     assert body["start_event_id"]
     assert body["event_stream_url"] == (
-        f"/v1/repair-sessions/{OWNED_SESSION_ID}/events"
-        f"?after={body['start_event_id']}"
+        f"/v1/repair-sessions/{OWNED_SESSION_ID}/events?after={body['start_event_id']}"
     )
     assert_repair_session_shape(
         body["session"],
