@@ -1,0 +1,24 @@
+apps/api/AGENTS.md
+  s_4937295e0cbaf7::t_6f4c996b9aae78 13-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "bf6d82791086b1d06d049a50cc1159c5eeadffa5",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_4937295e0cbaf7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef32a-91ee-70f2-8087-707430835669",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
