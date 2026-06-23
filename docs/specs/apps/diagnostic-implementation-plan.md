@@ -17,6 +17,7 @@ each stage, and when OpenAPI code generation should be used.
 
 - Product design: `docs/specs/bike-doc.md`
 - Backend scaffold: `docs/specs/apps/api.md`
+- Backend testing conventions: `docs/specs/apps/api-testing.md`
 - Diagnostic event and SSE semantics:
   `docs/specs/apps/api-events-diagnostic.md`
 - Public API contract: `docs/specs/openapi.yaml`
@@ -537,6 +538,7 @@ behavior exists.
 - `docs/specs/apps/api-artifacts-diagnostic.md`
 - `docs/specs/apps/api-diagnostic.md`
 - `docs/specs/apps/api-events-diagnostic.md`
+- `docs/specs/apps/api-testing.md`
 - `docs/specs/apps/diagnostic-report-v1.md`
 - `docs/specs/openapi.yaml`
 

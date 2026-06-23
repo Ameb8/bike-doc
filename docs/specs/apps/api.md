@@ -14,7 +14,8 @@ The backend is a custom FastAPI service that imports Google ADK as a library.
 It must not expose ADK sessions, prompts, tools, or model internals directly to
 the Android app. The public contract remains the product-level API in
 `docs/specs/openapi.yaml`. Cross-cutting public error behavior is defined in
-`docs/specs/apps/api-errors.md`.
+`docs/specs/apps/api-errors.md`. Backend testing conventions are defined in
+`docs/specs/apps/api-testing.md`.
 
 ## 1. Goals
 
@@ -503,6 +504,8 @@ These checks should be unit tested independently of ADK behavior.
 ## 11. Testing Layout
 
 Backend tests live under `apps/api/tests`.
+Detailed backend testing conventions live in
+`docs/specs/apps/api-testing.md`.
 
 Recommended split:
 
