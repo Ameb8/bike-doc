@@ -16,6 +16,10 @@ def test_settings_read_bike_doc_api_prefixed_environment(
         "BIKE_DOC_API_CORS_ORIGINS",
         '["http://localhost:3000","http://localhost:8080"]',
     )
+    monkeypatch.setenv(
+        "BIKE_DOC_API_DATABASE_URL",
+        "postgresql+asyncpg://test:test@localhost:5432/test",
+    )
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
     monkeypatch.setenv("BIKE_DOC_API_UNIMPLEMENTED_SETTING", "ignored")
@@ -29,9 +33,9 @@ def test_settings_read_bike_doc_api_prefixed_environment(
         "http://localhost:3000",
         "http://localhost:8080",
     ]
+    assert settings.database_url == "postgresql+asyncpg://test:test@localhost:5432/test"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
-    assert not hasattr(settings, "database_url")
 
 
 def test_empty_optional_log_settings_are_unset(
