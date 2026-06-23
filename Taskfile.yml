@@ -36,9 +36,16 @@ tasks:
     cmds:
       - uv run ruff format .
 
+  format:check:
+    desc: Check API code formatting.
+    dir: apps/api
+    cmds:
+      - uv run ruff format --check .
+
   check:
     desc: Run the standard local verification suite.
     deps:
+      - format:check
       - lint
       - typecheck
       - test
