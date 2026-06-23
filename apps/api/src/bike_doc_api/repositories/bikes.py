@@ -1,1 +1,54 @@
-"""Bike repository boundary."""
+"""Bike repository."""
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from bike_doc_api.models.bike import BikeProfile
+
+
+class BikeRepository:
+    """Persistence operations for bike profiles."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, bike: BikeProfile) -> BikeProfile:
+        """Add a bike profile to the current transaction."""
+        self._session.add(bike)
+        await self._session.flush()
+        return bike
+
+    async def get(self, bike_id: str) -> BikeProfile | None:
+        """Return a bike profile by ID."""
+        return await self._session.get(BikeProfile, bike_id)
+
+    async def get_owned_active(
+        self,
+        *,
+        bike_id: str,
+        user_id: str,
+    ) -> BikeProfile | None:
+        """Return a non-deleted bike profile owned by a user."""
+        result = await self._session.execute(
+            select(BikeProfile).where(
+                BikeProfile.id == bike_id,
+                BikeProfile.user_id == user_id,
+                BikeProfile.deleted_at.is_(None),
+            ),
+        )
+        return result.scalar_one_or_none()
+
+    async def list_owned_active(
+        self,
+        user_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[BikeProfile]:
+        """Return non-deleted bike profiles for a user."""
+        result = await self._session.execute(
+            select(BikeProfile)
+            .where(BikeProfile.user_id == user_id, BikeProfile.deleted_at.is_(None))
+            .order_by(BikeProfile.created_at.desc(), BikeProfile.id.desc())
+            .limit(limit),
+        )
+        return list(result.scalars().all())
