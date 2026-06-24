@@ -31,6 +31,12 @@ class ArtifactRef(APIBaseModel):
     created_at: datetime
 
 
+class ArtifactUploadResponse(APIBaseModel):
+    """Artifact upload response envelope."""
+
+    artifact: ArtifactRef
+
+
 def artifact_ref_from_model(artifact: ArtifactRefModel) -> ArtifactRef:
     """Map a persistence artifact to the public schema."""
 
