@@ -79,6 +79,17 @@ class IdempotencyConflictError(AppError):
         )
 
 
+class SessionStateConflictError(AppError):
+    """The repair session state does not allow the requested operation."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="session_state_conflict",
+            message="Repair session state does not allow this operation.",
+        )
+
+
 class PayloadTooLargeError(AppError):
     """An upload exceeded the configured public payload limit."""
 
