@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -11,8 +12,10 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 
+from bike_doc_api.api.deps import get_current_user
 from bike_doc_api.core.config import Settings
 from bike_doc_api.main import create_app
+from bike_doc_api.models.user import User as UserModel
 
 
 @dataclass(frozen=True)
@@ -39,10 +42,29 @@ def settings() -> Settings:
 
 
 @pytest.fixture
-def app(settings: Settings) -> FastAPI:
+def test_user() -> ApiTestUser:
+    """Return the default authenticated user identity."""
+
+    return ApiTestUser()
+
+
+@pytest.fixture
+def app(settings: Settings, test_user: ApiTestUser) -> FastAPI:
     """Create an isolated FastAPI app for API tests."""
 
     app = create_app(settings)
+
+    async def override_current_user() -> UserModel:
+        return UserModel(
+            id=test_user.id,
+            auth_subject=test_user.auth_subject,
+            email=test_user.email,
+            display_name=test_user.display_name,
+            skill_level=test_user.skill_level,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+    app.dependency_overrides[get_current_user] = override_current_user
     yield app
     app.dependency_overrides.clear()
 
@@ -57,13 +79,6 @@ async def api_client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
         base_url="http://testserver",
     ) as client:
         yield client
-
-
-@pytest.fixture
-def test_user() -> ApiTestUser:
-    """Return the default authenticated user identity."""
-
-    return ApiTestUser()
 
 
 @pytest.fixture

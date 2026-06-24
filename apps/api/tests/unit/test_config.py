@@ -20,6 +20,11 @@ def test_settings_read_bike_doc_api_prefixed_environment(
         "BIKE_DOC_API_DATABASE_URL",
         "postgresql+asyncpg://test:test@localhost:5432/test",
     )
+    monkeypatch.setenv("BIKE_DOC_API_AUTH_MODE", "dev")
+    monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_TOKEN", "configured-token")
+    monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_SUBJECT", "auth|configured")
+    monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_EMAIL", "configured@example.com")
+    monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_DISPLAY_NAME", "Configured User")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
     monkeypatch.setenv("BIKE_DOC_API_UNIMPLEMENTED_SETTING", "ignored")
@@ -34,6 +39,11 @@ def test_settings_read_bike_doc_api_prefixed_environment(
         "http://localhost:8080",
     ]
     assert settings.database_url == "postgresql+asyncpg://test:test@localhost:5432/test"
+    assert settings.auth_mode == "dev"
+    assert settings.dev_auth_token == "configured-token"
+    assert settings.dev_auth_subject == "auth|configured"
+    assert settings.dev_auth_email == "configured@example.com"
+    assert settings.dev_auth_display_name == "Configured User"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
 
@@ -55,3 +65,8 @@ def test_invalid_log_level_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_dev_auth_mode_is_rejected_in_production() -> None:
+    with pytest.raises(ValidationError):
+        Settings(environment="production", auth_mode="dev")

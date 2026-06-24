@@ -4,7 +4,7 @@ import logging
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,11 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
         min_length=1,
     )
+    auth_mode: Literal["production", "dev"] = "production"
+    dev_auth_token: str = "dev-token"
+    dev_auth_subject: str = "dev-user"
+    dev_auth_email: str = "dev@example.com"
+    dev_auth_display_name: str = "Dev User"
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
 
@@ -54,6 +59,28 @@ class Settings(BaseSettings):
             raise ValueError("database_url must not be empty")
         return database_url
 
+    @field_validator("auth_mode", mode="before")
+    @classmethod
+    def validate_auth_mode(cls, value: object) -> object:
+        """Normalize the configured auth mode."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator(
+        "dev_auth_token",
+        "dev_auth_subject",
+        "dev_auth_email",
+        "dev_auth_display_name",
+    )
+    @classmethod
+    def validate_dev_auth_values(cls, value: str) -> str:
+        """Reject blank fixed-dev-token identity values."""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("dev auth values must not be empty")
+        return normalized
+
     @field_validator("log_level", mode="before")
     @classmethod
     def validate_log_level(cls, value: object) -> str | None:
@@ -76,6 +103,13 @@ class Settings(BaseSettings):
             log_format = value.strip().lower()
             return log_format or None
         return value
+
+    @model_validator(mode="after")
+    def validate_auth_environment(self) -> "Settings":
+        """Prevent local fixed-token auth from being enabled in production."""
+        if self.environment.lower() == "production" and self.auth_mode == "dev":
+            raise ValueError("dev auth mode must not be enabled in production")
+        return self
 
 
 @lru_cache

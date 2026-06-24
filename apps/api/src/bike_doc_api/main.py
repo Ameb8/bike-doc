@@ -33,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+    app.dependency_overrides[get_settings] = lambda: settings
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
