@@ -66,8 +66,8 @@ class LatestReports(APIBaseModel):
 class RepairSessionCreate(APIBaseModel):
     """Create repair session request."""
 
-    bike_id: str
-    client_session_id: str | None = None
+    bike_id: str = Field(min_length=1)
+    client_session_id: str | None = Field(default=None, min_length=1)
 
 
 class RepairSession(APIBaseModel):
