@@ -19,6 +19,7 @@ class RepairSessionEventRepository:
         """Add an event with an already allocated sequence."""
         self._session.add(event)
         await self._session.flush()
+        await self._session.refresh(event)
         return event
 
     async def append_for_session(
@@ -47,6 +48,7 @@ class RepairSessionEventRepository:
         self._session.add(event)
         repair_session.latest_event_sequence = sequence
         await self._session.flush()
+        await self._session.refresh(event)
         return event
 
     async def get(self, event_id: str) -> RepairSessionEvent | None:

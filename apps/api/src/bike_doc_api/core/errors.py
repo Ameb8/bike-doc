@@ -57,6 +57,17 @@ class NotFoundError(AppError):
         )
 
 
+class ValidationAppError(AppError):
+    """A public request or cursor failed validation."""
+
+    def __init__(self, message: str = "Request validation failed.") -> None:
+        super().__init__(
+            status_code=422,
+            code="validation_error",
+            message=message,
+        )
+
+
 class IdempotencyConflictError(AppError):
     """A client idempotency key was reused with a different payload."""
 

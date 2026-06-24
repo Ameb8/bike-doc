@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Self, cast
+from typing import Any, Literal, Self, cast
 
 from pydantic import Field, model_validator
 
@@ -193,6 +193,17 @@ _EVENT_DATA_MODELS: dict[RepairSessionEventType, type[APIBaseModel]] = {
     RepairSessionEventType.ERROR: ErrorEventData,
     RepairSessionEventType.HEARTBEAT: HeartbeatEventData,
 }
+
+
+def validate_repair_session_event_data(
+    event_type: RepairSessionEventType | str,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate and serialize event-specific data for persistence."""
+
+    public_event_type = RepairSessionEventType(event_type)
+    target_model = _EVENT_DATA_MODELS[public_event_type]
+    return target_model.model_validate(data).model_dump(mode="json")
 
 
 class RepairSessionEvent(APIBaseModel):
