@@ -1,0 +1,31 @@
+apps/api/tests/unit/test_auth_service.py
+  s_5000eacfadb469::t_7a734cea588567 1-77
+apps/api/tests/conftest.py
+  s_5000eacfadb469::t_0f67ca12e23827 7,15,18,45-52,56-67
+apps/api/tests/api/test_auth.py
+  s_5000eacfadb469::t_a118c309b22855 3
+  s_5000eacfadb469::t_89b2ce259d96fd 1-2,4-49
+apps/api/tests/unit/test_config.py
+  s_5000eacfadb469::t_f8a227694708f0 23-27,42-46,68-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "37a968fae94533886c59e8b6aecfda42ce3d9bbf",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_5000eacfadb469": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef866-7b3d-7900-8fc3-af1608255a79",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
