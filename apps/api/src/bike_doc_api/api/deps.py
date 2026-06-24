@@ -10,6 +10,11 @@ from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.core.security import validate_bearer_authorization
 from bike_doc_api.db.session import get_session_for_database_url
 from bike_doc_api.models.user import User
+from bike_doc_api.providers.storage import (
+    GCSStorageProvider,
+    LocalStorageProvider,
+    StorageProvider,
+)
 from bike_doc_api.repositories.users import UserRepository
 from bike_doc_api.services.auth import AuthService
 
@@ -35,3 +40,13 @@ async def get_current_user(
         UserRepository(session),
         rollback=session.rollback,
     ).resolve_current_user(identity)
+
+
+def get_storage_provider(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StorageProvider:
+    """Build the configured artifact storage provider."""
+
+    if settings.artifact_storage_provider == "local":
+        return LocalStorageProvider(settings.artifact_local_storage_root)
+    return GCSStorageProvider()

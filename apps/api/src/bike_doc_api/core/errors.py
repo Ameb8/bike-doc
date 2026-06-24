@@ -79,6 +79,28 @@ class IdempotencyConflictError(AppError):
         )
 
 
+class PayloadTooLargeError(AppError):
+    """An upload exceeded the configured public payload limit."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=413,
+            code="payload_too_large",
+            message="Uploaded payload is too large.",
+        )
+
+
+class ServerError(AppError):
+    """Unexpected server-side failure with a generic public response."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=500,
+            code="server_error",
+            message="Internal server error.",
+        )
+
+
 async def app_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Return the public ErrorResponse envelope for expected failures."""
 
