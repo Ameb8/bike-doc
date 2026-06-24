@@ -17,6 +17,7 @@ from bike_doc_api.models.repair_session import (
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
 from bike_doc_api.services.reports import ReportService
+from bike_doc_api.services.safety import SafetyService
 
 OWNED_SESSION_ID = "rs_report_service"
 WRONG_SESSION_ID = "rs_wrong_report_service"
@@ -153,8 +154,29 @@ class _ReportStore:
         return reports[:limit]
 
 
-def _service(store: _ReportStore) -> ReportService:
-    return ReportService(store, store, store, store, store)
+class _SpySafetyService(SafetyService):
+    """Safety service double that records report-service delegation."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.validated_report_flags = False
+        self.applied_report_flags = False
+
+    def validate_report_safety_flags(self, **kwargs: Any) -> Any:
+        self.validated_report_flags = True
+        return super().validate_report_safety_flags(**kwargs)
+
+    def apply_report_safety_flags(self, **kwargs: Any) -> Any:
+        self.applied_report_flags = True
+        return super().apply_report_safety_flags(**kwargs)
+
+
+def _service(
+    store: _ReportStore,
+    *,
+    safety: SafetyService | None = None,
+) -> ReportService:
+    return ReportService(store, store, store, store, store, safety=safety)
 
 
 def _user(user_id: str = "usr_report") -> User:
@@ -295,7 +317,7 @@ async def test_unknown_or_not_owned_session_returns_not_found() -> None:
 async def test_mismatched_payload_and_envelope_safety_flags_are_rejected() -> None:
     store = _ReportStore()
     safety_flag = {
-        "code": "diagnosis_uncertain",
+        "code": "insufficient_evidence_for_safe_guidance",
         "severity": "caution",
         "phase": "diagnostic",
         "message": "More evidence is needed.",
@@ -334,7 +356,7 @@ async def test_invalid_diagnostic_session_id_is_rejected() -> None:
 async def test_blocking_safety_report_updates_safety_state_and_event_order() -> None:
     store = _ReportStore()
     safety_flag = {
-        "code": "front_brake_failure_suspected",
+        "code": "brake_failure_suspected",
         "severity": "blocking",
         "phase": "diagnostic",
         "message": "Do not ride until a mechanic inspects the brake.",
@@ -353,3 +375,117 @@ async def test_blocking_safety_report_updates_safety_state_and_event_order() -> 
         "safety.escalated",
         "phase.report.created",
     ]
+
+
+async def test_report_service_delegates_safety_behavior_to_safety_service() -> None:
+    store = _ReportStore()
+    safety = _SpySafetyService()
+
+    await _persist(_service(store, safety=safety))
+
+    assert safety.validated_report_flags is True
+    assert safety.applied_report_flags is True
+
+
+async def test_warning_report_sets_shop_recommended_without_blocking_status() -> None:
+    store = _ReportStore()
+    safety_flag = {
+        "code": "uncertain_torque_spec",
+        "severity": "warning",
+        "phase": "diagnostic",
+        "message": "A safety-critical torque value is not known.",
+        "blocks_repair_instructions": False,
+    }
+
+    await _persist(
+        _service(store),
+        payload=_payload(safety_flags=[safety_flag]),
+        safety_flags=[safety_flag],
+    )
+
+    assert store.session.safety_state == "shop_recommended"
+    assert store.session.status == "awaiting_decision"
+
+
+async def test_report_owned_flags_remain_unchanged_when_active_flags_reconcile() -> (
+    None
+):
+    store = _ReportStore()
+    store.session.active_safety_flags = [
+        {
+            "code": "brake_failure_suspected",
+            "severity": "blocking",
+            "phase": "diagnostic",
+            "message": "Brake may not stop the bike.",
+            "blocks_repair_instructions": True,
+        },
+    ]
+    store.session.safety_state = "blocked"
+    report_flag = {
+        "code": "uncertain_torque_spec",
+        "severity": "warning",
+        "phase": "diagnostic",
+        "message": "A safety-critical torque value is not known.",
+        "blocks_repair_instructions": False,
+    }
+
+    await _persist(
+        _service(store),
+        payload=_payload(safety_flags=[report_flag]),
+        safety_flags=[report_flag],
+    )
+
+    assert store.reports[0].safety_flags == [report_flag]
+    assert store.reports[0].payload["safety_flags"] == [report_flag]
+    assert {flag["code"] for flag in store.session.active_safety_flags} == {
+        "brake_failure_suspected",
+        "uncertain_torque_spec",
+    }
+
+
+async def test_later_report_omitting_existing_active_flag_does_not_clear_it() -> None:
+    store = _ReportStore()
+    store.session.active_safety_flags = [
+        {
+            "code": "brake_failure_suspected",
+            "severity": "blocking",
+            "phase": "diagnostic",
+            "message": "Brake may not stop the bike.",
+            "blocks_repair_instructions": True,
+        },
+    ]
+    store.session.safety_state = "blocked"
+
+    await _persist(_service(store))
+
+    assert store.session.safety_state == "blocked"
+    assert store.session.active_safety_flags == [
+        {
+            "code": "brake_failure_suspected",
+            "severity": "blocking",
+            "phase": "diagnostic",
+            "message": "Brake may not stop the bike.",
+            "blocks_repair_instructions": True,
+        },
+    ]
+
+
+async def test_invalid_safety_flags_fail_before_persistence() -> None:
+    store = _ReportStore()
+    safety_flag = {
+        "code": "older_freeform_code",
+        "severity": "warning",
+        "phase": "diagnostic",
+        "message": "This should not persist.",
+        "blocks_repair_instructions": False,
+    }
+
+    with pytest.raises(ValidationAppError):
+        await _persist(
+            _service(store),
+            payload=_payload(safety_flags=[safety_flag]),
+            safety_flags=[safety_flag],
+        )
+
+    assert store.reports == []
+    assert store.events == []

@@ -9,7 +9,12 @@ from typing import Any, Protocol
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 
-from bike_doc_api.core.errors import NotFoundError, ServerError, ValidationAppError
+from bike_doc_api.core.errors import (
+    AppError,
+    NotFoundError,
+    ServerError,
+    ValidationAppError,
+)
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.phase_report import PhaseReport as PhaseReportModel
@@ -26,8 +31,6 @@ from bike_doc_api.schemas.common import (
     PhaseReportType,
     RepairSessionPhase,
     RepairSessionStatus,
-    SafetySeverity,
-    SafetyState,
 )
 from bike_doc_api.schemas.event import (
     RepairSessionEventType,
@@ -40,6 +43,7 @@ from bike_doc_api.schemas.report import (
     SafetyFlag,
     phase_report_envelope_from_model,
 )
+from bike_doc_api.services.safety import SafetyService
 
 DEFAULT_REPORT_LIMIT = 50
 MAX_REPORT_LIMIT = 100
@@ -134,6 +138,7 @@ class ReportService:
         events: RepairSessionEventRepositoryProtocol,
         artifacts: ArtifactRepositoryProtocol,
         *,
+        safety: SafetyService | None = None,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -142,6 +147,7 @@ class ReportService:
         self._reports = reports
         self._events = events
         self._artifacts = artifacts
+        self._safety = safety or SafetyService()
         self._commit = commit
         self._rollback = rollback
 
@@ -159,7 +165,16 @@ class ReportService:
         """Persist a schema-valid diagnostic report without invoking ADK."""
 
         try:
-            validated = DiagnosticReportV1.model_validate(payload)
+            payload_data = _payload_data(payload)
+            raw_payload_flags = _payload_safety_flags(payload_data)
+            report_safety = self._safety.validate_report_safety_flags(
+                payload_flags=raw_payload_flags,
+                envelope_flags=safety_flags,
+            )
+            payload_data["safety_flags"] = [
+                flag.model_dump(mode="json") for flag in report_safety.payload_flags
+            ]
+            validated = DiagnosticReportV1.model_validate(payload_data)
             envelope = PhaseReportEnvelope(
                 id="rpt_validation_placeholder",
                 repair_session_id=repair_session_id,
@@ -167,7 +182,7 @@ class ReportService:
                 schema_version=DIAGNOSTIC_SCHEMA_VERSION,
                 phase=RepairSessionPhase.DIAGNOSTIC,
                 summary=summary,
-                safety_flags=[SafetyFlag.model_validate(flag) for flag in safety_flags],
+                safety_flags=report_safety.envelope_flags,
                 source_artifact_ids=source_artifact_ids,
                 created_at=datetime.now(UTC),
                 payload=validated,
@@ -217,7 +232,7 @@ class ReportService:
             )
             if self._commit is not None:
                 await self._commit()
-        except (NotFoundError, ValidationAppError):
+        except AppError:
             await self._rollback_if_configured()
             raise
         except (PydanticValidationError, ValueError) as exc:
@@ -348,22 +363,21 @@ class ReportService:
     ) -> None:
         """Update session state and append report-related events in order."""
 
-        old_safety_state = repair_session.safety_state
-        serialized_flags = [flag.model_dump(mode="json") for flag in safety_flags]
-        new_safety_state = _derive_safety_state(safety_flags)
+        safety_update = self._safety.apply_report_safety_flags(
+            repair_session=repair_session,
+            report_flags=safety_flags,
+        )
 
         repair_session.diagnostic_report_id = report.id
-        repair_session.active_safety_flags = serialized_flags
-        repair_session.safety_state = new_safety_state
         repair_session.status = (
             RepairSessionStatus.BLOCKED_SAFETY.value
-            if new_safety_state == SafetyState.BLOCKED.value
+            if safety_update.safety_state == "blocked"
             else RepairSessionStatus.AWAITING_DECISION.value
         )
         repair_session.updated_at = datetime.now(UTC)
 
         sequence = repair_session.latest_event_sequence
-        if old_safety_state != new_safety_state:
+        if safety_update.emit_safety_escalated and safety_update.event_data is not None:
             sequence += 1
             await self._events.add(
                 RepairSessionEventModel(
@@ -373,14 +387,7 @@ class ReportService:
                     type=RepairSessionEventType.SAFETY_ESCALATED.value,
                     data=validate_repair_session_event_data(
                         RepairSessionEventType.SAFETY_ESCALATED,
-                        {
-                            "safety_state": new_safety_state,
-                            "safety_flags": serialized_flags,
-                            "user_message": _safety_event_message(serialized_flags),
-                            "blocks_repair_instructions": any(
-                                flag.blocks_repair_instructions for flag in safety_flags
-                            ),
-                        },
+                        safety_update.event_data,
                     ),
                 ),
             )
@@ -428,42 +435,29 @@ def _validate_diagnostic_envelope(envelope: PhaseReportEnvelope) -> None:
         raise ValidationAppError()
     if envelope.payload.schema_version != DIAGNOSTIC_SCHEMA_VERSION:
         raise ValidationAppError()
-    if _dump_flags(envelope.payload.safety_flags) != _dump_flags(envelope.safety_flags):
+    if [flag.model_dump(mode="json") for flag in envelope.payload.safety_flags] != [
+        flag.model_dump(mode="json") for flag in envelope.safety_flags
+    ]:
         raise ValidationAppError()
-    for flag in envelope.safety_flags:
-        if flag.phase is not RepairSessionPhase.DIAGNOSTIC:
-            raise ValidationAppError()
-        if (
-            flag.severity is SafetySeverity.BLOCKING
-            and not flag.blocks_repair_instructions
-        ):
-            raise ValidationAppError()
 
 
-def _derive_safety_state(safety_flags: list[SafetyFlag]) -> str:
-    """Derive repair_sessions.safety_state from active report flags."""
+def _payload_data(payload: DiagnosticReportV1 | dict[str, Any]) -> dict[str, Any]:
+    """Return mutable diagnostic report payload data."""
 
-    if any(flag.severity is SafetySeverity.BLOCKING for flag in safety_flags):
-        return SafetyState.BLOCKED.value
-    if any(flag.severity is SafetySeverity.WARNING for flag in safety_flags):
-        return SafetyState.SHOP_RECOMMENDED.value
-    if any(flag.severity is SafetySeverity.CAUTION for flag in safety_flags):
-        return SafetyState.CAUTION.value
-    return SafetyState.OK.value
+    if isinstance(payload, DiagnosticReportV1):
+        return payload.model_dump(mode="json")
+    if isinstance(payload, dict):
+        return dict(payload)
+    raise ValidationAppError()
 
 
-def _dump_flags(flags: list[SafetyFlag]) -> list[dict[str, Any]]:
-    """Return normalized public safety flag JSON."""
+def _payload_safety_flags(payload: dict[str, Any]) -> list[SafetyFlag | dict[str, Any]]:
+    """Return raw diagnostic payload safety flags before Pydantic validation."""
 
-    return [flag.model_dump(mode="json") for flag in flags]
-
-
-def _safety_event_message(serialized_flags: list[dict[str, Any]]) -> str:
-    """Return a public safety event message without exposing internals."""
-
-    if serialized_flags:
-        return str(serialized_flags[0]["message"])
-    return "Safety state updated."
+    safety_flags = payload.get("safety_flags")
+    if not isinstance(safety_flags, list):
+        raise ValidationAppError()
+    return safety_flags
 
 
 def _public_envelope_or_server_error(
@@ -474,6 +468,12 @@ def _public_envelope_or_server_error(
     try:
         public = phase_report_envelope_from_model(report)
         _validate_diagnostic_envelope(public)
-    except (PydanticValidationError, ValueError) as exc:
+        SafetyService().validate_report_safety_flags(
+            payload_flags=public.payload.safety_flags
+            if isinstance(public.payload, DiagnosticReportV1)
+            else [],
+            envelope_flags=public.safety_flags,
+        )
+    except (PydanticValidationError, ValueError, AppError) as exc:
         raise ServerError() from exc
     return public
