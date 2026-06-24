@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from conftest import ApiTestUser, assert_error_response, assert_no_private_fields
+from fastapi import FastAPI
+
+from bike_doc_api.api.v1.artifacts import get_artifact_service
+from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
+from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
+from bike_doc_api.providers.storage import LocalStorageProvider
+from bike_doc_api.services.artifacts import ArtifactService
 
 OWNED_SESSION_ID = "rs_owned_contract"
 NOT_OWNED_SESSION_ID = "rs_other_user"
@@ -17,9 +28,105 @@ PNG_BYTES = (
     b"\x90wS\xde\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 
-pytestmark = pytest.mark.xfail(
-    reason="Stage 5 diagnostic API tests are red until route behavior is implemented.",
-)
+
+@dataclass
+class ArtifactTestContext:
+    storage_root: Path
+    artifacts: dict[str, ArtifactRefModel]
+
+
+class FakeArtifactRepository:
+    """In-memory artifact repository for route/service tests."""
+
+    def __init__(self) -> None:
+        self.artifacts: dict[str, ArtifactRefModel] = {}
+
+    async def add(self, artifact: ArtifactRefModel) -> ArtifactRefModel:
+        timestamp = datetime(2026, 1, len(self.artifacts) + 1, tzinfo=UTC)
+        artifact.created_at = timestamp
+        artifact.updated_at = timestamp
+        self.artifacts[artifact.id] = artifact
+        return artifact
+
+    async def get_by_client_artifact_id(
+        self,
+        *,
+        user_id: str,
+        client_artifact_id: str,
+    ) -> ArtifactRefModel | None:
+        for artifact in self.artifacts.values():
+            if (
+                artifact.user_id == user_id
+                and artifact.client_artifact_id == client_artifact_id
+            ):
+                return artifact
+        return None
+
+
+class FakeRepairSessionRepository:
+    """In-memory repair-session lookup repository for artifact API tests."""
+
+    def __init__(self) -> None:
+        self.sessions = {
+            OWNED_SESSION_ID: RepairSessionModel(
+                id=OWNED_SESSION_ID,
+                user_id="usr_contract_user",
+                bike_id="bike_owned_contract",
+                phase="diagnostic",
+                status="created",
+                safety_state="ok",
+                current_input_request=None,
+                execution_progress=None,
+                active_safety_flags=[],
+                latest_event_sequence=0,
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+            NOT_OWNED_SESSION_ID: RepairSessionModel(
+                id=NOT_OWNED_SESSION_ID,
+                user_id="usr_other_user",
+                bike_id="bike_other_user",
+                phase="diagnostic",
+                status="created",
+                safety_state="ok",
+                current_input_request=None,
+                execution_progress=None,
+                active_safety_flags=[],
+                latest_event_sequence=0,
+                created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+            ),
+        }
+
+    async def get_owned(
+        self,
+        *,
+        repair_session_id: str,
+        user_id: str,
+    ) -> RepairSessionModel | None:
+        session = self.sessions.get(repair_session_id)
+        if session is None or session.user_id != user_id:
+            return None
+        return session
+
+
+@pytest.fixture(autouse=True)
+def artifact_service_override(app: FastAPI, tmp_path: Path) -> ArtifactTestContext:
+    """Override the artifact service with real service logic and temp storage."""
+
+    artifacts = FakeArtifactRepository()
+    context = ArtifactTestContext(
+        storage_root=tmp_path / "artifacts",
+        artifacts=artifacts.artifacts,
+    )
+    service = ArtifactService(
+        artifacts,
+        FakeRepairSessionRepository(),
+        LocalStorageProvider(context.storage_root),
+        max_upload_bytes=10 * 1024 * 1024,
+    )
+    app.dependency_overrides[get_artifact_service] = lambda: service
+    return context
 
 
 def _artifact_form(**overrides: Any) -> dict[str, Any]:
@@ -232,6 +339,33 @@ async def test_reusing_client_artifact_id_with_different_content_returns_409(
         status_code=409,
         error_code="idempotency_conflict",
     )
+
+
+async def test_local_provider_writes_expected_relative_object_name(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: ApiTestUser,
+    artifact_service_override: ArtifactTestContext,
+) -> None:
+    response = await _upload_artifact(
+        api_client,
+        auth_headers,
+        data=_artifact_form(client_artifact_id="client-artifact-local-path"),
+    )
+
+    assert response.status_code == 201
+    artifact_id = response.json()["artifact"]["id"]
+    artifact = artifact_service_override.artifacts[artifact_id]
+    content_sha256 = hashlib.sha256(JPEG_BYTES).hexdigest()
+    assert artifact.storage_provider == "local"
+    assert artifact.storage_bucket is None
+    assert artifact.storage_path == (
+        f"users/{test_user.id}/repair-sessions/{OWNED_SESSION_ID}/artifacts/"
+        f"{artifact_id}/{content_sha256}.jpg"
+    )
+    assert (
+        artifact_service_override.storage_root / artifact.storage_path
+    ).read_bytes() == JPEG_BYTES
 
 
 async def test_non_diagnostic_purposes_return_422_until_supported(
