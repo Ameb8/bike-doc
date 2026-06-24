@@ -1,0 +1,28 @@
+apps/api/tests/unit/services/test_repair_session_service.py
+  s_de86e1c079d85b::t_da9b604e1c3810 1-220
+apps/api/tests/api/test_repair_sessions.py
+  s_de86e1c079d85b::t_3d550fccd14ac4 5,16-26,33-83,85-136
+  s_de86e1c079d85b::t_f300a648a6dc5d 84
+  s_de86e1c079d85b::t_10eda7bc631d5c 241,244-245
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c21ae10c3c9125a7479c64186cf30a1aa527dee6",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_de86e1c079d85b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef87b-a97b-7d91-a4b8-4c49cc8cb099",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
