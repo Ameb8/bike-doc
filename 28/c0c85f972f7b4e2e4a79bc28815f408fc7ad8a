@@ -1,0 +1,25 @@
+apps/api/tests/api/test_turns.py
+  s_51b537ccf17bdf::t_3cd1d31e4a051d 341-371,500-534
+  s_51b537ccf17bdf::t_2621da09c33b97 5-7,13-28,34,36-285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "28c0c85f972f7b4e2e4a79bc28815f408fc7ad8a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_51b537ccf17bdf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efada-d050-7c60-98b3-a6eedb65d5fb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
