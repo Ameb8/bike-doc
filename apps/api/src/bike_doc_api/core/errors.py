@@ -3,6 +3,7 @@
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 
@@ -45,6 +46,28 @@ class UserMappingRequiredError(AppError):
         )
 
 
+class NotFoundError(AppError):
+    """An owner-scoped resource is missing or unavailable to this user."""
+
+    def __init__(self, message: str = "Resource not found.") -> None:
+        super().__init__(
+            status_code=404,
+            code="not_found",
+            message=message,
+        )
+
+
+class IdempotencyConflictError(AppError):
+    """A client idempotency key was reused with a different payload."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="idempotency_conflict",
+            message="Idempotency key was reused with a different request payload.",
+        )
+
+
 async def app_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     """Return the public ErrorResponse envelope for expected failures."""
 
@@ -63,7 +86,29 @@ async def app_error_handler(_request: Request, exc: Exception) -> JSONResponse:
     )
 
 
+async def request_validation_error_handler(
+    _request: Request,
+    exc: Exception,
+) -> JSONResponse:
+    """Return the public ErrorResponse envelope for request validation failures."""
+
+    if not isinstance(exc, RequestValidationError):
+        raise exc
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "validation_error",
+                "message": "Request validation failed.",
+                "details": None,
+            },
+        },
+    )
+
+
 def install_exception_handlers(app: FastAPI) -> None:
     """Register application exception handlers."""
 
     app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(RequestValidationError, request_validation_error_handler)
