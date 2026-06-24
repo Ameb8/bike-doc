@@ -1,0 +1,45 @@
+.env.example
+  s_5000eacfadb469::t_abd60c0af6a2a6 19-25
+apps/api/src/bike_doc_api/services/auth.py
+  s_5000eacfadb469::t_0a8c04d0560819 2-85
+apps/api/src/bike_doc_api/db/session.py
+  s_5000eacfadb469::t_009c9bc312a598 29-34
+  s_5000eacfadb469::t_1a48bc82579f76 4,10-28,39
+apps/api/src/bike_doc_api/api/deps.py
+  s_5000eacfadb469::t_648a30445c2e9f 28
+  s_5000eacfadb469::t_4273faa26473c3 3,19
+  s_5000eacfadb469::t_dc42e35b026dbe 11,17-18,20-25,27
+  s_5000eacfadb469::t_ff89089b6833fc 1-2,4-10,12-16,26,29-37
+apps/api/src/bike_doc_api/core/errors.py
+  s_5000eacfadb469::t_0f0a9ff8f39c0e 48,50-52
+  s_5000eacfadb469::t_170bf54f9a980f 3,5-6,8-47,49,53-69
+apps/api/src/bike_doc_api/api/v1/me.py
+  s_5000eacfadb469::t_539845abf1eb21 3-9,12-20
+apps/api/src/bike_doc_api/core/security.py
+  s_5000eacfadb469::t_9514918edaf9a0 2-59
+apps/api/src/bike_doc_api/main.py
+  s_5000eacfadb469::t_3194dade73eac0 36
+apps/api/src/bike_doc_api/core/config.py
+  s_5000eacfadb469::t_efe5b316febb57 7,27-31,62-83,107-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "605e91c7e14f49c8104b74b4563de6233c3e60eb",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_5000eacfadb469": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef866-7b3d-7900-8fc3-af1608255a79",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
