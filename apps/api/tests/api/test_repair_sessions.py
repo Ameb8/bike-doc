@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -12,15 +13,127 @@ from conftest import (
     assert_no_private_fields,
     assert_repair_session_shape,
 )
+from fastapi import FastAPI
+
+from bike_doc_api.api.deps import get_current_user
+from bike_doc_api.api.v1.repair_sessions import get_repair_session_service
+from bike_doc_api.core.errors import IdempotencyConflictError, NotFoundError
+from bike_doc_api.models.user import User as UserModel
+from bike_doc_api.schemas.repair_session import (
+    LatestReports,
+    RepairSession,
+    RepairSessionCreate,
+)
 
 OWNED_BIKE_ID = "bike_owned_contract"
 NOT_OWNED_BIKE_ID = "bike_other_user"
 OWNED_SESSION_ID = "rs_owned_contract"
 NOT_OWNED_SESSION_ID = "rs_other_user"
 
-pytestmark = pytest.mark.xfail(
-    reason="Stage 5 diagnostic API tests are red until route behavior is implemented.",
-)
+
+class FakeRepairSessionService:
+    """In-memory route service for repair-session API tests."""
+
+    def __init__(self) -> None:
+        timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+        self.owned_bike_ids = {OWNED_BIKE_ID, "bike_owned_second"}
+        self.sessions: dict[str, RepairSession] = {
+            OWNED_SESSION_ID: _public_session(
+                session_id=OWNED_SESSION_ID,
+                user_id="usr_contract_user",
+                bike_id=OWNED_BIKE_ID,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+            NOT_OWNED_SESSION_ID: _public_session(
+                session_id=NOT_OWNED_SESSION_ID,
+                user_id="usr_other_user",
+                bike_id=NOT_OWNED_BIKE_ID,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+        }
+        self.sessions_by_client_id: dict[str, RepairSession] = {}
+        self.hashes_by_client_id: dict[str, str] = {}
+
+    async def create_session(
+        self,
+        *,
+        current_user: UserModel,
+        request: RepairSessionCreate,
+    ) -> RepairSession:
+        request_hash = request.bike_id
+        if request.client_session_id is not None:
+            existing = self.sessions_by_client_id.get(request.client_session_id)
+            if existing is not None:
+                if self.hashes_by_client_id[request.client_session_id] != request_hash:
+                    raise IdempotencyConflictError()
+                return existing
+
+        if request.bike_id not in self.owned_bike_ids:
+            raise NotFoundError()
+
+        timestamp = datetime(2026, 1, len(self.sessions_by_client_id) + 2, tzinfo=UTC)
+        session = _public_session(
+            session_id=f"rs_created_{len(self.sessions_by_client_id) + 1}",
+            user_id=current_user.id,
+            bike_id=request.bike_id,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self.sessions[session.id] = session
+        if request.client_session_id is not None:
+            self.sessions_by_client_id[request.client_session_id] = session
+            self.hashes_by_client_id[request.client_session_id] = request_hash
+        return session
+
+    async def get_session(
+        self,
+        *,
+        current_user: UserModel,
+        repair_session_id: str,
+    ) -> RepairSession:
+        session = self.sessions.get(repair_session_id)
+        if session is None or session.user_id != current_user.id:
+            raise NotFoundError()
+        return session
+
+
+def _public_session(
+    *,
+    session_id: str,
+    user_id: str,
+    bike_id: str,
+    created_at: datetime,
+    updated_at: datetime,
+) -> RepairSession:
+    return RepairSession(
+        id=session_id,
+        user_id=user_id,
+        bike_id=bike_id,
+        phase="diagnostic",
+        status="created",
+        safety_state="ok",
+        current_input_request=None,
+        execution_progress=None,
+        latest_reports=LatestReports(
+            diagnostic_report_id=None,
+            plan_report_id=None,
+            execution_report_id=None,
+            shop_referral_report_id=None,
+        ),
+        latest_event_id="0",
+        created_at=created_at,
+        updated_at=updated_at,
+    )
+
+
+@pytest.fixture(autouse=True)
+def repair_session_service_override(app: FastAPI) -> None:
+    """Override the route service without hitting a real database."""
+
+    service = FakeRepairSessionService()
+    app.dependency_overrides[get_repair_session_service] = lambda: service
 
 
 async def _create_session(
@@ -125,8 +238,11 @@ async def test_create_with_missing_or_malformed_bike_id_returns_422(
 
 
 async def test_create_with_missing_or_invalid_auth_returns_401(
+    app: FastAPI,
     api_client: httpx.AsyncClient,
 ) -> None:
+    app.dependency_overrides.pop(get_current_user, None)
+
     for headers in [{}, {"Authorization": "Bearer invalid-token"}]:
         response = await _create_session(api_client, headers, _valid_create_payload())
         assert_error_response(response, status_code=401, error_code="unauthorized")
