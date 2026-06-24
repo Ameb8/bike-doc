@@ -68,6 +68,17 @@ class ValidationAppError(AppError):
         )
 
 
+class SafetyPolicyViolationError(AppError):
+    """A safety invariant was violated by generated or tool-provided data."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=422,
+            code="safety_policy_violation",
+            message="Safety policy violation.",
+        )
+
+
 class IdempotencyConflictError(AppError):
     """A client idempotency key was reused with a different payload."""
 
