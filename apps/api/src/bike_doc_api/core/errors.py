@@ -101,6 +101,17 @@ class SessionStateConflictError(AppError):
         )
 
 
+class StaleSessionError(AppError):
+    """A server-owned phase/session context is no longer current."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="stale_session",
+            message="Session context is stale.",
+        )
+
+
 class PayloadTooLargeError(AppError):
     """An upload exceeded the configured public payload limit."""
 

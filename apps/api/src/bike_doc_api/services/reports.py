@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -13,6 +14,7 @@ from bike_doc_api.core.errors import (
     AppError,
     NotFoundError,
     ServerError,
+    SessionStateConflictError,
     ValidationAppError,
 )
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
@@ -48,6 +50,25 @@ from bike_doc_api.services.safety import SafetyService
 DEFAULT_REPORT_LIMIT = 50
 MAX_REPORT_LIMIT = 100
 DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v1"
+
+
+@dataclass(frozen=True, slots=True)
+class ReportPersistenceEvents:
+    """Event metadata emitted while persisting a phase report."""
+
+    safety_escalated: RepairSessionEventModel | None
+    phase_report_created: RepairSessionEventModel
+    phase_transitioned: RepairSessionEventModel | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticReportPersistenceResult:
+    """Tool-facing diagnostic report persistence result."""
+
+    report: PhaseReportEnvelope
+    events: ReportPersistenceEvents
+    safety_state: str
+    active_safety_flags: list[SafetyFlag]
 
 
 class RepairSessionRepositoryProtocol(Protocol):
@@ -164,6 +185,60 @@ class ReportService:
     ) -> PhaseReportEnvelope:
         """Persist a schema-valid diagnostic report without invoking ADK."""
 
+        result = await self._persist_diagnostic_report(
+            current_user=current_user,
+            repair_session_id=repair_session_id,
+            summary=summary,
+            payload=payload,
+            safety_flags=safety_flags,
+            source_artifact_ids=source_artifact_ids,
+            turn_id=turn_id,
+        )
+        return result.report
+
+    async def persist_diagnostic_report_from_tool(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+        summary: str,
+        payload: DiagnosticReportV1 | dict[str, Any],
+        turn_id: str | None = None,
+    ) -> DiagnosticReportPersistenceResult:
+        """Persist a diagnostic report produced through an internal ADK tool."""
+
+        payload_data = _payload_data(payload)
+        payload_data["diagnostic_session_id"] = diagnostic_session_id
+        safety_flags = _payload_safety_flags(payload_data)
+        key_artifact_ids = payload_data.get("key_artifact_ids")
+        if not isinstance(key_artifact_ids, list) or not all(
+            isinstance(artifact_id, str) for artifact_id in key_artifact_ids
+        ):
+            raise ValidationAppError()
+        return await self._persist_diagnostic_report(
+            current_user=current_user,
+            repair_session_id=repair_session_id,
+            summary=summary,
+            payload=payload_data,
+            safety_flags=list(safety_flags),
+            source_artifact_ids=key_artifact_ids,
+            turn_id=turn_id,
+        )
+
+    async def _persist_diagnostic_report(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        summary: str,
+        payload: DiagnosticReportV1 | dict[str, Any],
+        safety_flags: list[SafetyFlag | dict[str, Any]],
+        source_artifact_ids: list[str],
+        turn_id: str | None = None,
+    ) -> DiagnosticReportPersistenceResult:
+        """Persist a schema-valid diagnostic report and return event metadata."""
+
         try:
             payload_data = _payload_data(payload)
             raw_payload_flags = _payload_safety_flags(payload_data)
@@ -195,6 +270,8 @@ class ReportService:
             )
             if repair_session is None:
                 raise NotFoundError()
+            if repair_session.phase != RepairSessionPhase.DIAGNOSTIC.value:
+                raise SessionStateConflictError()
 
             await self._validate_artifacts(
                 current_user=current_user,
@@ -224,7 +301,7 @@ class ReportService:
                     payload=validated.model_dump(mode="json"),
                 ),
             )
-            await self._apply_report_session_updates(
+            events = await self._apply_report_session_updates(
                 repair_session=repair_session,
                 report=report,
                 safety_flags=envelope.safety_flags,
@@ -245,7 +322,15 @@ class ReportService:
             await self._rollback_if_configured()
             raise ServerError() from exc
 
-        return _public_envelope_or_server_error(report)
+        return DiagnosticReportPersistenceResult(
+            report=_public_envelope_or_server_error(report),
+            events=events,
+            safety_state=repair_session.safety_state,
+            active_safety_flags=[
+                SafetyFlag.model_validate(flag)
+                for flag in repair_session.active_safety_flags
+            ],
+        )
 
     async def list_reports(
         self,
@@ -360,7 +445,7 @@ class ReportService:
         report: PhaseReportModel,
         safety_flags: list[SafetyFlag],
         turn_id: str | None,
-    ) -> None:
+    ) -> ReportPersistenceEvents:
         """Update session state and append report-related events in order."""
 
         safety_update = self._safety.apply_report_safety_flags(
@@ -377,9 +462,10 @@ class ReportService:
         repair_session.updated_at = datetime.now(UTC)
 
         sequence = repair_session.latest_event_sequence
+        safety_event: RepairSessionEventModel | None = None
         if safety_update.emit_safety_escalated and safety_update.event_data is not None:
             sequence += 1
-            await self._events.add(
+            safety_event = await self._events.add(
                 RepairSessionEventModel(
                     repair_session_id=repair_session.id,
                     turn_id=turn_id,
@@ -393,7 +479,7 @@ class ReportService:
             )
 
         sequence += 1
-        await self._events.add(
+        phase_report_event = await self._events.add(
             RepairSessionEventModel(
                 repair_session_id=repair_session.id,
                 turn_id=turn_id,
@@ -412,6 +498,10 @@ class ReportService:
             ),
         )
         repair_session.latest_event_sequence = sequence
+        return ReportPersistenceEvents(
+            safety_escalated=safety_event,
+            phase_report_created=phase_report_event,
+        )
 
     async def _rollback_if_configured(self) -> None:
         """Rollback the current unit of work when one is configured."""

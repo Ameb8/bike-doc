@@ -14,6 +14,7 @@ from bike_doc_api.core.errors import (
     NotFoundError,
     PayloadTooLargeError,
     ServerError,
+    SessionStateConflictError,
     ValidationAppError,
 )
 from bike_doc_api.models.artifact import (
@@ -60,6 +61,14 @@ class ArtifactRepositoryProtocol(Protocol):
         client_artifact_id: str,
     ) -> ArtifactRefModel | None:
         """Return an artifact by user-scoped idempotency key."""
+
+    async def list_for_repair_session(
+        self,
+        repair_session_id: str,
+        *,
+        limit: int = 50,
+    ) -> list[ArtifactRefModel]:
+        """Return artifacts associated with a repair session."""
 
 
 class RepairSessionRepositoryProtocol(Protocol):
@@ -199,6 +208,39 @@ class ArtifactService:
             raise ServerError() from exc
 
         return artifact_ref_from_model(created)
+
+    async def list_diagnostic_artifacts(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        purpose: ArtifactPurpose = ArtifactPurpose.DIAGNOSTIC_PHOTO,
+        limit: int = 50,
+    ) -> list[ArtifactRef]:
+        """Return diagnostic artifact metadata for an owned diagnostic session."""
+
+        if purpose is not ArtifactPurpose.DIAGNOSTIC_PHOTO:
+            raise ValidationAppError("Only diagnostic photos are supported.")
+        repair_session = await self._repair_sessions.get_owned(
+            repair_session_id=repair_session_id,
+            user_id=current_user.id,
+        )
+        if repair_session is None:
+            raise NotFoundError()
+        if repair_session.phase != "diagnostic":
+            raise SessionStateConflictError()
+
+        artifacts = await self._artifacts.list_for_repair_session(
+            repair_session.id,
+            limit=limit,
+        )
+        return [
+            artifact_ref_from_model(artifact)
+            for artifact in artifacts
+            if artifact.user_id == current_user.id
+            and artifact.repair_session_id == repair_session.id
+            and artifact.purpose == ArtifactPurpose.DIAGNOSTIC_PHOTO.value
+        ]
 
     async def _store_artifact_object(
         self,

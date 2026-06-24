@@ -5,14 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import Protocol
 
 from sqlalchemy.exc import IntegrityError
 
-from bike_doc_api.core.errors import IdempotencyConflictError, NotFoundError
+from bike_doc_api.core.errors import (
+    IdempotencyConflictError,
+    NotFoundError,
+    SessionStateConflictError,
+    StaleSessionError,
+)
 from bike_doc_api.models.bike import BikeProfile
+from bike_doc_api.models.repair_session import (
+    RepairPhaseSession as RepairPhaseSessionModel,
+)
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
+from bike_doc_api.schemas.bike import BikeProfile as BikeProfileSchema
+from bike_doc_api.schemas.bike import bike_profile_from_model
 from bike_doc_api.schemas.common import (
     RepairSessionPhase,
     RepairSessionStatus,
@@ -60,6 +71,50 @@ class RepairSessionRepositoryProtocol(Protocol):
         """Return a repair session by user-scoped idempotency key."""
 
 
+class RepairPhaseSessionRepositoryProtocol(Protocol):
+    """Phase-session lookups required by diagnostic tool context checks."""
+
+    async def get_for_session_phase(
+        self,
+        *,
+        repair_session_id: str,
+        phase: str,
+    ) -> RepairPhaseSessionModel | None:
+        """Return a phase session for one repair session phase."""
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticBikeProfile:
+    """Bike profile context attached to a diagnostic repair session."""
+
+    bike_profile: BikeProfileSchema
+    user_skill_level: str
+
+
+@dataclass(frozen=True, slots=True)
+class RepairHistoryEntry:
+    """Prior repair-history entry returned to diagnostic tools."""
+
+    id: str
+    bike_id: str
+    repair_session_id: str | None
+    title: str
+    summary: str
+    components: list[str]
+    parts_used: list[str]
+    tools_used: list[str]
+    mileage: int | None
+    service_date: str | None
+    created_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class RepairHistoryLookup:
+    """Repair-history lookup result for a diagnostic session bike."""
+
+    entries: list[RepairHistoryEntry]
+
+
 class RepairSessionService:
     """Application-owned repair-session workflow behavior."""
 
@@ -68,10 +123,12 @@ class RepairSessionService:
         bikes: BikeRepositoryProtocol,
         repair_sessions: RepairSessionRepositoryProtocol,
         *,
+        phase_sessions: RepairPhaseSessionRepositoryProtocol | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._bikes = bikes
         self._repair_sessions = repair_sessions
+        self._phase_sessions = phase_sessions
         self._rollback = rollback
 
     async def create_session(
@@ -150,6 +207,96 @@ class RepairSessionService:
         if repair_session is None:
             raise NotFoundError()
         return repair_session_from_model(repair_session)
+
+    async def get_diagnostic_bike_profile(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+    ) -> DiagnosticBikeProfile:
+        """Return the active diagnostic session's attached bike profile."""
+
+        repair_session = await self._get_owned_diagnostic_session(
+            current_user=current_user,
+            repair_session_id=repair_session_id,
+            diagnostic_session_id=diagnostic_session_id,
+        )
+        bike = await self._bikes.get_owned_active(
+            bike_id=repair_session.bike_id,
+            user_id=current_user.id,
+        )
+        if bike is None:
+            raise NotFoundError()
+        return DiagnosticBikeProfile(
+            bike_profile=bike_profile_from_model(bike),
+            user_skill_level=current_user.skill_level,
+        )
+
+    async def lookup_repair_history(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+        component_terms: list[str],
+        limit: int,
+    ) -> RepairHistoryLookup:
+        """Return service-backed repair history for the session bike.
+
+        Repair-history persistence is intentionally outside the diagnostic DB slice,
+        so this method performs the ownership/phase checks and returns no entries.
+        """
+
+        await self._get_owned_diagnostic_session(
+            current_user=current_user,
+            repair_session_id=repair_session_id,
+            diagnostic_session_id=diagnostic_session_id,
+        )
+        _ = component_terms
+        _ = limit
+        return RepairHistoryLookup(entries=[])
+
+    async def verify_diagnostic_context(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+    ) -> None:
+        """Verify ownership, active diagnostic phase, and phase-session identity."""
+
+        await self._get_owned_diagnostic_session(
+            current_user=current_user,
+            repair_session_id=repair_session_id,
+            diagnostic_session_id=diagnostic_session_id,
+        )
+
+    async def _get_owned_diagnostic_session(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+    ) -> RepairSessionModel:
+        """Return an owned diagnostic session or raise a domain error."""
+
+        repair_session = await self._repair_sessions.get_owned(
+            repair_session_id=repair_session_id,
+            user_id=current_user.id,
+        )
+        if repair_session is None:
+            raise NotFoundError()
+        if repair_session.phase != RepairSessionPhase.DIAGNOSTIC.value:
+            raise SessionStateConflictError()
+        if self._phase_sessions is not None:
+            phase_session = await self._phase_sessions.get_for_session_phase(
+                repair_session_id=repair_session.id,
+                phase=RepairSessionPhase.DIAGNOSTIC.value,
+            )
+            if phase_session is None or phase_session.id != diagnostic_session_id:
+                raise StaleSessionError()
+        return repair_session
 
 
 def _canonical_create_request_hash(request: RepairSessionCreate) -> str:

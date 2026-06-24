@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
-from bike_doc_api.core.errors import SafetyPolicyViolationError, ValidationAppError
+from bike_doc_api.core.errors import (
+    NotFoundError,
+    SafetyPolicyViolationError,
+    ServerError,
+    SessionStateConflictError,
+    ValidationAppError,
+)
+from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
+from bike_doc_api.models.user import User
 from bike_doc_api.schemas.common import RepairSessionPhase, SafetySeverity, SafetyState
+from bike_doc_api.schemas.event import (
+    RepairSessionEventType,
+    validate_repair_session_event_data,
+)
 from bike_doc_api.schemas.report import SafetyFlag
 
 DIAGNOSTIC_V1_SAFETY_CODES = frozenset(
@@ -53,6 +66,38 @@ class SafetySessionUpdate:
     active_safety_flags: list[SafetyFlag]
     emit_safety_escalated: bool
     event_data: dict[str, Any] | None
+
+
+@dataclass(frozen=True, slots=True)
+class RaisedSafetyFlagResult:
+    """Persisted safety-flag update returned to internal diagnostic tools."""
+
+    safety_state: str
+    active_safety_flags: list[SafetyFlag]
+    event_id: str | None
+    event_sequence: int | None
+
+
+class RepairSessionRepositoryProtocol(Protocol):
+    """Repair-session operations required by safety persistence."""
+
+    async def get_owned_for_update(
+        self,
+        *,
+        repair_session_id: str,
+        user_id: str,
+    ) -> RepairSessionModel | None:
+        """Return and lock an owned repair session row."""
+
+
+class RepairSessionEventRepositoryProtocol(Protocol):
+    """Event operations required by safety persistence."""
+
+    async def add(
+        self,
+        event: RepairSessionEventModel,
+    ) -> RepairSessionEventModel:
+        """Add an event with an already allocated sequence."""
 
 
 class SafetyService:
@@ -208,6 +253,95 @@ class SafetyService:
             emit_safety_escalated=should_emit_event,
             event_data=event_data,
         )
+
+
+class DiagnosticSafetyService:
+    """Persistence boundary for diagnostic safety tool updates."""
+
+    def __init__(
+        self,
+        repair_sessions: RepairSessionRepositoryProtocol,
+        events: RepairSessionEventRepositoryProtocol,
+        *,
+        safety: SafetyService | None = None,
+        commit: Callable[[], Awaitable[None]] | None = None,
+        rollback: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        self._repair_sessions = repair_sessions
+        self._events = events
+        self._safety = safety or SafetyService()
+        self._commit = commit
+        self._rollback = rollback
+
+    async def raise_safety_flag(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        safety_flag: Any,
+    ) -> RaisedSafetyFlagResult:
+        """Validate, persist, and emit events for one diagnostic safety flag."""
+
+        try:
+            repair_session = await self._repair_sessions.get_owned_for_update(
+                repair_session_id=repair_session_id,
+                user_id=current_user.id,
+            )
+            if repair_session is None:
+                raise NotFoundError()
+            if repair_session.phase != RepairSessionPhase.DIAGNOSTIC.value:
+                raise SessionStateConflictError()
+
+            update = self._safety.raise_safety_flag(
+                repair_session=repair_session,
+                safety_flag=safety_flag,
+            )
+            event_id: str | None = None
+            event_sequence: int | None = None
+            if update.emit_safety_escalated and update.event_data is not None:
+                sequence = repair_session.latest_event_sequence + 1
+                event = await self._events.add(
+                    RepairSessionEventModel(
+                        repair_session_id=repair_session.id,
+                        sequence=sequence,
+                        type=RepairSessionEventType.SAFETY_ESCALATED.value,
+                        data=validate_repair_session_event_data(
+                            RepairSessionEventType.SAFETY_ESCALATED,
+                            update.event_data,
+                        ),
+                    ),
+                )
+                event_id = event.id
+                event_sequence = event.sequence
+                repair_session.latest_event_sequence = sequence
+
+            repair_session.updated_at = datetime.now(UTC)
+            if self._commit is not None:
+                await self._commit()
+        except (
+            NotFoundError,
+            SafetyPolicyViolationError,
+            SessionStateConflictError,
+            ValidationAppError,
+        ):
+            await self._rollback_if_configured()
+            raise
+        except Exception as exc:
+            await self._rollback_if_configured()
+            raise ServerError() from exc
+
+        return RaisedSafetyFlagResult(
+            safety_state=update.safety_state,
+            active_safety_flags=update.active_safety_flags,
+            event_id=event_id,
+            event_sequence=event_sequence,
+        )
+
+    async def _rollback_if_configured(self) -> None:
+        """Rollback the current unit of work when one is configured."""
+
+        if self._rollback is not None:
+            await self._rollback()
 
 
 def _coerce_flag_mapping(flag: Any) -> Mapping[str, Any]:

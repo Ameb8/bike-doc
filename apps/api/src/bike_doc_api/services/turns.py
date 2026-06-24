@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -16,8 +17,10 @@ from bike_doc_api.core.errors import (
     NotFoundError,
     ServerError,
     SessionStateConflictError,
+    StaleSessionError,
     ValidationAppError,
 )
+from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import (
@@ -33,7 +36,12 @@ from bike_doc_api.schemas.event import (
     RepairSessionEventType,
     validate_repair_session_event_data,
 )
-from bike_doc_api.schemas.repair_session import repair_session_from_model
+from bike_doc_api.schemas.repair_session import (
+    InputChoice,
+    InputRequest,
+    InputRequestType,
+    repair_session_from_model,
+)
 from bike_doc_api.schemas.turn import (
     TurnAccepted,
     TurnCreate,
@@ -47,6 +55,15 @@ ACCEPTING_DIAGNOSTIC_STATUSES = frozenset(
         RepairSessionStatus.AWAITING_USER.value,
     },
 )
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticInputRequestResult:
+    """Persisted diagnostic input-request event metadata."""
+
+    input_request: InputRequest
+    event_id: str
+    event_sequence: int
 
 
 class RepairSessionRepositoryProtocol(Protocol):
@@ -233,6 +250,85 @@ class TurnService:
 
         return turn_accepted_from_model(turn, repair_session)
 
+    async def request_diagnostic_input(
+        self,
+        *,
+        current_user: User,
+        repair_session_id: str,
+        diagnostic_session_id: str,
+        request_type: InputRequestType,
+        prompt: str,
+        required: bool,
+        accepted_media_types: list[str],
+        choices: list[InputChoice],
+        min_artifacts: int | None,
+        max_artifacts: int | None,
+    ) -> DiagnosticInputRequestResult:
+        """Persist an app-owned diagnostic input request and event."""
+
+        try:
+            repair_session = await self._repair_sessions.get_owned_for_update(
+                repair_session_id=repair_session_id,
+                user_id=current_user.id,
+            )
+            if repair_session is None:
+                raise NotFoundError()
+            _validate_diagnostic_tool_session(repair_session)
+            phase_session = await self._phase_sessions.get_for_session_phase(
+                repair_session_id=repair_session.id,
+                phase=RepairSessionPhase.DIAGNOSTIC.value,
+            )
+            if phase_session is None or phase_session.id != diagnostic_session_id:
+                raise StaleSessionError()
+
+            input_request = InputRequest(
+                id=generate_prefixed_ulid("req_"),
+                type=request_type,
+                prompt=prompt,
+                required=required,
+                accepted_media_types=accepted_media_types,
+                choices=choices,
+                min_artifacts=min_artifacts,
+                max_artifacts=max_artifacts,
+                created_at=datetime.now(UTC),
+            )
+            sequence = repair_session.latest_event_sequence + 1
+            event_data = validate_repair_session_event_data(
+                RepairSessionEventType.INPUT_REQUESTED,
+                {"input_request": input_request.model_dump(mode="json")},
+            )
+            event = await self._events.add(
+                RepairSessionEventModel(
+                    repair_session_id=repair_session.id,
+                    sequence=sequence,
+                    type=RepairSessionEventType.INPUT_REQUESTED.value,
+                    data=event_data,
+                ),
+            )
+            repair_session.current_input_request = input_request.model_dump(
+                mode="json",
+            )
+            repair_session.status = RepairSessionStatus.AWAITING_USER.value
+            repair_session.latest_event_sequence = sequence
+            repair_session.updated_at = datetime.now(UTC)
+            if self._commit is not None:
+                await self._commit()
+        except (NotFoundError, SessionStateConflictError, StaleSessionError):
+            await self._rollback_if_configured()
+            raise
+        except (PydanticValidationError, ValueError) as exc:
+            await self._rollback_if_configured()
+            raise ValidationAppError() from exc
+        except Exception as exc:
+            await self._rollback_if_configured()
+            raise ServerError() from exc
+
+        return DiagnosticInputRequestResult(
+            input_request=input_request,
+            event_id=event.id,
+            event_sequence=event.sequence,
+        )
+
     async def _ensure_diagnostic_phase_session(
         self,
         *,
@@ -411,6 +507,15 @@ def _validate_accepting_diagnostic_turns(
         repair_session.phase != RepairSessionPhase.DIAGNOSTIC.value
         or repair_session.status not in ACCEPTING_DIAGNOSTIC_STATUSES
     ):
+        raise SessionStateConflictError()
+
+
+def _validate_diagnostic_tool_session(
+    repair_session: RepairSessionModel,
+) -> None:
+    """Validate the session phase for internal diagnostic tool writes."""
+
+    if repair_session.phase != RepairSessionPhase.DIAGNOSTIC.value:
         raise SessionStateConflictError()
 
 
