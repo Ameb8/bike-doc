@@ -108,6 +108,13 @@ class PhaseReportEnvelope(APIBaseModel):
         return self
 
 
+class PhaseReportList(APIBaseModel):
+    """Paginated phase report list."""
+
+    items: list[PhaseReportEnvelope]
+    next_cursor: str | None
+
+
 def phase_report_envelope_from_model(report: PhaseReportModel) -> PhaseReportEnvelope:
     """Map a persistence phase report to the public schema."""
 
