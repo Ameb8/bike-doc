@@ -1,0 +1,45 @@
+apps/api/src/bike_doc_api/adk/tools/safety.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 66-69
+apps/api/src/bike_doc_api/adk/tools/input_requests.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 135-138
+apps/api/src/bike_doc_api/adk/tools/common.py
+  s_e80cf736c65f34::t_14bf2e45c05320 7,116,118-123,125-127
+  s_e80cf736c65f34::t_d5dba1c4b8933e 32
+  s_e80cf736c65f34::t_6e259a527dee89 117,124
+  s_e80cf736c65f34::t_048c189c6e1abc 130
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 81-84
+apps/api/src/bike_doc_api/adk/tools/repair_history.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 94-97
+apps/api/src/bike_doc_api/adk/tools/tool_catalog.py
+  s_e80cf736c65f34::t_b3a722168a6c72 8,205-207,209
+  s_e80cf736c65f34::t_d27d30fc0a082b 1-7,9-204,208,210-223
+apps/api/src/bike_doc_api/adk/tools/artifacts.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 89-92
+apps/api/src/bike_doc_api/adk/agents/diagnostic.py
+  s_e80cf736c65f34::t_287a1e9c76ed97 7-12,43-44,47,51
+  s_e80cf736c65f34::t_f6ee60b3ad89b1 19-27
+apps/api/src/bike_doc_api/adk/tools/reports.py
+  s_e80cf736c65f34::t_eafe5cc87a9835 88-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "d77d501f6f34096720d2dc1b1916cbfcb11c09c3",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_e80cf736c65f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f000b-b860-71f2-884c-b173b8f29c86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
