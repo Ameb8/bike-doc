@@ -13,6 +13,7 @@ from bike_doc_api.core.errors import (
     SessionStateConflictError,
     ValidationAppError,
 )
+from bike_doc_api.schemas.common import RepairSessionPhase, SafetySeverity
 from bike_doc_api.schemas.report import SafetyFlag
 
 
@@ -32,8 +33,8 @@ class _SafetyService:
             active_safety_flags=[
                 SafetyFlag(
                     code="brake_failure_suspected",
-                    severity="blocking",
-                    phase="diagnostic",
+                    severity=SafetySeverity.BLOCKING,
+                    phase=RepairSessionPhase.DIAGNOSTIC,
                     message="Do not ride until the brake is inspected.",
                     blocks_repair_instructions=True,
                 ),

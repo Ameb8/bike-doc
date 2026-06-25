@@ -18,6 +18,11 @@ from bike_doc_api.core.errors import (
     StaleSessionError,
     ValidationAppError,
 )
+from bike_doc_api.schemas.common import (
+    PhaseReportType,
+    RepairSessionPhase,
+    SafetySeverity,
+)
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
     PhaseReportEnvelope,
@@ -40,9 +45,9 @@ class _ReportService:
         report = PhaseReportEnvelope(
             id="rpt_1",
             repair_session_id=kwargs["repair_session_id"],
-            type="diagnostic",
+            type=PhaseReportType.DIAGNOSTIC,
             schema_version="diagnostic_report.v1",
-            phase="diagnostic",
+            phase=RepairSessionPhase.DIAGNOSTIC,
             summary=kwargs["summary"],
             safety_flags=payload.safety_flags,
             source_artifact_ids=payload.key_artifact_ids,
@@ -172,8 +177,8 @@ async def test_save_diagnostic_report_returns_active_safety_flags() -> None:
             result.active_safety_flags = [
                 SafetyFlag(
                     code="brake_failure_suspected",
-                    severity="blocking",
-                    phase="diagnostic",
+                    severity=SafetySeverity.BLOCKING,
+                    phase=RepairSessionPhase.DIAGNOSTIC,
                     message="Do not ride until the brake is inspected.",
                     blocks_repair_instructions=True,
                 ),
