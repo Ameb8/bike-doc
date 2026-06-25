@@ -1,0 +1,24 @@
+docs/specs/apps/wire-adk-plan.md
+  s_cef784ce1914c1::t_c2838db02ce71e 1-504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "98fd7d37389149f12da7132c638c8242f56fc371",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_cef784ce1914c1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efdb2-4bb0-7720-b42e-fe143ea21bc1",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
