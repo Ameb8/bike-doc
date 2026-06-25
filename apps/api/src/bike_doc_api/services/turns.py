@@ -12,6 +12,10 @@ from typing import Any, Protocol
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 
+from bike_doc_api.adk.sessions import (
+    DiagnosticPhaseSessionManager,
+    LocalDiagnosticADKSessionClient,
+)
 from bike_doc_api.core.errors import (
     IdempotencyConflictError,
     NotFoundError,
@@ -40,7 +44,6 @@ from bike_doc_api.schemas.repair_session import (
     InputChoice,
     InputRequest,
     InputRequestType,
-    repair_session_from_model,
 )
 from bike_doc_api.schemas.turn import (
     TurnAccepted,
@@ -141,6 +144,18 @@ class ArtifactRepositoryProtocol(Protocol):
         """Return an artifact owned by a user."""
 
 
+class DiagnosticTurnOrchestratorProtocol(Protocol):
+    """Accepted-turn orchestration boundary."""
+
+    async def process_turn(
+        self,
+        *,
+        current_user: User,
+        turn: RepairTurnModel,
+    ) -> None:
+        """Process an accepted diagnostic turn."""
+
+
 class TurnService:
     """Application-owned user-turn acceptance behavior."""
 
@@ -154,6 +169,8 @@ class TurnService:
         *,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
+        phase_session_manager: DiagnosticPhaseSessionManager | None = None,
+        orchestrator: DiagnosticTurnOrchestratorProtocol | None = None,
     ) -> None:
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
@@ -162,6 +179,15 @@ class TurnService:
         self._artifacts = artifacts
         self._commit = commit
         self._rollback = rollback
+        self._phase_session_manager = phase_session_manager or (
+            DiagnosticPhaseSessionManager(
+                phase_sessions=phase_sessions,
+                adk_sessions=LocalDiagnosticADKSessionClient(),
+                commit=commit,
+                rollback=rollback,
+            )
+        )
+        self._orchestrator = orchestrator
 
     async def accept_turn(
         self,
@@ -238,15 +264,15 @@ class TurnService:
             await self._rollback_if_configured()
             raise ServerError() from exc
 
-        try:
-            await self._append_no_agent_turn_completed(
-                current_user=current_user,
-                repair_session_id=repair_session_id,
-                turn=turn,
-            )
-        except Exception as exc:
-            await self._rollback_if_configured()
-            raise ServerError() from exc
+        if self._orchestrator is not None:
+            try:
+                await self._orchestrator.process_turn(
+                    current_user=current_user,
+                    turn=turn,
+                )
+            except Exception as exc:
+                await self._rollback_if_configured()
+                raise ServerError() from exc
 
         return turn_accepted_from_model(turn, repair_session)
 
@@ -334,35 +360,11 @@ class TurnService:
         *,
         repair_session_id: str,
     ) -> RepairPhaseSessionModel:
-        """Ensure the required phase-session row exists without calling ADK."""
+        """Ensure the required phase-session row exists through ADK boundary."""
 
-        existing = await self._phase_sessions.get_for_session_phase(
+        return await self._phase_session_manager.ensure_diagnostic_session(
             repair_session_id=repair_session_id,
-            phase=RepairSessionPhase.DIAGNOSTIC.value,
         )
-        if existing is not None:
-            return existing
-
-        phase_session = RepairPhaseSessionModel(
-            repair_session_id=repair_session_id,
-            phase=RepairSessionPhase.DIAGNOSTIC.value,
-            adk_session_id=f"stage10-no-agent:{repair_session_id}:diagnostic",
-            status="active",
-        )
-        try:
-            created = await self._phase_sessions.add(phase_session)
-            if self._commit is not None:
-                await self._commit()
-            return created
-        except IntegrityError:
-            await self._rollback_if_configured()
-            raced = await self._phase_sessions.get_for_session_phase(
-                repair_session_id=repair_session_id,
-                phase=RepairSessionPhase.DIAGNOSTIC.value,
-            )
-            if raced is None:
-                raise
-            return raced
 
     async def _create_turn_started(
         self,
@@ -406,46 +408,6 @@ class TurnService:
         repair_session.latest_event_sequence = start_sequence
         repair_session.updated_at = datetime.now(UTC)
         return turn
-
-    async def _append_no_agent_turn_completed(
-        self,
-        *,
-        current_user: User,
-        repair_session_id: str,
-        turn: RepairTurnModel,
-    ) -> None:
-        """Persist the deterministic Stage 10 no-agent completion event."""
-
-        repair_session = await self._repair_sessions.get_owned_for_update(
-            repair_session_id=repair_session_id,
-            user_id=current_user.id,
-        )
-        if repair_session is None:
-            raise NotFoundError()
-        sequence = repair_session.latest_event_sequence + 1
-        repair_session.status = RepairSessionStatus.RUNNING.value
-        repair_session.latest_event_sequence = sequence
-        repair_session.updated_at = datetime.now(UTC)
-        completed_data = validate_repair_session_event_data(
-            RepairSessionEventType.TURN_COMPLETED,
-            {
-                "turn_id": turn.id,
-                "session": repair_session_from_model(repair_session).model_dump(
-                    mode="json",
-                ),
-            },
-        )
-        await self._events.add(
-            RepairSessionEventModel(
-                repair_session_id=repair_session.id,
-                turn_id=turn.id,
-                sequence=sequence,
-                type=RepairSessionEventType.TURN_COMPLETED.value,
-                data=completed_data,
-            ),
-        )
-        if self._commit is not None:
-            await self._commit()
 
     async def _validate_artifacts(
         self,

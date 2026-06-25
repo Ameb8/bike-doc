@@ -24,6 +24,11 @@ from bike_doc_api.models.repair_session import (
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User as UserModel
+from bike_doc_api.schemas.event import (
+    RepairSessionEventType,
+    validate_repair_session_event_data,
+)
+from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.events import EventService
 from bike_doc_api.services.turns import TurnService
 
@@ -71,6 +76,7 @@ class _InMemoryTurnStore:
         self.phase_sessions: dict[tuple[str, str], RepairPhaseSessionModel] = {}
         self.turns: dict[tuple[str, str], RepairTurnModel] = {}
         self.events: list[RepairSessionEventModel] = []
+        self.orchestrated_turn_ids: list[str] = []
         self.artifacts = {
             OWNED_ARTIFACT_ID: ArtifactRefModel(
                 id=OWNED_ARTIFACT_ID,
@@ -253,6 +259,40 @@ class _InMemoryTurnStore:
         ][:limit]
 
 
+class _CompletedTurnOrchestrator:
+    """Fake orchestration boundary used by route tests."""
+
+    def __init__(self, store: _InMemoryTurnStore) -> None:
+        self.store = store
+
+    async def process_turn(
+        self,
+        *,
+        current_user: UserModel,
+        turn: RepairTurnModel,
+    ) -> None:
+        self.store.orchestrated_turn_ids.append(turn.id)
+        session = self.store.sessions[turn.repair_session_id]
+        sequence = session.latest_event_sequence + 1
+        session.latest_event_sequence = sequence
+        event_data = validate_repair_session_event_data(
+            RepairSessionEventType.TURN_COMPLETED,
+            {
+                "turn_id": turn.id,
+                "session": repair_session_from_model(session).model_dump(mode="json"),
+            },
+        )
+        await self.store.add(
+            RepairSessionEventModel(
+                repair_session_id=session.id,
+                turn_id=turn.id,
+                sequence=sequence,
+                type=RepairSessionEventType.TURN_COMPLETED.value,
+                data=event_data,
+            ),
+        )
+
+
 def _parse_sse_frames(text: str) -> list[dict[str, Any]]:
     frames: list[dict[str, Any]] = []
     for raw_frame in text.strip().split("\n\n"):
@@ -276,7 +316,14 @@ def turn_service_override(
     """Override turn and event services with shared in-memory storage."""
 
     store = _InMemoryTurnStore(test_user.id)
-    turn_service = TurnService(store, store, store, store, store)
+    turn_service = TurnService(
+        store,
+        store,
+        store,
+        store,
+        store,
+        orchestrator=_CompletedTurnOrchestrator(store),
+    )
     event_service = EventService(store, store)
     app.dependency_overrides[get_turn_service] = lambda: turn_service
     app.dependency_overrides[get_event_service] = lambda: event_service
@@ -372,6 +419,7 @@ async def test_accepted_text_turn_replays_started_and_completed_events(
 async def test_repeating_client_turn_id_returns_original_acceptance(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
 ) -> None:
     payload = _valid_turn_payload(client_turn_id="client-turn-repeat")
 
@@ -381,6 +429,7 @@ async def test_repeating_client_turn_id_returns_original_acceptance(
     assert first.status_code == 202
     assert retry.status_code == 202
     assert retry.json() == first.json()
+    assert turn_service_override.orchestrated_turn_ids == [first.json()["turn_id"]]
 
 
 async def test_reusing_client_turn_id_with_different_payload_returns_409(
