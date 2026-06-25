@@ -121,7 +121,7 @@ handlers, direct SQL in ADK tools, and FastAPI request objects in providers.
   the root `Taskfile.yml` (`task format` and `task check`) prior to committing.
 - **Asynchronous Architecture:** All API endpoints and database operations must be natively asynchronous using FastAPI's `async def` and SQLAlchemy's `asyncio` extension. Avoid blocking synchronous calls.
 - **Pydantic V2 Usage:** Exclusively use Pydantic V2 idioms for schemas and settings. Use `Field` for validations, and avoid mixing database models with request/response schemas—always use distinct Pydantic models for the API layer.
-- **SQLAlchemy 2.0 Style:** Use modern SQLAlchemy 2.0 execution syntax (e.g., `select()`, `scalars()`) inside an `async with async_session()` context block. Always explicitely fetch or load relationships using `selectinload` or `joinedload` to avoid lazy-loading errors in async mode.
+- **SQLAlchemy 2.0 Style:** Use modern SQLAlchemy 2.0 execution syntax (e.g., `select()`, `scalars()`) inside an `async with async_session()` context block. Always explicitly fetch or load relationships using `selectinload` or `joinedload` to avoid lazy-loading errors in async mode.
 - **Dependency Injection:** Leverage FastAPI's `Depends()` framework for database sessions, authentication, and shared logic. Never manually instantiate database sessions or handle global application state inside router endpoints.
 - **Explicit Error Handling:** Follow the Error Handling section above and keep
   HTTP error response mapping centralized in `core/errors.py`.
