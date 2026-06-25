@@ -41,6 +41,7 @@ class DiagnosticToolContext(BaseModel):
     repair_session_id: str
     active_phase: RepairSessionPhase = RepairSessionPhase.DIAGNOSTIC
     diagnostic_session_id: str
+    turn_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

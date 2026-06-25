@@ -109,6 +109,7 @@ class SaveDiagnosticReportTool:
                 diagnostic_session_id=context.diagnostic_session_id,
                 summary=parsed.summary,
                 payload=payload,
+                turn_id=context.turn_id,
             )
             report = result.report
             if not isinstance(report.payload, dict):
