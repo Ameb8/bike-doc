@@ -1,0 +1,37 @@
+apps/api/tests/unit/adk/tools/test_reports_tool.py
+  s_e80cf736c65f34::t_ae292b7a00ed9a 21-25,48,50,180-181
+apps/api/tests/unit/adk/tools/test_tool_catalog.py
+  s_e80cf736c65f34::t_0d6895e812b930 265-268
+  s_e80cf736c65f34::t_5551da9fcabb32 22
+  s_e80cf736c65f34::t_61de0823be0c80 1-16,23-81,84-97,99,101-133,135-195,197,199-264,269-310
+  s_e80cf736c65f34::t_ba584fbeecf1c0 196,198
+  s_e80cf736c65f34::t_5a22700d2b1a72 17-21,82-83,98,100,134
+apps/api/tests/unit/adk/tools/test_safety_tool.py
+  s_e80cf736c65f34::t_ae292b7a00ed9a 16,36-37
+apps/api/tests/unit/adk/test_diagnostic_agent.py
+  s_e80cf736c65f34::t_47b3d05bce92c2 84
+  s_e80cf736c65f34::t_d4a5112720721b 32,43-46,65-66,68
+  s_e80cf736c65f34::t_a8826493773b47 7-9,52,56,69-73,75-76,82
+  s_e80cf736c65f34::t_668e3ee18fb61f 83,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3f7777295ec22fb5b1c73a957d40c81a0cab9587",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_e80cf736c65f34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f000b-b860-71f2-884c-b173b8f29c86",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
