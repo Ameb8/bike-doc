@@ -58,6 +58,9 @@ Thumbs.db
 **/build/
 **/*.egg-info/
 **/.eggs/
+# The backend lockfile lives at apps/api/uv.lock; root uv.lock is a local
+# Agents CLI workspace artifact.
+/uv.lock
 
 # Testing and Coverage
 **/.pytest_cache/

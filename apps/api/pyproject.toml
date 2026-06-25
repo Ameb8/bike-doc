@@ -33,7 +33,7 @@ codegen = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/bike_doc_api"]
+packages = ["src/bike_doc_api", "src/bike_doc_api_adk_agent"]
 
 [tool.uv]
 package = true
