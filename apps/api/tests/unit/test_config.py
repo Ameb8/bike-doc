@@ -27,6 +27,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_DISPLAY_NAME", "Configured User")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL", "gemini-test")
     monkeypatch.setenv("BIKE_DOC_API_UNIMPLEMENTED_SETTING", "ignored")
 
     settings = Settings()
@@ -46,6 +47,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.dev_auth_display_name == "Configured User"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
+    assert settings.diagnostic_agent_model == "gemini-test"
 
 
 def test_empty_optional_log_settings_are_unset(
@@ -62,6 +64,15 @@ def test_empty_optional_log_settings_are_unset(
 
 def test_invalid_log_level_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "verbose")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_blank_diagnostic_agent_model_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL", " ")
 
     with pytest.raises(ValidationError):
         Settings()

@@ -74,9 +74,6 @@ def test_app_can_produce_openapi_document(app: FastAPI) -> None:
     assert isinstance(openapi["paths"], dict)
 
 
-@pytest.mark.xfail(
-    reason="Stage 5 diagnostic routes are specified before implementation.",
-)
 def test_app_openapi_contains_diagnostic_slice_paths(app: FastAPI) -> None:
     openapi = app.openapi()
 

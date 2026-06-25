@@ -76,7 +76,7 @@ def test_diagnostic_report_envelope_validates_payload() -> None:
 def test_blocking_safety_flags_require_instruction_block() -> None:
     with pytest.raises(ValidationError):
         SafetyFlag(
-            code="front_brake_failure_suspected",
+            code="brake_failure_suspected",
             severity="blocking",
             phase="diagnostic",
             message="Do not ride the bike.",

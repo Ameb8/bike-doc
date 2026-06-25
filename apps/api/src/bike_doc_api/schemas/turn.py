@@ -1,6 +1,8 @@
 """Turn API schemas and mappers."""
 
-from typing import Literal
+from typing import Literal, Self
+
+from pydantic import Field, field_validator, model_validator
 
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
@@ -17,14 +19,62 @@ class UserTurnMessage(APIBaseModel):
     text: str | None = None
     artifact_ids: list[str]
 
+    @field_validator("text")
+    @classmethod
+    def normalize_text(cls, value: str | None) -> str | None:
+        """Trim user text and keep blank text as empty for payload validation."""
+
+        if value is None:
+            return None
+        return value.strip()
+
+    @field_validator("artifact_ids")
+    @classmethod
+    def validate_artifact_ids(cls, value: list[str]) -> list[str]:
+        """Reject blank artifact IDs in public payloads."""
+
+        if any(not artifact_id.strip() for artifact_id in value):
+            raise ValueError("artifact_ids must not contain blank IDs")
+        return value
+
+    @model_validator(mode="after")
+    def validate_usable_input(self) -> Self:
+        """Require text, artifact references, or both."""
+
+        if not self.text and not self.artifact_ids:
+            raise ValueError("message must include text, artifact_ids, or both")
+        return self
+
 
 class TurnCreate(APIBaseModel):
     """Create turn request."""
 
     schema_version: Literal["ai_turn.v1"]
-    client_turn_id: str
+    client_turn_id: str = Field(min_length=1)
     message: UserTurnMessage
     responds_to_input_request_id: str | None = None
+
+    @field_validator("client_turn_id")
+    @classmethod
+    def validate_client_turn_id(cls, value: str) -> str:
+        """Normalize and validate the session-scoped idempotency key."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("client_turn_id must not be blank")
+        return normalized
+
+    @field_validator("responds_to_input_request_id")
+    @classmethod
+    def normalize_input_request_id(cls, value: str | None) -> str | None:
+        """Normalize optional input-request IDs."""
+
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("responds_to_input_request_id must not be blank")
+        return normalized
 
 
 class TurnAccepted(APIBaseModel):

@@ -1,6 +1,6 @@
 """Report repository."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.phase_report import PhaseReport
@@ -43,6 +43,7 @@ class PhaseReportRepository:
         *,
         report_type: str | None = None,
         limit: int = 50,
+        cursor_report: PhaseReport | None = None,
     ) -> list[PhaseReport]:
         """Return reports for a repair session."""
         statement = select(PhaseReport).where(
@@ -50,6 +51,16 @@ class PhaseReportRepository:
         )
         if report_type is not None:
             statement = statement.where(PhaseReport.type == report_type)
+        if cursor_report is not None:
+            statement = statement.where(
+                or_(
+                    PhaseReport.created_at < cursor_report.created_at,
+                    (
+                        (PhaseReport.created_at == cursor_report.created_at)
+                        & (PhaseReport.id < cursor_report.id)
+                    ),
+                ),
+            )
         result = await self._session.execute(
             statement.order_by(
                 PhaseReport.created_at.desc(),

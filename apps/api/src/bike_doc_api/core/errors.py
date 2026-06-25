@@ -68,6 +68,17 @@ class ValidationAppError(AppError):
         )
 
 
+class SafetyPolicyViolationError(AppError):
+    """A safety invariant was violated by generated or tool-provided data."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=422,
+            code="safety_policy_violation",
+            message="Safety policy violation.",
+        )
+
+
 class IdempotencyConflictError(AppError):
     """A client idempotency key was reused with a different payload."""
 
@@ -76,6 +87,50 @@ class IdempotencyConflictError(AppError):
             status_code=409,
             code="idempotency_conflict",
             message="Idempotency key was reused with a different request payload.",
+        )
+
+
+class SessionStateConflictError(AppError):
+    """The repair session state does not allow the requested operation."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="session_state_conflict",
+            message="Repair session state does not allow this operation.",
+        )
+
+
+class StaleSessionError(AppError):
+    """A server-owned phase/session context is no longer current."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="stale_session",
+            message="Session context is stale.",
+        )
+
+
+class PayloadTooLargeError(AppError):
+    """An upload exceeded the configured public payload limit."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=413,
+            code="payload_too_large",
+            message="Uploaded payload is too large.",
+        )
+
+
+class ServerError(AppError):
+    """Unexpected server-side failure with a generic public response."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=500,
+            code="server_error",
+            message="Internal server error.",
         )
 
 

@@ -2,6 +2,7 @@
 
 import logging
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -31,6 +32,10 @@ class Settings(BaseSettings):
     dev_auth_display_name: str = "Dev User"
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
+    artifact_storage_provider: Literal["local", "gcs"] = "local"
+    artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
+    artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    diagnostic_agent_model: str = Field(default="gemini-2.5-flash", min_length=1)
 
     @field_validator("environment")
     @classmethod
@@ -103,6 +108,23 @@ class Settings(BaseSettings):
             log_format = value.strip().lower()
             return log_format or None
         return value
+
+    @field_validator("artifact_storage_provider", mode="before")
+    @classmethod
+    def validate_artifact_storage_provider(cls, value: object) -> object:
+        """Normalize the configured artifact storage provider."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("diagnostic_agent_model")
+    @classmethod
+    def validate_diagnostic_agent_model(cls, value: str) -> str:
+        """Normalize the diagnostic agent model setting."""
+        model = value.strip()
+        if not model:
+            raise ValueError("diagnostic_agent_model must not be empty")
+        return model
 
     @model_validator(mode="after")
     def validate_auth_environment(self) -> "Settings":
