@@ -1,0 +1,26 @@
+evals/bike-doc/datasets/README.md
+  s_4f7db062d1c658::t_5fd3717afcadcd 1-105
+evals/bike-doc/datasets/basic-dataset.json
+  s_4f7db062d1c658::t_5fd3717afcadcd 1-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "48d4e64aa2b5b3d2b824dd45516044d3506313d6",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_4f7db062d1c658": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019effe3-8765-7bd3-8a6a-c4d2db72a13b",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
