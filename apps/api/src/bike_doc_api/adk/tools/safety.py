@@ -63,7 +63,10 @@ class RaiseSafetyFlagTool:
         """Run raise_safety_flag and return the common tool envelope."""
 
         async def call() -> dict[str, Any]:
-            parsed = parse_tool_input(RaiseSafetyFlagInput, tool_input)
+            parsed: RaiseSafetyFlagInput = parse_tool_input(
+                RaiseSafetyFlagInput,
+                tool_input,
+            )
             validate_tool_context(
                 repair_session_id=parsed.repair_session_id,
                 context=context,

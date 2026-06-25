@@ -85,7 +85,10 @@ class SaveDiagnosticReportTool:
         """Run save_diagnostic_report and return the common tool envelope."""
 
         try:
-            parsed = parse_tool_input(SaveDiagnosticReportInput, tool_input)
+            parsed: SaveDiagnosticReportInput = parse_tool_input(
+                SaveDiagnosticReportInput,
+                tool_input,
+            )
             validate_tool_context(
                 repair_session_id=parsed.repair_session_id,
                 context=context,

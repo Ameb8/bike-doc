@@ -132,7 +132,10 @@ class RequestDiagnosticInputTool:
         """Run request_diagnostic_input and return the common tool envelope."""
 
         async def call() -> dict[str, Any]:
-            parsed = parse_tool_input(RequestDiagnosticInputInput, tool_input)
+            parsed: RequestDiagnosticInputInput = parse_tool_input(
+                RequestDiagnosticInputInput,
+                tool_input,
+            )
             validate_tool_context(
                 repair_session_id=parsed.repair_session_id,
                 context=context,
