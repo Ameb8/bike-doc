@@ -1,12 +1,20 @@
 """FastAPI dependencies."""
 
 from collections.abc import AsyncIterator
+from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header
+from google.adk.sessions import InMemorySessionService
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bike_doc_api.core.config import Settings, get_settings
+from bike_doc_api.adk.runner import DiagnosticRunner
+from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
+from bike_doc_api.core.config import (
+    Settings,
+    get_settings,
+    validate_diagnostic_runtime_configuration,
+)
 from bike_doc_api.core.security import validate_bearer_authorization
 from bike_doc_api.db.session import get_session_for_database_url
 from bike_doc_api.models.user import User
@@ -50,3 +58,36 @@ def get_storage_provider(
     if settings.artifact_storage_provider == "local":
         return LocalStorageProvider(settings.artifact_local_storage_root)
     return GCSStorageProvider()
+
+
+@lru_cache
+def get_adk_session_service() -> InMemorySessionService:
+    """Return the process-lifetime ADK in-memory session service."""
+
+    return InMemorySessionService()  # type: ignore[no-untyped-call]
+
+
+def get_diagnostic_adk_session_client(
+    session_service: Annotated[
+        InMemorySessionService,
+        Depends(get_adk_session_service),
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DiagnosticADKSessionClient:
+    """Build the diagnostic ADK session client around the shared service."""
+
+    validate_diagnostic_runtime_configuration(settings)
+    return DiagnosticADKSessionClient(session_service)
+
+
+def get_diagnostic_runner(
+    session_service: Annotated[
+        InMemorySessionService,
+        Depends(get_adk_session_service),
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> DiagnosticRunner:
+    """Build the diagnostic runner with the shared ADK session service."""
+
+    validate_diagnostic_runtime_configuration(settings)
+    return DiagnosticRunner(session_service=session_service)

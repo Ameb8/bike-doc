@@ -6,6 +6,12 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast
 
+from google.adk.sessions import InMemorySessionService
+
+from bike_doc_api.adk.sessions import (
+    StaleInMemoryADKSessionError,
+    ensure_adk_session_available,
+)
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
 
@@ -123,11 +129,44 @@ class DiagnosticRunnerProtocol(Protocol):
 class DiagnosticRunner:
     """Normalize diagnostic ADK output into app-owned runner events."""
 
-    def __init__(self, invoker: DiagnosticAgentInvoker | None = None) -> None:
+    def __init__(
+        self,
+        invoker: DiagnosticAgentInvoker | None = None,
+        *,
+        session_service: InMemorySessionService | None = None,
+    ) -> None:
         self._invoker = invoker
+        self._session_service = session_service
+
+    @property
+    def session_service(self) -> InMemorySessionService | None:
+        """Return the shared ADK session service used for resume checks."""
+
+        return self._session_service
 
     async def run(self, request: DiagnosticRunnerRequest) -> DiagnosticRunnerResult:
         """Invoke the configured diagnostic agent adapter."""
+
+        if self._session_service is not None:
+            try:
+                await ensure_adk_session_available(
+                    self._session_service,
+                    adk_session_id=request.adk_session_id,
+                )
+            except StaleInMemoryADKSessionError:
+                return DiagnosticRunnerResult(
+                    events=(
+                        DiagnosticRunnerRecoverableError(
+                            code="diagnostic_session_unavailable",
+                            message=(
+                                "Diagnostic processing needs a fresh turn because "
+                                "the in-memory session is no longer available."
+                            ),
+                            retryable=True,
+                        ),
+                    ),
+                    completed=True,
+                )
 
         if self._invoker is None:
             return DiagnosticRunnerResult()

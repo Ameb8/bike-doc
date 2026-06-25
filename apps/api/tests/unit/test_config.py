@@ -1,9 +1,14 @@
 """Configuration setup tests."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
-from bike_doc_api.core.config import Settings
+from bike_doc_api.core.config import (
+    Settings,
+    validate_diagnostic_runtime_configuration,
+)
 
 
 def test_settings_read_bike_doc_api_prefixed_environment(
@@ -27,7 +32,11 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_DISPLAY_NAME", "Configured User")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER", "google_ai")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL", "gemini-test")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE", "0.7")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS", "1024")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS", "12.5")
     monkeypatch.setenv("BIKE_DOC_API_UNIMPLEMENTED_SETTING", "ignored")
 
     settings = Settings()
@@ -47,7 +56,11 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.dev_auth_display_name == "Configured User"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
+    assert settings.diagnostic_llm_provider == "google_ai"
     assert settings.diagnostic_agent_model == "gemini-test"
+    assert settings.diagnostic_agent_temperature == 0.7
+    assert settings.diagnostic_agent_max_output_tokens == 1024
+    assert settings.diagnostic_agent_timeout_seconds == 12.5
 
 
 def test_empty_optional_log_settings_are_unset(
@@ -76,6 +89,118 @@ def test_blank_diagnostic_agent_model_is_rejected(
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_settings_accept_valid_diagnostic_runtime_settings() -> None:
+    settings = Settings(
+        environment="test",
+        diagnostic_llm_provider="vertex_ai",
+        diagnostic_agent_model="gemini-test",
+        diagnostic_agent_temperature=1.5,
+        diagnostic_agent_max_output_tokens=512,
+        diagnostic_agent_timeout_seconds=45,
+    )
+
+    assert settings.diagnostic_llm_provider == "vertex_ai"
+    assert settings.diagnostic_agent_model == "gemini-test"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("diagnostic_llm_provider", "local"),
+        ("diagnostic_agent_temperature", -0.1),
+        ("diagnostic_agent_temperature", 2.1),
+        ("diagnostic_agent_max_output_tokens", 0),
+        ("diagnostic_agent_timeout_seconds", 0),
+    ],
+)
+def test_invalid_diagnostic_runtime_settings_are_rejected(
+    field: str,
+    value: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        Settings(environment="test", **{field: value})
+
+
+def test_google_ai_runtime_validation_requires_api_key_outside_test() -> None:
+    settings = Settings(
+        environment="local",
+        diagnostic_llm_provider="google_ai",
+    )
+
+    with pytest.raises(ValueError):
+        validate_diagnostic_runtime_configuration(settings, environ={})
+
+
+def test_google_ai_runtime_validation_accepts_gemini_api_key() -> None:
+    settings = Settings(
+        environment="local",
+        diagnostic_llm_provider="google_ai",
+    )
+
+    validate_diagnostic_runtime_configuration(
+        settings,
+        environ={"GEMINI_API_KEY": "test-key"},
+    )
+
+
+def test_vertex_runtime_validation_requires_vertex_environment() -> None:
+    settings = Settings(
+        environment="local",
+        diagnostic_llm_provider="vertex_ai",
+    )
+
+    with pytest.raises(ValueError):
+        validate_diagnostic_runtime_configuration(
+            settings,
+            environ={
+                "GOOGLE_GENAI_USE_VERTEXAI": "true",
+                "GOOGLE_CLOUD_PROJECT": "bike-doc",
+            },
+        )
+
+
+def test_vertex_runtime_validation_accepts_required_environment() -> None:
+    settings = Settings(
+        environment="local",
+        diagnostic_llm_provider="vertex_ai",
+    )
+
+    validate_diagnostic_runtime_configuration(
+        settings,
+        environ={
+            "GOOGLE_GENAI_USE_VERTEXAI": "true",
+            "GOOGLE_CLOUD_PROJECT": "bike-doc",
+            "GOOGLE_CLOUD_LOCATION": "us-central1",
+        },
+    )
+
+
+def test_runtime_validation_is_bypassed_in_test_environment() -> None:
+    validate_diagnostic_runtime_configuration(
+        Settings(environment="test", diagnostic_llm_provider="vertex_ai"),
+        environ={},
+    )
+
+
+def test_env_example_documents_diagnostic_runtime_settings() -> None:
+    env_example = Path(__file__).resolve().parents[4] / ".env.example"
+    content = env_example.read_text(encoding="utf-8")
+
+    for variable in [
+        "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
+        "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
+        "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
+        "BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS",
+        "BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+    ]:
+        assert variable in content
 
 
 def test_dev_auth_mode_is_rejected_in_production() -> None:

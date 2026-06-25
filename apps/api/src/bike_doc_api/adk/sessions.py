@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from google.adk.sessions import InMemorySessionService
 from sqlalchemy.exc import IntegrityError
 
 from bike_doc_api.models._ids import generate_prefixed_ulid
@@ -16,6 +17,9 @@ from bike_doc_api.models.repair_session import (
 from bike_doc_api.schemas.common import RepairSessionPhase
 
 logger = logging.getLogger(__name__)
+
+DIAGNOSTIC_ADK_APP_NAME = "bike_doc_diagnostic"
+DIAGNOSTIC_ADK_USER_ID = "backend_system"
 
 
 class DiagnosticADKSessionClientProtocol(Protocol):
@@ -52,7 +56,7 @@ class RepairPhaseSessionRepositoryProtocol(Protocol):
 
 
 class LocalDiagnosticADKSessionClient:
-    """Local opaque ADK session placeholder used until a live ADK adapter exists."""
+    """Small fake ADK session client retained for isolated tests."""
 
     async def create_session(
         self,
@@ -69,6 +73,75 @@ class LocalDiagnosticADKSessionClient:
         """Discard a local session ID."""
 
         _ = adk_session_id
+
+
+class StaleInMemoryADKSessionError(Exception):
+    """Recoverable missing process-local ADK session state."""
+
+
+class DiagnosticADKSessionClient:
+    """ADK session client backed by a shared process-local session service."""
+
+    def __init__(self, session_service: InMemorySessionService) -> None:
+        self._session_service = session_service
+
+    @property
+    def session_service(self) -> InMemorySessionService:
+        """Return the shared ADK session service for dependency lifecycle tests."""
+
+        return self._session_service
+
+    async def create_session(
+        self,
+        *,
+        repair_session_id: str,
+        phase: RepairSessionPhase,
+    ) -> str:
+        """Create a raw ADK session and return only its opaque internal ID."""
+
+        adk_session_id = f"adk_{phase.value}_{generate_prefixed_ulid('sess_')}"
+        await self._session_service.create_session(
+            app_name=DIAGNOSTIC_ADK_APP_NAME,
+            user_id=DIAGNOSTIC_ADK_USER_ID,
+            session_id=adk_session_id,
+            state={
+                "repair_session_id": repair_session_id,
+                "phase": phase.value,
+            },
+        )
+        return adk_session_id
+
+    async def close_session(self, *, adk_session_id: str) -> None:
+        """Best-effort cleanup for an ADK session that lost a creation race."""
+
+        delete_session = getattr(self._session_service, "delete_session", None)
+        if delete_session is None:
+            return
+
+        try:
+            await delete_session(
+                app_name=DIAGNOSTIC_ADK_APP_NAME,
+                user_id=DIAGNOSTIC_ADK_USER_ID,
+                session_id=adk_session_id,
+            )
+        except Exception:
+            logger.warning("diagnostic_adk_session_cleanup_failed")
+
+
+async def ensure_adk_session_available(
+    session_service: InMemorySessionService,
+    *,
+    adk_session_id: str,
+) -> None:
+    """Raise a recoverable error if process-local ADK session state is missing."""
+
+    session = await session_service.get_session(
+        app_name=DIAGNOSTIC_ADK_APP_NAME,
+        user_id=DIAGNOSTIC_ADK_USER_ID,
+        session_id=adk_session_id,
+    )
+    if session is None:
+        raise StaleInMemoryADKSessionError()
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,7 +215,6 @@ class DiagnosticPhaseSessionManager:
         except Exception:
             logger.warning(
                 "diagnostic_adk_session_cleanup_failed",
-                extra={"adk_session_id": adk_session_id},
             )
 
     async def _rollback_if_configured(self) -> None:

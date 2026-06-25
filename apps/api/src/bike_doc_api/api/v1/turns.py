@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
-from bike_doc_api.adk.runner import DiagnosticRunner
+from bike_doc_api.adk.runner import DiagnosticRunnerProtocol
 from bike_doc_api.adk.sessions import (
+    DiagnosticADKSessionClientProtocol,
     DiagnosticPhaseSessionManager,
-    LocalDiagnosticADKSessionClient,
 )
 from bike_doc_api.adk.tools.artifacts import ListDiagnosticArtifactsTool
 from bike_doc_api.adk.tools.bike_profile import (
@@ -29,7 +29,13 @@ from bike_doc_api.adk.tools.reports import (
     SaveDiagnosticReportTool,
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
-from bike_doc_api.api.deps import get_current_user, get_db_session, get_storage_provider
+from bike_doc_api.api.deps import (
+    get_current_user,
+    get_db_session,
+    get_diagnostic_adk_session_client,
+    get_diagnostic_runner,
+    get_storage_provider,
+)
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.providers.storage import StorageProvider
@@ -57,6 +63,14 @@ def get_turn_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     storage: Annotated[StorageProvider, Depends(get_storage_provider)],
+    adk_sessions: Annotated[
+        DiagnosticADKSessionClientProtocol,
+        Depends(get_diagnostic_adk_session_client),
+    ],
+    diagnostic_runner: Annotated[
+        DiagnosticRunnerProtocol,
+        Depends(get_diagnostic_runner),
+    ],
 ) -> TurnService:
     """Build the turn service for this request."""
 
@@ -67,7 +81,7 @@ def get_turn_service(
     artifacts = ArtifactRepository(session)
     phase_session_manager = DiagnosticPhaseSessionManager(
         phase_sessions=phase_sessions,
-        adk_sessions=LocalDiagnosticADKSessionClient(),
+        adk_sessions=adk_sessions,
         commit=session.commit,
         rollback=session.rollback,
     )
@@ -121,7 +135,7 @@ def get_turn_service(
             commit=session.commit,
             rollback=session.rollback,
         ),
-        runner=DiagnosticRunner(),
+        runner=diagnostic_runner,
         get_bike_profile=GetBikeProfileTool(
             cast(BikeProfileServiceProtocol, repair_session_service),
         ),

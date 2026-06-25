@@ -1,7 +1,10 @@
 """Application settings."""
 
 import logging
+import os
+from collections.abc import Mapping
 from functools import lru_cache
+from math import isfinite
 from pathlib import Path
 from typing import Literal
 
@@ -35,7 +38,11 @@ class Settings(BaseSettings):
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    diagnostic_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     diagnostic_agent_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
+    diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
 
     @field_validator("environment")
     @classmethod
@@ -126,6 +133,25 @@ class Settings(BaseSettings):
             raise ValueError("diagnostic_agent_model must not be empty")
         return model
 
+    @field_validator("diagnostic_llm_provider", mode="before")
+    @classmethod
+    def validate_diagnostic_llm_provider(cls, value: object) -> object:
+        """Normalize the diagnostic LLM provider setting."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator(
+        "diagnostic_agent_temperature",
+        "diagnostic_agent_timeout_seconds",
+    )
+    @classmethod
+    def validate_finite_diagnostic_float(cls, value: float) -> float:
+        """Reject non-finite diagnostic generation settings."""
+        if not isfinite(value):
+            raise ValueError("diagnostic numeric settings must be finite")
+        return value
+
     @model_validator(mode="after")
     def validate_auth_environment(self) -> "Settings":
         """Prevent local fixed-token auth from being enabled in production."""
@@ -138,3 +164,31 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached process settings."""
     return Settings()
+
+
+def validate_diagnostic_runtime_configuration(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate provider credentials required by the configured ADK runtime."""
+
+    if settings.environment.lower() == "test":
+        return
+
+    env = environ if environ is not None else os.environ
+    if settings.diagnostic_llm_provider == "google_ai":
+        if env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY"):
+            return
+        raise ValueError(
+            "google_ai diagnostic runtime requires GEMINI_API_KEY or GOOGLE_API_KEY",
+        )
+
+    if env.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() != "true":
+        raise ValueError(
+            "vertex_ai diagnostic runtime requires GOOGLE_GENAI_USE_VERTEXAI=true",
+        )
+    if not env.get("GOOGLE_CLOUD_PROJECT"):
+        raise ValueError("vertex_ai diagnostic runtime requires GOOGLE_CLOUD_PROJECT")
+    if not env.get("GOOGLE_CLOUD_LOCATION"):
+        raise ValueError("vertex_ai diagnostic runtime requires GOOGLE_CLOUD_LOCATION")

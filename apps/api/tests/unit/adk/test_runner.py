@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from google.adk.sessions import InMemorySessionService
+
 from bike_doc_api.adk.runner import (
     DiagnosticRunner,
     DiagnosticRunnerAssistantDelta,
@@ -101,3 +103,20 @@ async def test_runner_does_not_expose_raw_adk_structures() -> None:
     assert isinstance(error, DiagnosticRunnerRecoverableError)
     assert error.code == "provider_timeout"
     assert "adk" not in repr(error).lower()
+
+
+async def test_runner_detects_missing_in_memory_adk_session_as_recoverable() -> None:
+    async def invoke(_: DiagnosticRunnerRequest) -> list[Any]:
+        raise AssertionError("stale ADK sessions must not invoke the agent")
+
+    result = await DiagnosticRunner(
+        invoke,
+        session_service=InMemorySessionService(),
+    ).run(_request())
+
+    assert len(result.events) == 1
+    error = result.events[0]
+    assert isinstance(error, DiagnosticRunnerRecoverableError)
+    assert error.code == "diagnostic_session_unavailable"
+    assert error.retryable is True
+    assert "adk" not in error.message.lower()
