@@ -1,0 +1,27 @@
+apps/api/tests/unit/adk/test_orchestration.py
+  s_5ad59743096371::t_a1ab071ca0819c 5,157-166
+apps/api/tests/unit/adk/test_runner.py
+  s_5ad59743096371::t_0d9be2034c6485 5-7,9,11,21,23,40-117,168-171,173-178,180,182-340,344,346-352,354-355,360-389,391-404,406-514
+  s_5ad59743096371::t_e92faf6116832a 390,405
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "2bd6b77069d994f2d5c829ce1797bb2d648b6e2a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_5ad59743096371": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0117-f37f-7a43-9e71-8adb9b5010c5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
