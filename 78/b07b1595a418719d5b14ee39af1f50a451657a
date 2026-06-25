@@ -1,0 +1,45 @@
+agents-cli-manifest.yaml
+  s_4f7db062d1c658::t_c4941cb0e2b6ff 3,5,15
+  s_2a87ab6f3f44de::t_cba70e9d64328d 16-20
+  s_2a87ab6f3f44de::t_8bfab9bf536ede 1-2,4,6-14
+pyproject.toml
+  s_2a87ab6f3f44de::t_8bfab9bf536ede 1,3,6,8-11,14-17,20-21,25,29,36-37,44-46,58-60,62,67
+  s_4f7db062d1c658::t_93cd0e728c3390 2,4-5,7,12-13,18-19,22-24,26-28,30-35,38-43,47-57,61,63-66,68-69
+apps/api/tests/unit/adk/test_agents_cli_entrypoint.py
+  s_4f7db062d1c658::t_93cd0e728c3390 1-10
+.gitignore
+  s_4f7db062d1c658::t_c4941cb0e2b6ff 61-63,98
+apps/api/src/bike_doc_api_adk_agent/__init__.py
+  s_4f7db062d1c658::t_93cd0e728c3390 1-20
+apps/api/pyproject.toml
+  s_4f7db062d1c658::t_5fd3717afcadcd 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "78b07b1595a418719d5b14ee39af1f50a451657a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2a87ab6f3f44de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019effd8-9036-7571-875f-f098eeeede56",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_4f7db062d1c658": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019effe3-8765-7bd3-8a6a-c4d2db72a13b",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
