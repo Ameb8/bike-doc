@@ -1,0 +1,26 @@
+apps/api/tests/unit/adk/test_adk_compatibility.py
+  s_468fb5636ca367::t_fa695c2f38f918 1-155
+apps/api/pyproject.toml
+  s_468fb5636ca367::t_004a014760d6d1 15-16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "954bef926652a61a1dda9de55307be12babc5b82",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_468fb5636ca367": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019effd3-a23c-7341-a390-1b68407cc975",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
