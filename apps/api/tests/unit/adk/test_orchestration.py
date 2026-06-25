@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -153,6 +153,17 @@ class _Runner:
         if self.raises:
             raise RuntimeError("boom")
         return DiagnosticRunnerResult(events=tuple(self.events), completed=True)
+
+    def stream(
+        self,
+        request: DiagnosticRunnerRequest,
+    ) -> AsyncIterator[Any]:
+        async def _events() -> AsyncIterator[Any]:
+            result = await self.run(request)
+            for event in result.events:
+                yield event
+
+        return _events()
 
 
 @dataclass
