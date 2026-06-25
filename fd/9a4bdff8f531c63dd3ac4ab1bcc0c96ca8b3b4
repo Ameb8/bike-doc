@@ -1,0 +1,38 @@
+docs/specs/apps/adk-wiring-spec.md
+  s_12b71353e3ee45::t_c4ad0ecc8f9b6e 17-25,37-38
+  s_12b71353e3ee45::t_48b30939eeb57e 162-163,563-567
+  s_12b71353e3ee45::t_cea40ee1ca3dbe 217-224,226-240,344-346,353-370,407-424
+  s_543e96d903d323::t_74a6b2a6ccceb5 450-452
+  s_12b71353e3ee45::t_0dc0973cfb4cbf 472-552,568-579
+  s_12b71353e3ee45::t_97f5c72bfb675f 56-130,178-197
+  s_543e96d903d323::t_eac6d0fdc7ff50 30-31,199-216,225,241-316,351-352,371-406,425-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "fd9a4bdff8f531c63dd3ac4ab1bcc0c96ca8b3b4",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_12b71353e3ee45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efda0-da51-7d71-9754-55110f1b29c2",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_543e96d903d323": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efd92-1e58-78b1-8f77-8852ee8b293a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
