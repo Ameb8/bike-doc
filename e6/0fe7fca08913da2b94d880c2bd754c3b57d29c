@@ -1,0 +1,28 @@
+apps/api/tests/unit/test_config.py
+  s_a29f783491a60d::t_494549ebfbdf54 30,50,72-75
+apps/api/tests/unit/adk/test_diagnostic_agent.py
+  s_a29f783491a60d::t_ca9de57f874aa6 1-84,86-90,92-121
+  s_a29f783491a60d::t_a66aec23145ea1 85
+  s_a29f783491a60d::t_7a5d46a83f8bd5 91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "e60fe7fca08913da2b94d880c2bd754c3b57d29c",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_a29f783491a60d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efc04-26c8-7420-b585-d8a71af44929",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
