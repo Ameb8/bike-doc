@@ -1,0 +1,46 @@
+apps/api/tests/unit/adk/test_runner.py
+  s_eb40a3b324c1fc::t_85e1fd35a1db5a 7-8,106-122
+apps/api/src/bike_doc_api/api/v1/turns.py
+  s_eb40a3b324c1fc::t_2a42f6f344cf4c 9,11,32-38,66-73,84,138
+.env.example
+  s_eb40a3b324c1fc::t_c628a08d1075e9 37-40,42-53
+apps/api/tests/unit/test_config.py
+  s_eb40a3b324c1fc::t_8b6734757d7299 3-4,8-11,35,37-39,59,61-63,94-187,189-203
+  s_eb40a3b324c1fc::t_b5b974b081be79 188
+apps/api/src/bike_doc_api/adk/sessions.py
+  s_eb40a3b324c1fc::t_20aea9d53c3d4b 10,21-22,78-144
+  s_eb40a3b324c1fc::t_92f0361ddc541e 59
+apps/api/src/bike_doc_api/core/config.py
+  s_eb40a3b324c1fc::t_e8b3c5c5607846 7,41,43-45,136-154,167-194
+  s_eb40a3b324c1fc::t_96bf1aa3cd6719 4-5
+apps/api/tests/unit/adk/test_sessions.py
+  s_eb40a3b324c1fc::t_62e2443b90e4ff 7-8,11-18,20,89-136
+apps/api/src/bike_doc_api/api/deps.py
+  s_eb40a3b324c1fc::t_89694815d38bb2 4,8,11-17,61-66,68-93
+  s_eb40a3b324c1fc::t_bb417fe6f289b5 67
+apps/api/src/bike_doc_api/adk/runner.py
+  s_eb40a3b324c1fc::t_ae7602c4570dae 9-14,132-137,139-145,150-169
+apps/api/tests/unit/adk/test_dependency_wiring.py
+  s_eb40a3b324c1fc::t_66771cde416718 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "f40f9593bd93e324bc1b47fd278863cb503e63dc",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_eb40a3b324c1fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019efff7-f1b8-7240-af01-bd1698fc1dd4",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
