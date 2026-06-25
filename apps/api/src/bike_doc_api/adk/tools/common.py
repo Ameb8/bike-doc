@@ -43,6 +43,10 @@ class DiagnosticToolContext(BaseModel):
     active_phase: RepairSessionPhase = RepairSessionPhase.DIAGNOSTIC
     diagnostic_session_id: str
     turn_id: str | None = None
+    artifact_ids: tuple[str, ...] = ()
+    bike_profile: Mapping[str, Any] | None = None
+    repair_history: tuple[Mapping[str, Any], ...] = ()
+    diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

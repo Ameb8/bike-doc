@@ -3,10 +3,12 @@
 from typing import Annotated, cast
 
 from fastapi import APIRouter, Depends, Path, status
+from google.adk.sessions import InMemorySessionService
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bike_doc_api.adk.agents.diagnostic import create_diagnostic_agent
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
-from bike_doc_api.adk.runner import DiagnosticRunnerProtocol
+from bike_doc_api.adk.runner import DiagnosticRunner
 from bike_doc_api.adk.sessions import (
     DiagnosticADKSessionClientProtocol,
     DiagnosticPhaseSessionManager,
@@ -29,11 +31,12 @@ from bike_doc_api.adk.tools.reports import (
     SaveDiagnosticReportTool,
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
+from bike_doc_api.adk.tools.tool_catalog import DiagnosticAgentToolDependencies
 from bike_doc_api.api.deps import (
+    get_adk_session_service,
     get_current_user,
     get_db_session,
     get_diagnostic_adk_session_client,
-    get_diagnostic_runner,
     get_storage_provider,
 )
 from bike_doc_api.core.config import Settings, get_settings
@@ -67,9 +70,9 @@ def get_turn_service(
         DiagnosticADKSessionClientProtocol,
         Depends(get_diagnostic_adk_session_client),
     ],
-    diagnostic_runner: Annotated[
-        DiagnosticRunnerProtocol,
-        Depends(get_diagnostic_runner),
+    adk_session_service: Annotated[
+        InMemorySessionService,
+        Depends(get_adk_session_service),
     ],
 ) -> TurnService:
     """Build the turn service for this request."""
@@ -123,6 +126,24 @@ def get_turn_service(
         events,
         commit=session.commit,
         rollback=session.rollback,
+    )
+    tool_dependencies = DiagnosticAgentToolDependencies(
+        bike_profile_service=cast(BikeProfileServiceProtocol, repair_session_service),
+        repair_history_service=cast(
+            RepairHistoryServiceProtocol,
+            repair_session_service,
+        ),
+        artifact_service=artifact_service,
+        input_request_service=cast(
+            DiagnosticInputRequestServiceProtocol,
+            input_request_service,
+        ),
+        safety_service=cast(SafetyServiceProtocol, safety_service),
+        report_service=cast(DiagnosticReportServiceProtocol, report_service),
+    )
+    diagnostic_runner = DiagnosticRunner(
+        agent=create_diagnostic_agent(tool_dependencies, settings=settings),
+        session_service=adk_session_service,
     )
     orchestrator = DiagnosticTurnOrchestrator(
         phase_sessions=phase_sessions,

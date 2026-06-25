@@ -511,4 +511,6 @@ def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
 
     if not isinstance(value, list):
         return ()
-    return tuple(item for item in value if isinstance(item, Mapping))
+    return tuple(
+        cast(Mapping[str, Any], item) for item in value if isinstance(item, Mapping)
+    )
