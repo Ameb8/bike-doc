@@ -15,7 +15,7 @@ from bike_doc_api.adk.runner import (
     DiagnosticRunnerRecoverableError,
     DiagnosticRunnerReportCompleted,
     DiagnosticRunnerRequest,
-    DiagnosticRunnerResult,
+    DiagnosticRunnerSafetyEscalated,
 )
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.event import RepairSessionEvent
@@ -29,7 +29,7 @@ from bike_doc_api.schemas.event import (
     RepairSessionEventType,
     validate_repair_session_event_data,
 )
-from bike_doc_api.schemas.repair_session import InputRequest, repair_session_from_model
+from bike_doc_api.schemas.repair_session import repair_session_from_model
 
 
 class _Store:
@@ -139,28 +139,42 @@ class _EventService:
 
 
 class _Runner:
-    """Fake runner returning configured app-owned events."""
+    """Fake runner streaming configured app-owned events."""
 
     def __init__(
-        self, events: list[Any] | None = None, *, raises: bool = False
+        self,
+        events: list[Any] | None = None,
+        *,
+        raises: bool = False,
+        before_emit: dict[int, Any] | None = None,
     ) -> None:
         self.events = events or []
         self.raises = raises
         self.requests: list[DiagnosticRunnerRequest] = []
+        self.run_called = 0
+        self.stream_called = 0
+        self.before_emit = before_emit or {}
 
-    async def run(self, request: DiagnosticRunnerRequest) -> DiagnosticRunnerResult:
-        self.requests.append(request)
-        if self.raises:
-            raise RuntimeError("boom")
-        return DiagnosticRunnerResult(events=tuple(self.events), completed=True)
+    async def run(self, request: DiagnosticRunnerRequest) -> object:
+        self.run_called += 1
+        msg = "production orchestration must consume runner.stream(...)"
+        raise AssertionError(msg)
 
     def stream(
         self,
         request: DiagnosticRunnerRequest,
     ) -> AsyncIterator[Any]:
         async def _events() -> AsyncIterator[Any]:
-            result = await self.run(request)
-            for event in result.events:
+            self.stream_called += 1
+            self.requests.append(request)
+            if self.raises:
+                raise RuntimeError("raw provider credentials")
+            for index, event in enumerate(self.events):
+                before_emit = self.before_emit.get(index)
+                if before_emit is not None:
+                    before_emit()
+                if isinstance(event, BaseException):
+                    raise event
                 yield event
 
         return _events()
@@ -213,6 +227,7 @@ def _orchestrator(
     store: _Store,
     runner: _Runner,
     input_tool: _Tool | None = None,
+    safety_tool: _Tool | None = None,
     report_tool: _Tool | None = None,
 ) -> DiagnosticTurnOrchestrator:
     calls: list[dict[str, Any]] = []
@@ -233,7 +248,7 @@ def _orchestrator(
             calls,
         ),
         request_diagnostic_input=input_tool or _Tool({"ok": True, "data": {}}, calls),
-        raise_safety_flag=_Tool({"ok": True, "data": {}}, calls),
+        raise_safety_flag=safety_tool or _Tool({"ok": True, "data": {}}, calls),
         save_diagnostic_report=report_tool or _Tool({"ok": True, "data": {}}, calls),
     )
 
@@ -248,17 +263,24 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     )
 
     request = runner.requests[0]
+    assert runner.stream_called == 1
+    assert runner.run_called == 0
     assert request.user_id == "usr_orch"
     assert request.user_skill_level == "beginner"
     assert request.repair_session_id == "rs_orch"
+    assert request.turn_id == "turn_orch"
     assert request.diagnostic_session_id == "phs_orch"
     assert request.adk_session_id == "adk_internal_orch"
+    assert request.message_text == "The chain skips."
+    assert request.artifact_ids == ("art_1",)
     assert request.bike_profile == {"id": "bike_orch"}
+    assert request.repair_history == ()
     assert request.diagnostic_artifacts == ({"id": "art_1"},)
     assert [event.type for event in store.events] == [
         "artifact.referenced",
         "turn.completed",
     ]
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
 
 
 async def test_assistant_output_becomes_public_events() -> None:
@@ -285,26 +307,43 @@ async def test_assistant_output_becomes_public_events() -> None:
         "turn.completed",
     ]
     assert store.events[0].data == {"text": "Check cable tension."}
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
 
 
-async def test_input_request_output_uses_tool_path() -> None:
+async def test_assistant_delta_is_appended_while_runner_iteration_is_active() -> None:
     store = _Store()
-    input_request = InputRequest(
-        id="req_1",
-        type="photo",
-        prompt="Upload a drivetrain photo.",
-        required=True,
-        accepted_media_types=["image/jpeg"],
-        choices=[],
-        min_artifacts=1,
-        max_artifacts=3,
-        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+
+    def assert_delta_already_persisted() -> None:
+        assert [event.type for event in store.events] == ["assistant.delta"]
+
+    runner = _Runner(
+        [
+            DiagnosticRunnerAssistantDelta("Check cable tension."),
+            DiagnosticRunnerAssistantMessageCompleted(
+                message_id="msg_1",
+                full_text="Check cable tension.",
+                artifact_ids=(),
+            ),
+        ],
+        before_emit={1: assert_delta_already_persisted},
     )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == [
+        "assistant.delta",
+        "assistant.message.completed",
+        "turn.completed",
+    ]
+
+
+async def test_input_request_notification_does_not_rerun_tool() -> None:
+    store = _Store()
     input_tool = _Tool(
-        {
-            "ok": True,
-            "data": {"input_request": input_request.model_dump(mode="json")},
-        },
+        {"ok": True, "data": {}},
         [],
     )
     runner = _Runner(
@@ -325,31 +364,21 @@ async def test_input_request_output_uses_tool_path() -> None:
         input_tool=input_tool,
     ).process_turn(current_user=_user(), turn=_turn())
 
-    assert input_tool.calls[0]["input"]["type"] == "photo"
-    assert input_tool.calls[0]["input"]["min_artifacts"] == 1
+    assert input_tool.calls == []
     assert store.events[-1].type == "turn.completed"
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
 
 
-async def test_report_completion_uses_save_report_tool_and_completes_turn() -> None:
+async def test_report_completion_notification_does_not_rerun_save_report_tool() -> None:
     store = _Store()
     report_tool = _Tool({"ok": True, "data": {"report_id": "rpt_1"}}, [])
     runner = _Runner(
         [
             DiagnosticRunnerReportCompleted(
                 summary="Likely indexing issue.",
-                report={
-                    "schema_version": "diagnostic_report.v1",
-                    "primary_diagnosis": {
-                        "component": "rear derailleur",
-                        "issue": "Cable tension is likely low.",
-                        "confidence": "medium",
-                    },
-                    "alternate_hypotheses": [],
-                    "evidence_summary": "User reports skipping.",
-                    "key_artifact_ids": [],
-                    "user_skill_level": "beginner",
-                    "safety_flags": [],
-                },
+                report_id="rpt_1",
+                schema_version="diagnostic_report.v1",
+                safety_state="ok",
             ),
         ],
     )
@@ -360,17 +389,50 @@ async def test_report_completion_uses_save_report_tool_and_completes_turn() -> N
         report_tool=report_tool,
     ).process_turn(current_user=_user(), turn=_turn())
 
-    assert report_tool.calls[0]["input"]["summary"] == "Likely indexing issue."
+    assert report_tool.calls == []
     assert store.events[-1].type == "turn.completed"
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
     assert store.events[-1].data["session"] == repair_session_from_model(
         store.session,
     ).model_dump(mode="json")
+
+
+async def test_safety_escalation_notification_does_not_rerun_safety_tool() -> None:
+    store = _Store()
+    safety_tool = _Tool({"ok": True, "data": {}}, [])
+    runner = _Runner(
+        [
+            DiagnosticRunnerSafetyEscalated(
+                safety_state="blocked",
+                safety_flags=(
+                    {
+                        "code": "brake_failure_suspected",
+                        "severity": "blocking",
+                        "phase": "diagnostic",
+                        "message": "Do not ride until brakes are inspected.",
+                        "blocks_repair_instructions": True,
+                    },
+                ),
+            ),
+        ],
+    )
+
+    await _orchestrator(
+        store=store,
+        runner=runner,
+        safety_tool=safety_tool,
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert safety_tool.calls == []
+    assert store.events[-1].type == "turn.completed"
+    assert store.events[-1].data["session"]["status"] == "blocked_safety"
 
 
 async def test_recoverable_processing_failure_persists_public_error() -> None:
     store = _Store()
     runner = _Runner(
         [
+            DiagnosticRunnerAssistantDelta("Check cable tension."),
             DiagnosticRunnerRecoverableError(
                 code="provider_timeout",
                 message="Diagnostic processing timed out.",
@@ -384,12 +446,38 @@ async def test_recoverable_processing_failure_persists_public_error() -> None:
         turn=_turn(),
     )
 
-    assert [event.type for event in store.events] == ["error", "turn.completed"]
-    assert store.events[0].data == {
+    assert [event.type for event in store.events] == [
+        "assistant.delta",
+        "error",
+        "turn.completed",
+    ]
+    assert store.events[1].data == {
         "code": "provider_timeout",
         "message": "Diagnostic processing timed out.",
         "retryable": True,
     }
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_non_retryable_runner_error_marks_session_failed() -> None:
+    store = _Store()
+    runner = _Runner(
+        [
+            DiagnosticRunnerRecoverableError(
+                code="runner_output_invalid",
+                message="Diagnostic runner produced an invalid tool response.",
+                retryable=False,
+            ),
+        ],
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == ["error", "turn.completed"]
+    assert store.events[-1].data["session"]["status"] == "failed"
 
 
 async def test_runner_exception_persists_public_error() -> None:
@@ -402,3 +490,37 @@ async def test_runner_exception_persists_public_error() -> None:
 
     assert [event.type for event in store.events] == ["error", "turn.completed"]
     assert store.events[0].data["code"] == "diagnostic_processing_error"
+    assert store.events[0].data["message"] == (
+        "Diagnostic processing could not be completed."
+    )
+    assert "credential" not in repr(store.events)
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_stream_exception_after_prior_event_preserves_order() -> None:
+    store = _Store()
+    runner = _Runner(
+        [
+            DiagnosticRunnerAssistantDelta("Check cable tension."),
+            RuntimeError("raw provider metadata"),
+        ],
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == [
+        "assistant.delta",
+        "error",
+        "turn.completed",
+    ]
+    assert store.events[1].data == {
+        "code": "diagnostic_processing_error",
+        "message": "Diagnostic processing could not be completed.",
+        "retryable": True,
+    }
+    assert "raw provider" not in repr(store.events)
+    assert "adk_internal_orch" not in repr(store.events)
+    assert store.events[-1].data["session"]["status"] != "running"
