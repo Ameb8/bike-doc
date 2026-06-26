@@ -1,0 +1,25 @@
+apps/api/tests/unit/services/test_event_service.py
+  s_b7e6e80ecd50d7::t_f815040153ade1 172
+  s_b7e6e80ecd50d7::t_03f2646dfe32e8 5-6,13,141-171,173-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "68a03e7c2f04ccae7a2bc9b7fad0ad40ebdd9cd5",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_b7e6e80ecd50d7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f04d1-7347-72a2-a6ac-767e551946cb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
