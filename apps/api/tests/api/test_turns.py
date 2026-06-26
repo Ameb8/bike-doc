@@ -13,6 +13,7 @@ from conftest import ApiTestUser, assert_error_response, assert_repair_session_s
 from fastapi import FastAPI, Header
 
 from bike_doc_api.api.deps import get_current_user
+from bike_doc_api.api.v1 import turns as turns_route
 from bike_doc_api.api.v1.events import get_event_service
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.errors import AuthenticationError
@@ -76,7 +77,7 @@ class _InMemoryTurnStore:
         self.phase_sessions: dict[tuple[str, str], RepairPhaseSessionModel] = {}
         self.turns: dict[tuple[str, str], RepairTurnModel] = {}
         self.events: list[RepairSessionEventModel] = []
-        self.orchestrated_turn_ids: list[str] = []
+        self.background_calls: list[tuple[str, str, str]] = []
         self.artifacts = {
             OWNED_ARTIFACT_ID: ArtifactRefModel(
                 id=OWNED_ARTIFACT_ID,
@@ -259,38 +260,41 @@ class _InMemoryTurnStore:
         ][:limit]
 
 
-class _CompletedTurnOrchestrator:
-    """Fake orchestration boundary used by route tests."""
+async def _complete_turn_in_background(
+    store: _InMemoryTurnStore,
+    *,
+    user_id: str,
+    repair_session_id: str,
+    turn_id: str,
+) -> None:
+    """Fake background task that records primitive IDs and completes the turn."""
 
-    def __init__(self, store: _InMemoryTurnStore) -> None:
-        self.store = store
-
-    async def process_turn(
-        self,
-        *,
-        current_user: UserModel,
-        turn: RepairTurnModel,
-    ) -> None:
-        self.store.orchestrated_turn_ids.append(turn.id)
-        session = self.store.sessions[turn.repair_session_id]
-        sequence = session.latest_event_sequence + 1
-        session.latest_event_sequence = sequence
-        event_data = validate_repair_session_event_data(
-            RepairSessionEventType.TURN_COMPLETED,
-            {
-                "turn_id": turn.id,
-                "session": repair_session_from_model(session).model_dump(mode="json"),
-            },
-        )
-        await self.store.add(
-            RepairSessionEventModel(
-                repair_session_id=session.id,
-                turn_id=turn.id,
-                sequence=sequence,
-                type=RepairSessionEventType.TURN_COMPLETED.value,
-                data=event_data,
-            ),
-        )
+    store.background_calls.append((user_id, repair_session_id, turn_id))
+    turn = next(
+        persisted_turn
+        for persisted_turn in store.turns.values()
+        if persisted_turn.id == turn_id
+    )
+    session = store.sessions[turn.repair_session_id]
+    sequence = session.latest_event_sequence + 1
+    session.status = "awaiting_user"
+    session.latest_event_sequence = sequence
+    event_data = validate_repair_session_event_data(
+        RepairSessionEventType.TURN_COMPLETED,
+        {
+            "turn_id": turn.id,
+            "session": repair_session_from_model(session).model_dump(mode="json"),
+        },
+    )
+    await store.add(
+        RepairSessionEventModel(
+            repair_session_id=session.id,
+            turn_id=turn.id,
+            sequence=sequence,
+            type=RepairSessionEventType.TURN_COMPLETED.value,
+            data=event_data,
+        ),
+    )
 
 
 def _parse_sse_frames(text: str) -> list[dict[str, Any]]:
@@ -312,6 +316,7 @@ def _parse_sse_frames(text: str) -> list[dict[str, Any]]:
 def turn_service_override(
     app: FastAPI,
     test_user: ApiTestUser,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[_InMemoryTurnStore]:
     """Override turn and event services with shared in-memory storage."""
 
@@ -322,9 +327,26 @@ def turn_service_override(
         store,
         store,
         store,
-        orchestrator=_CompletedTurnOrchestrator(store),
     )
     event_service = EventService(store, store)
+
+    async def execute_background(
+        user_id: str,
+        repair_session_id: str,
+        turn_id: str,
+    ) -> None:
+        await _complete_turn_in_background(
+            store,
+            user_id=user_id,
+            repair_session_id=repair_session_id,
+            turn_id=turn_id,
+        )
+
+    monkeypatch.setattr(
+        turns_route,
+        "execute_diagnostic_turn_background",
+        execute_background,
+    )
     app.dependency_overrides[get_turn_service] = lambda: turn_service
     app.dependency_overrides[get_event_service] = lambda: event_service
     yield store
@@ -362,6 +384,7 @@ async def test_submit_valid_diagnostic_turn_returns_accepted(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     test_user: ApiTestUser,
+    turn_service_override: _InMemoryTurnStore,
 ) -> None:
     response = await _post_turn(
         api_client,
@@ -375,13 +398,24 @@ async def test_submit_valid_diagnostic_turn_returns_accepted(
     assert body["turn_id"].startswith("turn_") or body["turn_id"]
     assert body["repair_session_id"] == OWNED_SESSION_ID
     assert body["start_event_id"]
+    assert body["start_event_id"] == "1"
+    assert not body["start_event_id"].startswith("evt_")
     assert body["event_stream_url"] == (
         f"/v1/repair-sessions/{OWNED_SESSION_ID}/events?after={body['start_event_id']}"
     )
+    assert body["session"]["status"] == "running"
+    assert body["session"]["current_input_request"] is None
+    assert body["session"]["latest_event_id"] == body["start_event_id"]
     assert_repair_session_shape(
         body["session"],
         user_id=test_user.id,
         bike_id=OWNED_BIKE_ID,
+    )
+    assert turn_service_override.background_calls == [
+        (test_user.id, OWNED_SESSION_ID, body["turn_id"]),
+    ]
+    assert all(
+        isinstance(value, str) for value in turn_service_override.background_calls[0]
     )
 
 
@@ -414,6 +448,8 @@ async def test_accepted_text_turn_replays_started_and_completed_events(
         "phase": "diagnostic",
     }
     assert frames[1]["data"]["turn_id"] == accepted_body["turn_id"]
+    assert "adk_session_id" not in json.dumps(accepted_body)
+    assert "evt_internal" not in json.dumps(accepted_body)
 
 
 async def test_repeating_client_turn_id_returns_original_acceptance(
@@ -424,12 +460,41 @@ async def test_repeating_client_turn_id_returns_original_acceptance(
     payload = _valid_turn_payload(client_turn_id="client-turn-repeat")
 
     first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    turn_service_override.sessions[OWNED_SESSION_ID].status = "running"
     retry = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
 
     assert first.status_code == 202
     assert retry.status_code == 202
     assert retry.json() == first.json()
-    assert turn_service_override.orchestrated_turn_ids == [first.json()["turn_id"]]
+    expected_call = (
+        turn_service_override.sessions[OWNED_SESSION_ID].user_id,
+        OWNED_SESSION_ID,
+        first.json()["turn_id"],
+    )
+    assert turn_service_override.background_calls == [
+        expected_call,
+    ]
+
+
+async def test_new_turn_while_session_running_returns_409(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    turn_service_override.sessions[OWNED_SESSION_ID].status = "running"
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(client_turn_id="client-turn-while-running"),
+    )
+
+    assert_error_response(
+        response,
+        status_code=409,
+        error_code="session_state_conflict",
+    )
 
 
 async def test_reusing_client_turn_id_with_different_payload_returns_409(
