@@ -1,0 +1,32 @@
+pyproject.toml
+  s_72cf76e9629f95::t_e12ec5fdcf314d 69
+apps/api/Dockerfile.dev
+  s_72cf76e9629f95::t_e12ec5fdcf314d 9,11-13,15-16,20
+docs/specs/apps/logging-setup.md
+  s_72cf76e9629f95::t_e12ec5fdcf314d 48
+.github/workflows/backend-ci.yml
+  s_72cf76e9629f95::t_e12ec5fdcf314d 34
+.gitignore
+  s_72cf76e9629f95::t_e12ec5fdcf314d 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8b0e85bf51fef78afb68f2023a7fdf5dea924541",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_72cf76e9629f95": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f05ba-bc00-7592-bbe9-44f0f83976b2",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
