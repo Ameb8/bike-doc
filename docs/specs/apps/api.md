@@ -80,7 +80,6 @@ apps/api/
   AGENTS.md
   README.md
   pyproject.toml
-  uv.lock
   alembic.ini
 
   src/

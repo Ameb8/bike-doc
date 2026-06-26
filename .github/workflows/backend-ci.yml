@@ -31,7 +31,7 @@ jobs:
         uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
-          cache-dependency-glob: apps/api/uv.lock
+          cache-dependency-glob: uv.lock
 
       - name: Set up Task
         uses: go-task/setup-task@v2

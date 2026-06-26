@@ -66,4 +66,4 @@ known-first-party = ["bike_doc_api", "bike_doc_api_adk_agent"]
 "apps/api/src/bike_doc_api/db/migrations/**/*.py" = ["N999"]
 
 [tool.codespell]
-skip = "./.agent,./.venv,./apps/api/.venv,./apps/api/uv.lock,./uv.lock"
+skip = "./.agent,./.venv,./apps/api/.venv,./uv.lock"
