@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from datetime import UTC, datetime
 from typing import Any
 
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.schemas.event import RepairSessionEventType
-from bike_doc_api.services.events import EventService
+from bike_doc_api.services.events import EventService, EventStream
 
 
 class _EventStore:
@@ -136,3 +138,50 @@ async def test_heartbeat_append_does_not_mutate_unrelated_session_state() -> Non
     assert event.data.ok is True
     assert store.session.latest_event_sequence == 1
     assert after == before
+
+
+async def test_open_sse_stream_yields_event_appended_through_event_service() -> None:
+    store = _EventStore()
+    commit_count = 0
+
+    async def commit() -> None:
+        nonlocal commit_count
+        commit_count += 1
+
+    service = EventService(store, store, commit=commit)
+    frames = service.stream_sse_frames(
+        EventStream(
+            repair_session_id=store.session.id,
+            after_sequence=store.session.latest_event_sequence,
+            timeout_seconds=6,
+        ),
+    )
+    pending_frame = asyncio.create_task(anext(frames))
+
+    await asyncio.sleep(0)
+    await service.append_event(
+        repair_session_id=store.session.id,
+        event_type=RepairSessionEventType.ASSISTANT_DELTA,
+        data={"text": "Check the derailleur hanger alignment."},
+        turn_id="turn_service",
+    )
+
+    frame = await asyncio.wait_for(pending_frame, timeout=1)
+    await frames.aclose()
+
+    fields = dict(line.split(": ", maxsplit=1) for line in frame.strip().splitlines())
+    payload = json.loads(fields["data"])
+
+    assert commit_count == 1
+    assert store.events[0].id == "evt_internal_1"
+    assert fields["id"] == "1"
+    assert fields["event"] == "assistant.delta"
+    assert payload == {
+        "id": "1",
+        "session_id": store.session.id,
+        "turn_id": "turn_service",
+        "type": "assistant.delta",
+        "sequence": 1,
+        "created_at": "2026-06-21T17:00:01Z",
+        "data": {"text": "Check the derailleur hanger alignment."},
+    }
