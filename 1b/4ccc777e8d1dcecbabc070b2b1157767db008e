@@ -1,0 +1,27 @@
+apps/api/tests/unit/adk/test_orchestration.py
+  s_12534607774e83::t_c917857afaa854 18,32,142,145-149,154-156,158-161,168-177,230,251,266-267,271,274-275,277,283,310,313,315-328,330-344,346,367,369,372,379-381,392,394,400-430,435,449-454,459-480,493-526
+apps/api/src/bike_doc_api/adk/orchestration.py
+  s_12534607774e83::t_2a8946afc7814c 421-472,501-512
+  s_12534607774e83::t_bf3f6db95c12af 5,39,151-163,165,170,172-180,193,202,230,234-237,242-244,265,365,377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1b4ccc777e8d1dcecbabc070b2b1157767db008e",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_12534607774e83": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0127-bcc1-7cb1-82d2-61cc3527740e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
