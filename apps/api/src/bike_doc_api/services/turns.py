@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
+from copy import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -54,7 +55,6 @@ from bike_doc_api.schemas.turn import (
 ACCEPTING_DIAGNOSTIC_STATUSES = frozenset(
     {
         RepairSessionStatus.CREATED.value,
-        RepairSessionStatus.RUNNING.value,
         RepairSessionStatus.AWAITING_USER.value,
     },
 )
@@ -188,6 +188,13 @@ class TurnService:
             )
         )
         self._orchestrator = orchestrator
+        self._last_acceptance_was_idempotent_replay = False
+
+    @property
+    def last_acceptance_was_idempotent_replay(self) -> bool:
+        """Return whether the latest acceptance returned an existing turn."""
+
+        return self._last_acceptance_was_idempotent_replay
 
     async def accept_turn(
         self,
@@ -198,6 +205,7 @@ class TurnService:
     ) -> TurnAccepted:
         """Accept a diagnostic user turn and persist durable replay events."""
 
+        self._last_acceptance_was_idempotent_replay = False
         request_hash = _canonical_turn_request_hash(request)
         preflight_session = await self._repair_sessions.get_owned(
             repair_session_id=repair_session_id,
@@ -205,6 +213,19 @@ class TurnService:
         )
         if preflight_session is None:
             raise NotFoundError()
+        existing = await self._turns.get_by_client_turn_id(
+            repair_session_id=preflight_session.id,
+            client_turn_id=request.client_turn_id,
+        )
+        if existing is not None:
+            if existing.request_hash != request_hash:
+                raise IdempotencyConflictError()
+            self._last_acceptance_was_idempotent_replay = True
+            return turn_accepted_from_model(
+                existing,
+                _turn_acceptance_session_snapshot(preflight_session, existing),
+            )
+
         _validate_accepting_diagnostic_turns(preflight_session)
         _validate_input_request(preflight_session, request)
 
@@ -220,14 +241,6 @@ class TurnService:
             if repair_session is None:
                 raise NotFoundError()
 
-            _validate_accepting_diagnostic_turns(repair_session)
-            _validate_input_request(repair_session, request)
-            await self._validate_artifacts(
-                current_user=current_user,
-                repair_session=repair_session,
-                artifact_ids=request.message.artifact_ids,
-            )
-
             existing = await self._turns.get_by_client_turn_id(
                 repair_session_id=repair_session.id,
                 client_turn_id=request.client_turn_id,
@@ -235,7 +248,19 @@ class TurnService:
             if existing is not None:
                 if existing.request_hash != request_hash:
                     raise IdempotencyConflictError()
-                return turn_accepted_from_model(existing, repair_session)
+                self._last_acceptance_was_idempotent_replay = True
+                return turn_accepted_from_model(
+                    existing,
+                    _turn_acceptance_session_snapshot(repair_session, existing),
+                )
+
+            _validate_accepting_diagnostic_turns(repair_session)
+            _validate_input_request(repair_session, request)
+            await self._validate_artifacts(
+                current_user=current_user,
+                repair_session=repair_session,
+                artifact_ids=request.message.artifact_ids,
+            )
 
             turn = await self._create_turn_started(
                 repair_session=repair_session,
@@ -451,6 +476,7 @@ class TurnService:
             raise ServerError() from error
         if existing.request_hash != request_hash:
             raise IdempotencyConflictError() from error
+        self._last_acceptance_was_idempotent_replay = True
         return turn_accepted_from_model(existing, repair_session)
 
     async def _rollback_if_configured(self) -> None:
@@ -519,3 +545,16 @@ def _canonical_turn_request_payload(request: TurnCreate) -> dict[str, Any]:
         "responds_to_input_request_id": request.responds_to_input_request_id,
         "schema_version": request.schema_version,
     }
+
+
+def _turn_acceptance_session_snapshot(
+    repair_session: RepairSessionModel,
+    turn: RepairTurnModel,
+) -> RepairSessionModel:
+    """Return the original app-owned session snapshot for an accepted turn."""
+
+    snapshot = copy(repair_session)
+    snapshot.status = RepairSessionStatus.RUNNING.value
+    snapshot.current_input_request = None
+    snapshot.latest_event_sequence = turn.start_event_sequence
+    return snapshot

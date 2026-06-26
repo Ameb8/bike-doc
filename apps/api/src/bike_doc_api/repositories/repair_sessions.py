@@ -26,6 +26,15 @@ class RepairSessionRepository:
         """Return a repair session by ID."""
         return await self._session.get(RepairSession, repair_session_id)
 
+    async def get_for_update(self, repair_session_id: str) -> RepairSession | None:
+        """Return and lock a repair session row by ID."""
+        result = await self._session.execute(
+            select(RepairSession)
+            .where(RepairSession.id == repair_session_id)
+            .with_for_update(),
+        )
+        return result.scalar_one_or_none()
+
     async def get_owned(
         self,
         *,
