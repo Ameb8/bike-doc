@@ -58,6 +58,7 @@ Thumbs.db
 **/build/
 **/*.egg-info/
 **/.eggs/
+# The repository uses a root workspace lockfile.
 
 # Testing and Coverage
 **/.pytest_cache/

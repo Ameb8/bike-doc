@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar, overload
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -29,6 +29,7 @@ ToolErrorCode = Literal[
     "safety_policy_violation",
     "internal_error",
 ]
+InputT = TypeVar("InputT", bound=BaseModel)
 
 
 class DiagnosticToolContext(BaseModel):
@@ -42,6 +43,10 @@ class DiagnosticToolContext(BaseModel):
     active_phase: RepairSessionPhase = RepairSessionPhase.DIAGNOSTIC
     diagnostic_session_id: str
     turn_id: str | None = None
+    artifact_ids: tuple[str, ...] = ()
+    bike_profile: Mapping[str, Any] | None = None
+    repair_history: tuple[Mapping[str, Any], ...] = ()
+    diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +117,21 @@ def tool_error(code: ToolErrorCode, message: str) -> dict[str, Any]:
     return {"ok": False, "error": {"code": code, "message": message}}
 
 
-def parse_tool_input[InputT: BaseModel](
+@overload
+def parse_tool_input(  # noqa: UP047
+    model: type[InputT],
+    raw_input: InputT,
+) -> InputT: ...
+
+
+@overload
+def parse_tool_input(  # noqa: UP047
+    model: type[InputT],
+    raw_input: Mapping[str, Any],
+) -> InputT: ...
+
+
+def parse_tool_input(  # noqa: UP047
     model: type[InputT],
     raw_input: InputT | Mapping[str, Any],
 ) -> InputT:

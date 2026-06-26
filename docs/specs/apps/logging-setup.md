@@ -45,7 +45,7 @@ dependencies = [
 ]
 ```
 
-The exact resolved version belongs in `apps/api/uv.lock`.
+The exact resolved version belongs in the repository root `uv.lock`.
 
 ## Settings
 

@@ -6,14 +6,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     PATH="/opt/bike-doc-api-venv/bin:${PATH}"
 
-WORKDIR /workspace/apps/api
+WORKDIR /workspace
 
-COPY apps/api/pyproject.toml apps/api/uv.lock apps/api/README.md ./
-RUN uv sync --frozen --group dev --no-install-project
+COPY pyproject.toml uv.lock ./
+COPY apps/api/pyproject.toml apps/api/README.md ./apps/api/
+RUN cd apps/api && uv sync --frozen --group dev --no-install-project
 
-COPY apps/api ./
-RUN uv sync --frozen --group dev
+COPY apps/api ./apps/api
+RUN cd apps/api && uv sync --frozen --group dev
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "bike_doc_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/apps/api/src"]
+CMD ["uv", "run", "--directory", "/workspace/apps/api", "uvicorn", "bike_doc_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/apps/api/src"]

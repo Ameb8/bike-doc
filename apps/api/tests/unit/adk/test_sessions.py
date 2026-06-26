@@ -4,10 +4,20 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+from google.adk.sessions import InMemorySessionService
 from sqlalchemy.exc import IntegrityError
 
-from bike_doc_api.adk.sessions import DiagnosticPhaseSessionManager
+from bike_doc_api.adk.sessions import (
+    DIAGNOSTIC_ADK_APP_NAME,
+    DIAGNOSTIC_ADK_USER_ID,
+    DiagnosticADKSessionClient,
+    DiagnosticPhaseSessionManager,
+    StaleInMemoryADKSessionError,
+    ensure_adk_session_available,
+)
 from bike_doc_api.models.repair_session import RepairPhaseSession
+from bike_doc_api.schemas.common import RepairSessionPhase
 
 
 class _PhaseSessionRepo:
@@ -74,6 +84,56 @@ async def test_creates_diagnostic_phase_session_lazily() -> None:
     assert phase_session.phase == "diagnostic"
     assert phase_session.adk_session_id == "adk_created_1"
     assert client.created == ["adk_created_1"]
+
+
+async def test_real_adk_session_client_creates_retrievable_session() -> None:
+    service = InMemorySessionService()
+    client = DiagnosticADKSessionClient(service)
+
+    adk_session_id = await client.create_session(
+        repair_session_id="rs_1",
+        phase=RepairSessionPhase.DIAGNOSTIC,
+    )
+
+    stored = await service.get_session(
+        app_name=DIAGNOSTIC_ADK_APP_NAME,
+        user_id=DIAGNOSTIC_ADK_USER_ID,
+        session_id=adk_session_id,
+    )
+    assert adk_session_id.startswith("adk_diagnostic_sess_")
+    assert stored is not None
+    assert stored.state["repair_session_id"] == "rs_1"
+    assert stored.state["phase"] == "diagnostic"
+
+
+async def test_real_adk_session_client_close_deletes_session_when_supported() -> None:
+    service = InMemorySessionService()
+    client = DiagnosticADKSessionClient(service)
+    adk_session_id = await client.create_session(
+        repair_session_id="rs_1",
+        phase=RepairSessionPhase.DIAGNOSTIC,
+    )
+
+    await client.close_session(adk_session_id=adk_session_id)
+
+    assert (
+        await service.get_session(
+            app_name=DIAGNOSTIC_ADK_APP_NAME,
+            user_id=DIAGNOSTIC_ADK_USER_ID,
+            session_id=adk_session_id,
+        )
+        is None
+    )
+
+
+async def test_missing_in_memory_adk_session_is_recoverable_stale_state() -> None:
+    service = InMemorySessionService()
+
+    with pytest.raises(StaleInMemoryADKSessionError):
+        await ensure_adk_session_available(
+            service,
+            adk_session_id="adk_diagnostic_missing",
+        )
 
 
 async def test_resumes_existing_diagnostic_phase_session() -> None:

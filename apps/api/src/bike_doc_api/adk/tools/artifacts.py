@@ -86,7 +86,10 @@ class ListDiagnosticArtifactsTool:
         """Run list_diagnostic_artifacts and return the common tool envelope."""
 
         async def call() -> dict[str, Any]:
-            parsed = parse_tool_input(ListDiagnosticArtifactsInput, tool_input)
+            parsed: ListDiagnosticArtifactsInput = parse_tool_input(
+                ListDiagnosticArtifactsInput,
+                tool_input,
+            )
             validate_tool_context(
                 repair_session_id=parsed.repair_session_id,
                 context=context,

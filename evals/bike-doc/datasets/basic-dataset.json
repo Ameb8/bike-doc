@@ -1,0 +1,26 @@
+{
+  "eval_cases": [
+    {
+      "eval_case_id": "diagnostic_chain_skips",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "My bike chain skips under load when I shift into harder gears. What should I check first?"
+          }
+        ]
+      }
+    },
+    {
+      "eval_case_id": "diagnostic_brake_rub",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "My front disc brake rubs once per wheel rotation after I reinstalled the wheel."
+          }
+        ]
+      }
+    }
+  ]
+}
