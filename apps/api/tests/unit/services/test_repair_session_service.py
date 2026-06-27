@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from bike_doc_api.core.errors import IdempotencyConflictError, NotFoundError
 from bike_doc_api.models.bike import BikeProfile
@@ -78,6 +79,41 @@ class FakeRepairSessionRepository:
             ):
                 return repair_session
         return None
+
+
+class _UniqueViolationError(Exception):
+    sqlstate = "23505"
+
+
+class RaceRepairSessionRepository(FakeRepairSessionRepository):
+    """Repair-session repository double that simulates an idempotency race."""
+
+    def __init__(self, winning_session: RepairSessionModel) -> None:
+        super().__init__()
+        self._winning_session = winning_session
+        self._add_attempts = 0
+
+    async def add(self, repair_session: RepairSessionModel) -> RepairSessionModel:
+        self._add_attempts += 1
+        if self._add_attempts == 1:
+            self.sessions.append(self._winning_session)
+            raise IntegrityError("insert", {}, _UniqueViolationError())
+        return await super().add(repair_session)
+
+
+class ExpiringUser:
+    """User double that fails if the service re-reads the user ID after rollback."""
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+        self._reads = 0
+
+    @property
+    def id(self) -> str:
+        self._reads += 1
+        if self._reads > 1:
+            raise AssertionError("user id was re-read after rollback")
+        return self._user_id
 
 
 def _user(user_id: str = "usr_owner") -> User:
@@ -218,3 +254,43 @@ async def test_get_session_requires_ownership() -> None:
             current_user=_user(),
             repair_session_id="rs_2",
         )
+
+
+async def test_create_session_recovers_from_unique_idempotency_race() -> None:
+    winning_session = RepairSessionModel(
+        id="rs_winning",
+        user_id="usr_owner",
+        bike_id="bike_owned",
+        client_session_id="client-session-race",
+        request_hash="47fb0e3b3c610b3a329c2c21b3135388c410fbd7c4beccbbf6798aeff0983ffb",
+        phase="diagnostic",
+        status="created",
+        safety_state="ok",
+        active_safety_flags=[],
+        latest_event_sequence=0,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    repair_sessions = RaceRepairSessionRepository(winning_session)
+    rollback_calls = 0
+
+    async def rollback() -> None:
+        nonlocal rollback_calls
+        rollback_calls += 1
+
+    service = RepairSessionService(
+        FakeBikeRepository([_bike()]),
+        repair_sessions,
+        rollback=rollback,
+    )
+
+    session = await service.create_session(
+        current_user=ExpiringUser("usr_owner"),
+        request=RepairSessionCreate(
+            bike_id="bike_owned",
+            client_session_id="client-session-race",
+        ),
+    )
+
+    assert session.id == "rs_winning"
+    assert rollback_calls == 1

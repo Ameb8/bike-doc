@@ -139,10 +139,11 @@ class RepairSessionService:
     ) -> RepairSession:
         """Create or return an idempotent diagnostic repair session."""
 
+        user_id = current_user.id
         request_hash = _canonical_create_request_hash(request)
         if request.client_session_id is not None:
             existing = await self._repair_sessions.get_by_client_session_id(
-                user_id=current_user.id,
+                user_id=user_id,
                 client_session_id=request.client_session_id,
             )
             if existing is not None:
@@ -152,13 +153,13 @@ class RepairSessionService:
 
         bike = await self._bikes.get_owned_active(
             bike_id=request.bike_id,
-            user_id=current_user.id,
+            user_id=user_id,
         )
         if bike is None:
             raise NotFoundError()
 
         repair_session = RepairSessionModel(
-            user_id=current_user.id,
+            user_id=user_id,
             bike_id=bike.id,
             client_session_id=request.client_session_id,
             request_hash=(
@@ -178,10 +179,10 @@ class RepairSessionService:
         except IntegrityError as exc:
             if self._rollback is not None:
                 await self._rollback()
-            if request.client_session_id is None:
+            if request.client_session_id is None or not _is_unique_violation(exc):
                 raise
             raced_existing = await self._repair_sessions.get_by_client_session_id(
-                user_id=current_user.id,
+                user_id=user_id,
                 client_session_id=request.client_session_id,
             )
             if raced_existing is None:
@@ -308,3 +309,11 @@ def _canonical_create_request_hash(request: RepairSessionCreate) -> str:
         separators=(",", ":"),
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _is_unique_violation(exc: IntegrityError) -> bool:
+    """Return whether an integrity error came from a unique-constraint violation."""
+
+    original = getattr(exc, "orig", None)
+    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
+    return sqlstate == "23505"
