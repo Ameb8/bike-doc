@@ -266,6 +266,19 @@ async def test_jsonb_shape_constraints_are_enforced(
     db_session: AsyncSession,
 ) -> None:
     user, bike, _ = await _create_user_bike_session(db_session)
+    valid_session = RepairSession(
+        user_id=user.id,
+        bike_id=bike.id,
+        client_session_id="client-session-valid",
+        request_hash="hash-valid",
+        current_input_request=None,
+        execution_progress=None,
+    )
+    db_session.add(valid_session)
+    await db_session.flush()
+
+    await db_session.rollback()
+    user, bike, _ = await _create_user_bike_session(db_session)
     bad_session = RepairSession(
         user_id=user.id,
         bike_id=bike.id,

@@ -146,8 +146,12 @@ class RepairSession(Base):
         default="ok",
         server_default=text("'ok'"),
     )
-    current_input_request: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
-    execution_progress: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    current_input_request: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True),
+    )
+    execution_progress: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True),
+    )
     active_safety_flags: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB,
         nullable=False,
