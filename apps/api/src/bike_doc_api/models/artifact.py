@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -165,10 +166,12 @@ class ArtifactRef(Base):
     storage_bucket: Mapped[str | None] = mapped_column(Text)
     storage_path: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )

@@ -5,7 +5,15 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, Index, Text, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -209,10 +217,12 @@ class RepairSession(Base):
         ),
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
@@ -280,10 +290,11 @@ class RepairPhaseSession(Base):
         server_default=text("'active'"),
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
-    closed_at: Mapped[datetime | None] = mapped_column()
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RepairTurn(Base):
@@ -369,6 +380,7 @@ class RepairTurn(Base):
     responds_to_input_request_id: Mapped[str | None] = mapped_column(Text)
     start_event_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )

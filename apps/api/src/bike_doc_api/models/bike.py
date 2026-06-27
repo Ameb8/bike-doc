@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bike_doc_api.db.base import Base
@@ -93,12 +93,14 @@ class BikeProfile(Base):
     wheel_size: Mapped[str | None] = mapped_column(Text)
     tire_size: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
-    deleted_at: Mapped[datetime | None] = mapped_column()
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )

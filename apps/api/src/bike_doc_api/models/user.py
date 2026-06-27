@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, Index, Text, text
+from sqlalchemy import CheckConstraint, DateTime, Index, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bike_doc_api.db.base import Base
@@ -51,6 +51,7 @@ class User(Base):
         server_default=text("'unknown'"),
     )
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
     )
