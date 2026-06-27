@@ -1,0 +1,24 @@
+apps/api/tests/unit/models/test_timestamp_metadata.py
+  s_0f7326af97a4b5::t_c0ac83fe69c5fd 1-22
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1b00bc5fcc1052ead59ee54a825fb30ab60d6249",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_0f7326af97a4b5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0a4c-dd86-7cc2-b95a-c2ef3c0c19ad",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
