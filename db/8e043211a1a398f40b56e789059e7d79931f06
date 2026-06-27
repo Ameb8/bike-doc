@@ -1,0 +1,26 @@
+apps/api/tests/unit/repositories/test_diagnostic_persistence.py
+  s_34a29a44e262a0::t_e32fb0ea2927ad 269-280
+apps/api/src/bike_doc_api/models/repair_session.py
+  s_34a29a44e262a0::t_e32fb0ea2927ad 149-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "db8e043211a1a398f40b56e789059e7d79931f06",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_34a29a44e262a0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f05af-ee06-7702-bb5a-d98c75e3e8db",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
