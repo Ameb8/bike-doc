@@ -57,7 +57,8 @@ def get_storage_provider(
 
     if settings.artifact_storage_provider == "local":
         return LocalStorageProvider(settings.artifact_local_storage_root)
-    return GCSStorageProvider()
+    assert settings.artifact_gcs_bucket is not None
+    return GCSStorageProvider(bucket_name=settings.artifact_gcs_bucket)
 
 
 @lru_cache

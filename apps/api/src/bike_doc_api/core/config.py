@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     log_format: Literal["console", "json"] | None = None
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
+    artifact_gcs_bucket: str | None = None
     artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     diagnostic_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     diagnostic_agent_model: str = Field(default="gemini-2.5-flash", min_length=1)
@@ -134,6 +135,15 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("artifact_gcs_bucket")
+    @classmethod
+    def validate_artifact_gcs_bucket(cls, value: str | None) -> str | None:
+        """Normalize the optional artifact GCS bucket setting."""
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
     @field_validator("diagnostic_agent_model")
     @classmethod
     def validate_diagnostic_agent_model(cls, value: str) -> str:
@@ -170,6 +180,10 @@ class Settings(BaseSettings):
             raise ValueError("only firebase auth mode is permitted in production")
         if self.auth_mode == "firebase" and self.firebase_project_id is None:
             raise ValueError("firebase_project_id is required in firebase auth mode")
+        if self.artifact_storage_provider == "gcs" and self.artifact_gcs_bucket is None:
+            raise ValueError(
+                "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
+            )
         return self
 
 
