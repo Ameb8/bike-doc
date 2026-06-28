@@ -1,0 +1,30 @@
+apps/api/tests/unit/test_config.py
+  s_5eb2e0bd31076b::t_f84a78ab1deb01 183,216
+apps/api/tests/unit/services/test_bike_service.py
+  s_5eb2e0bd31076b::t_3eb9957ab0dff6 1-201
+apps/api/tests/api/test_bikes.py
+  s_5eb2e0bd31076b::t_f84a78ab1deb01 52
+  s_5eb2e0bd31076b::t_3eb9957ab0dff6 1-51,53-264,282-327
+  s_5eb2e0bd31076b::t_fa60513e3d95c7 265-281
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "0ecd1439f95cd335c474fe09e144adc293543cd5",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_5eb2e0bd31076b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0f71-90a8-7c01-b295-6a59a733d450",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
