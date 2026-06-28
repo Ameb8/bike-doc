@@ -153,7 +153,7 @@ def test_gcs_artifact_runtime_validation_requires_google_credentials(
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
 
-def test_gcs_artifact_runtime_validation_requires_bucket_access(
+def test_gcs_artifact_runtime_validation_requires_client_initialization(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings(
@@ -173,20 +173,20 @@ def test_gcs_artifact_runtime_validation_requires_bucket_access(
         def __init__(self, *, project: str, credentials: object) -> None:
             assert project == "bike-doc-prod"
             assert credentials is not None
-
-        def get_bucket(self, bucket_name: str) -> object:
-            raise RuntimeError(bucket_name)
+            raise RuntimeError("client init failed")
 
     monkeypatch.setattr(
         "google.cloud.storage.Client",
         _FakeStorageClient,
     )
 
-    with pytest.raises(ValueError, match="could not access the configured bucket"):
+    with pytest.raises(
+        ValueError, match="could not initialize the storage client"
+    ):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
 
-def test_gcs_artifact_runtime_validation_logs_bucket_access_failure(
+def test_gcs_artifact_runtime_validation_logs_client_initialization_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -207,9 +207,7 @@ def test_gcs_artifact_runtime_validation_logs_bucket_access_failure(
         def __init__(self, *, project: str, credentials: object) -> None:
             assert project == "bike-doc-prod"
             assert credentials is not None
-
-        def get_bucket(self, bucket_name: str) -> object:
-            raise RuntimeError(f"denied:{bucket_name}")
+            raise RuntimeError("denied:client-init")
 
     monkeypatch.setattr(
         "google.cloud.storage.Client",
@@ -217,14 +215,16 @@ def test_gcs_artifact_runtime_validation_logs_bucket_access_failure(
     )
     caplog.set_level("ERROR")
 
-    with pytest.raises(ValueError, match="could not access the configured bucket"):
+    with pytest.raises(
+        ValueError, match="could not initialize the storage client"
+    ):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
-    assert "failed to access configured GCS artifact bucket" in caplog.text
-    assert "denied:bike-doc-artifacts" in caplog.text
+    assert "failed to initialize GCS artifact storage client" in caplog.text
+    assert "denied:client-init" in caplog.text
 
 
-def test_gcs_artifact_runtime_validation_accepts_accessible_bucket(
+def test_gcs_artifact_runtime_validation_accepts_initializable_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     settings = Settings(
@@ -245,10 +245,7 @@ def test_gcs_artifact_runtime_validation_accepts_accessible_bucket(
         def __init__(self, *, project: str, credentials: object) -> None:
             seen["project"] = project
             seen["credentials"] = credentials
-
-        def get_bucket(self, bucket_name: str) -> object:
-            seen["bucket_name"] = bucket_name
-            return object()
+            seen["initialized"] = True
 
     monkeypatch.setattr(
         "google.cloud.storage.Client",
@@ -258,7 +255,7 @@ def test_gcs_artifact_runtime_validation_accepts_accessible_bucket(
     validate_artifact_storage_runtime_configuration(settings, environ={})
 
     assert seen["project"] == "bike-doc-prod"
-    assert seen["bucket_name"] == "bike-doc-artifacts"
+    assert seen["initialized"] is True
 
 
 @pytest.mark.parametrize(

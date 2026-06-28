@@ -258,20 +258,22 @@ def validate_artifact_storage_runtime_configuration(
             "project resolution from the active Google credentials"
         )
 
+    # Construct the client eagerly so startup still validates ADC and project
+    # resolution, but do not fetch bucket metadata. Runtime object operations
+    # may succeed with narrower IAM than bucket-level metadata access.
     from google.cloud import storage  # type: ignore[import-untyped]
 
     try:
-        client = storage.Client(project=effective_project, credentials=credentials)
-        client.get_bucket(settings.artifact_gcs_bucket)
+        storage.Client(project=effective_project, credentials=credentials)
     except Exception as exc:
         logger.exception(
-            "failed to access configured GCS artifact bucket",
+            "failed to initialize GCS artifact storage client",
             extra={
                 "bucket_name": settings.artifact_gcs_bucket,
                 "project_id": effective_project,
             },
         )
         raise ValueError(
-            "gcs artifact storage could not access the configured bucket; verify "
-            "the bucket exists and the runtime service account has bucket access"
+            "gcs artifact storage could not initialize the storage client; verify "
+            "the runtime credentials and project configuration"
         ) from exc
