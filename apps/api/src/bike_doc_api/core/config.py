@@ -28,11 +28,12 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
         min_length=1,
     )
-    auth_mode: Literal["production", "dev"] = "production"
+    auth_mode: Literal["firebase", "dev", "local_unsigned_jwt"] = "dev"
     dev_auth_token: str = "dev-token"
     dev_auth_subject: str = "dev-user"
     dev_auth_email: str = "dev@example.com"
     dev_auth_display_name: str = "Dev User"
+    firebase_project_id: str | None = None
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
     artifact_storage_provider: Literal["local", "gcs"] = "local"
@@ -92,6 +93,15 @@ class Settings(BaseSettings):
         if not normalized:
             raise ValueError("dev auth values must not be empty")
         return normalized
+
+    @field_validator("firebase_project_id")
+    @classmethod
+    def validate_firebase_project_id(cls, value: str | None) -> str | None:
+        """Normalize optional Firebase project ID settings."""
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
 
     @field_validator("log_level", mode="before")
     @classmethod
@@ -155,8 +165,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_auth_environment(self) -> "Settings":
         """Prevent local fixed-token auth from being enabled in production."""
-        if self.environment.lower() == "production" and self.auth_mode == "dev":
-            raise ValueError("dev auth mode must not be enabled in production")
+        environment = self.environment.lower()
+        if environment == "production" and self.auth_mode != "firebase":
+            raise ValueError("only firebase auth mode is permitted in production")
+        if self.auth_mode == "firebase" and self.firebase_project_id is None:
+            raise ValueError("firebase_project_id is required in firebase auth mode")
         return self
 
 

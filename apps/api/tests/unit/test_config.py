@@ -30,6 +30,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_SUBJECT", "auth|configured")
     monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_EMAIL", "configured@example.com")
     monkeypatch.setenv("BIKE_DOC_API_DEV_AUTH_DISPLAY_NAME", "Configured User")
+    monkeypatch.setenv("BIKE_DOC_API_FIREBASE_PROJECT_ID", "bike-doc-dev")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER", "google_ai")
@@ -54,6 +55,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.dev_auth_subject == "auth|configured"
     assert settings.dev_auth_email == "configured@example.com"
     assert settings.dev_auth_display_name == "Configured User"
+    assert settings.firebase_project_id == "bike-doc-dev"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
     assert settings.diagnostic_llm_provider == "google_ai"
@@ -189,6 +191,8 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
     content = env_example.read_text(encoding="utf-8")
 
     for variable in [
+        "BIKE_DOC_API_AUTH_MODE",
+        "BIKE_DOC_API_FIREBASE_PROJECT_ID",
         "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
@@ -206,3 +210,13 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
 def test_dev_auth_mode_is_rejected_in_production() -> None:
     with pytest.raises(ValidationError):
         Settings(environment="production", auth_mode="dev")
+
+
+def test_local_unsigned_jwt_mode_is_rejected_in_production() -> None:
+    with pytest.raises(ValidationError):
+        Settings(environment="production", auth_mode="local_unsigned_jwt")
+
+
+def test_firebase_auth_mode_requires_project_id() -> None:
+    with pytest.raises(ValidationError):
+        Settings(environment="local", auth_mode="firebase")
