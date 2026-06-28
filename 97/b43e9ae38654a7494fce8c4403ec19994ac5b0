@@ -1,0 +1,24 @@
+docs/specs/apps/api-auth-firebase-implementation.md
+  s_ef52b94b6d929a::t_b1cf028b804793 1-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "97b43e9ae38654a7494fce8c4403ec19994ac5b0",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_ef52b94b6d929a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0b03-2863-7800-87d8-e14123128665",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
