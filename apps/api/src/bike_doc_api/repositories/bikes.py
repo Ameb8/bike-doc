@@ -1,5 +1,7 @@
 """Bike repository."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,3 +54,19 @@ class BikeRepository:
             .limit(limit),
         )
         return list(result.scalars().all())
+
+    async def save(self, bike: BikeProfile) -> BikeProfile:
+        """Flush mutations for an existing bike profile."""
+
+        bike.updated_at = datetime.now(UTC)
+        await self._session.flush()
+        return bike
+
+    async def soft_delete(self, bike: BikeProfile) -> BikeProfile:
+        """Soft-delete a bike profile."""
+
+        timestamp = datetime.now(UTC)
+        bike.deleted_at = timestamp
+        bike.updated_at = timestamp
+        await self._session.flush()
+        return bike
