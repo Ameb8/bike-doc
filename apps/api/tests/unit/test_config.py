@@ -180,9 +180,7 @@ def test_gcs_artifact_runtime_validation_requires_client_initialization(
         _FakeStorageClient,
     )
 
-    with pytest.raises(
-        ValueError, match="could not initialize the storage client"
-    ):
+    with pytest.raises(ValueError, match="could not initialize the storage client"):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
 
@@ -215,9 +213,7 @@ def test_gcs_artifact_runtime_validation_logs_client_initialization_failure(
     )
     caplog.set_level("ERROR")
 
-    with pytest.raises(
-        ValueError, match="could not initialize the storage client"
-    ):
+    with pytest.raises(ValueError, match="could not initialize the storage client"):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
     assert "failed to initialize GCS artifact storage client" in caplog.text
