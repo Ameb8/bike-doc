@@ -12,6 +12,8 @@ import google.auth
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
     """Typed settings loaded from environment variables."""
@@ -262,6 +264,13 @@ def validate_artifact_storage_runtime_configuration(
         client = storage.Client(project=effective_project, credentials=credentials)
         client.get_bucket(settings.artifact_gcs_bucket)
     except Exception as exc:
+        logger.exception(
+            "failed to access configured GCS artifact bucket",
+            extra={
+                "bucket_name": settings.artifact_gcs_bucket,
+                "project_id": effective_project,
+            },
+        )
         raise ValueError(
             "gcs artifact storage could not access the configured bucket; verify "
             "the bucket exists and the runtime service account has bucket access"

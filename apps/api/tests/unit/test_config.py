@@ -186,6 +186,44 @@ def test_gcs_artifact_runtime_validation_requires_bucket_access(
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
 
+def test_gcs_artifact_runtime_validation_logs_bucket_access_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+        artifact_storage_provider="gcs",
+        artifact_gcs_bucket="bike-doc-artifacts",
+    )
+
+    monkeypatch.setattr(
+        "bike_doc_api.core.config.google.auth.default",
+        lambda: (object(), "bike-doc-prod"),
+    )
+
+    class _FakeStorageClient:
+        def __init__(self, *, project: str, credentials: object) -> None:
+            assert project == "bike-doc-prod"
+            assert credentials is not None
+
+        def get_bucket(self, bucket_name: str) -> object:
+            raise RuntimeError(f"denied:{bucket_name}")
+
+    monkeypatch.setattr(
+        "google.cloud.storage.Client",
+        _FakeStorageClient,
+    )
+    caplog.set_level("ERROR")
+
+    with pytest.raises(ValueError, match="could not access the configured bucket"):
+        validate_artifact_storage_runtime_configuration(settings, environ={})
+
+    assert "failed to access configured GCS artifact bucket" in caplog.text
+    assert "denied:bike-doc-artifacts" in caplog.text
+
+
 def test_gcs_artifact_runtime_validation_accepts_accessible_bucket(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
