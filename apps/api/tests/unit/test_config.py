@@ -33,6 +33,8 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_FIREBASE_PROJECT_ID", "bike-doc-dev")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
+    monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER", "gcs")
+    monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_GCS_BUCKET", "bike-doc-artifacts")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER", "google_ai")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL", "gemini-test")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE", "0.7")
@@ -58,6 +60,8 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.firebase_project_id == "bike-doc-dev"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
+    assert settings.artifact_storage_provider == "gcs"
+    assert settings.artifact_gcs_bucket == "bike-doc-artifacts"
     assert settings.diagnostic_llm_provider == "google_ai"
     assert settings.diagnostic_agent_model == "gemini-test"
     assert settings.diagnostic_agent_temperature == 0.7
@@ -105,6 +109,24 @@ def test_settings_accept_valid_diagnostic_runtime_settings() -> None:
 
     assert settings.diagnostic_llm_provider == "vertex_ai"
     assert settings.diagnostic_agent_model == "gemini-test"
+
+
+def test_gcs_storage_provider_requires_bucket() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            environment="test",
+            artifact_storage_provider="gcs",
+        )
+
+
+def test_gcs_storage_bucket_is_trimmed() -> None:
+    settings = Settings(
+        environment="test",
+        artifact_storage_provider="gcs",
+        artifact_gcs_bucket="  bike-doc-artifacts  ",
+    )
+
+    assert settings.artifact_gcs_bucket == "bike-doc-artifacts"
 
 
 @pytest.mark.parametrize(
@@ -193,6 +215,8 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
     for variable in [
         "BIKE_DOC_API_AUTH_MODE",
         "BIKE_DOC_API_FIREBASE_PROJECT_ID",
+        "BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER",
+        "BIKE_DOC_API_ARTIFACT_GCS_BUCKET",
         "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
