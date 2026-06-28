@@ -1,0 +1,26 @@
+.env.example
+  s_eddf0205f3e4c5::t_e29c961327d8b0 19,25
+apps/api/pyproject.toml
+  s_eddf0205f3e4c5::t_2aba4342fbd159 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "2a68dde867d180f7b1b19570f6a2c3cfb6299dc7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_eddf0205f3e4c5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0ba8-a968-7d23-9b79-c382ee248824",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
