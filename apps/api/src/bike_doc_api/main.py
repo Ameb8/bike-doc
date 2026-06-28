@@ -7,7 +7,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from bike_doc_api.api.router import router as api_router
-from bike_doc_api.core.config import Settings, get_settings
+from bike_doc_api.core.config import (
+    Settings,
+    get_settings,
+    validate_artifact_storage_runtime_configuration,
+)
 from bike_doc_api.core.errors import install_exception_handlers
 from bike_doc_api.core.logging import configure_logging
 
@@ -21,6 +25,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Create the FastAPI application shell."""
     settings = settings or get_settings()
+    validate_artifact_storage_runtime_configuration(settings)
     configure_logging(
         environment=settings.environment,
         log_level=settings.log_level,

@@ -8,6 +8,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Literal
 
+import google.auth
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -219,3 +220,49 @@ def validate_diagnostic_runtime_configuration(
         raise ValueError("vertex_ai diagnostic runtime requires GOOGLE_CLOUD_PROJECT")
     if not env.get("GOOGLE_CLOUD_LOCATION"):
         raise ValueError("vertex_ai diagnostic runtime requires GOOGLE_CLOUD_LOCATION")
+
+
+def validate_artifact_storage_runtime_configuration(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate runtime requirements for the configured artifact storage."""
+
+    if settings.environment.lower() == "test":
+        return
+    if settings.artifact_storage_provider != "gcs":
+        return
+    if settings.artifact_gcs_bucket is None:
+        raise ValueError(
+            "gcs artifact storage requires BIKE_DOC_API_ARTIFACT_GCS_BUCKET",
+        )
+
+    env = environ if environ is not None else os.environ
+    try:
+        credentials, project_id = google.auth.default()
+    except Exception as exc:
+        raise ValueError(
+            "gcs artifact storage requires Google Application Default Credentials; "
+            "in production attach a service account to the runtime, and for local "
+            "development set GOOGLE_APPLICATION_CREDENTIALS or run "
+            "'gcloud auth application-default login'"
+        ) from exc
+
+    effective_project = project_id or env.get("GOOGLE_CLOUD_PROJECT")
+    if not effective_project:
+        raise ValueError(
+            "gcs artifact storage requires GOOGLE_CLOUD_PROJECT or default "
+            "project resolution from the active Google credentials"
+        )
+
+    from google.cloud import storage  # type: ignore[import-untyped]
+
+    try:
+        client = storage.Client(project=effective_project, credentials=credentials)
+        client.get_bucket(settings.artifact_gcs_bucket)
+    except Exception as exc:
+        raise ValueError(
+            "gcs artifact storage could not access the configured bucket; verify "
+            "the bucket exists and the runtime service account has bucket access"
+        ) from exc

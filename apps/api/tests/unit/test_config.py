@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from bike_doc_api.core.config import (
     Settings,
+    validate_artifact_storage_runtime_configuration,
     validate_diagnostic_runtime_configuration,
 )
 
@@ -129,6 +130,99 @@ def test_gcs_storage_bucket_is_trimmed() -> None:
     assert settings.artifact_gcs_bucket == "bike-doc-artifacts"
 
 
+def test_gcs_artifact_runtime_validation_requires_google_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+        artifact_storage_provider="gcs",
+        artifact_gcs_bucket="bike-doc-artifacts",
+    )
+
+    def _raise_missing_credentials() -> tuple[object, str | None]:
+        raise RuntimeError("missing credentials")
+
+    monkeypatch.setattr(
+        "bike_doc_api.core.config.google.auth.default",
+        _raise_missing_credentials,
+    )
+
+    with pytest.raises(ValueError, match="Application Default Credentials"):
+        validate_artifact_storage_runtime_configuration(settings, environ={})
+
+
+def test_gcs_artifact_runtime_validation_requires_bucket_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+        artifact_storage_provider="gcs",
+        artifact_gcs_bucket="bike-doc-artifacts",
+    )
+
+    monkeypatch.setattr(
+        "bike_doc_api.core.config.google.auth.default",
+        lambda: (object(), "bike-doc-prod"),
+    )
+
+    class _FakeStorageClient:
+        def __init__(self, *, project: str, credentials: object) -> None:
+            assert project == "bike-doc-prod"
+            assert credentials is not None
+
+        def get_bucket(self, bucket_name: str) -> object:
+            raise RuntimeError(bucket_name)
+
+    monkeypatch.setattr(
+        "google.cloud.storage.Client",
+        _FakeStorageClient,
+    )
+
+    with pytest.raises(ValueError, match="could not access the configured bucket"):
+        validate_artifact_storage_runtime_configuration(settings, environ={})
+
+
+def test_gcs_artifact_runtime_validation_accepts_accessible_bucket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+        artifact_storage_provider="gcs",
+        artifact_gcs_bucket="bike-doc-artifacts",
+    )
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "bike_doc_api.core.config.google.auth.default",
+        lambda: (object(), "bike-doc-prod"),
+    )
+
+    class _FakeStorageClient:
+        def __init__(self, *, project: str, credentials: object) -> None:
+            seen["project"] = project
+            seen["credentials"] = credentials
+
+        def get_bucket(self, bucket_name: str) -> object:
+            seen["bucket_name"] = bucket_name
+            return object()
+
+    monkeypatch.setattr(
+        "google.cloud.storage.Client",
+        _FakeStorageClient,
+    )
+
+    validate_artifact_storage_runtime_configuration(settings, environ={})
+
+    assert seen["project"] == "bike-doc-prod"
+    assert seen["bucket_name"] == "bike-doc-artifacts"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -217,6 +311,7 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
         "BIKE_DOC_API_FIREBASE_PROJECT_ID",
         "BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER",
         "BIKE_DOC_API_ARTIFACT_GCS_BUCKET",
+        "GOOGLE_APPLICATION_CREDENTIALS",
         "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
