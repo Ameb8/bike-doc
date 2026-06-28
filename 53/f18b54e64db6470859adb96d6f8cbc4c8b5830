@@ -1,0 +1,29 @@
+apps/api/src/bike_doc_api/core/config.py
+  s_eddf0205f3e4c5::t_db716fa694f5c8 31
+  s_eddf0205f3e4c5::t_4c238349671d1a 36,97-105,168-172
+apps/api/src/bike_doc_api/core/security.py
+  s_eddf0205f3e4c5::t_75f1db60d2c6bb 78
+  s_eddf0205f3e4c5::t_4ea9470b31a96e 185
+  s_eddf0205f3e4c5::t_ab437ce7ef184d 3-7,9-13,28-34,52,59-77,79-92,94-105,123-184,186-207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "53f18b54e64db6470859adb96d6f8cbc4c8b5830",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_eddf0205f3e4c5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0ba8-a968-7d23-9b79-c382ee248824",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
