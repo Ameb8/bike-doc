@@ -1,0 +1,30 @@
+apps/api/tests/unit/test_config.py
+  s_d680ef3c46cf4c::t_fb572b43736d50 36-37,63-64,114-131,218-219
+apps/api/tests/unit/adk/test_dependency_wiring.py
+  s_d680ef3c46cf4c::t_fb572b43736d50 12,37-50,66
+  s_d680ef3c46cf4c::t_2b045b9054b7bd 5-7,51-65,67-71
+  s_d680ef3c46cf4c::t_3fb845a009fa11 15
+apps/api/tests/unit/test_storage.py
+  s_d680ef3c46cf4c::t_fb572b43736d50 1-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "a21e7b3967b92015155cdbc6a38215c4795045f4",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_d680ef3c46cf4c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0cfa-8ceb-7d30-8199-a92452ef9634",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
