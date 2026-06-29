@@ -1,0 +1,26 @@
+docs/specs/apps/api-artifacts-diagnostic.md
+  s_aa023a6c699900::t_236ce40ec5e168 137,340,463
+docs/specs/openapi.yaml
+  s_aa023a6c699900::t_4487c8093d034b 441,1088
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "9788a2cc8d8010654c3d244816ad4ae4be31af89",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_aa023a6c699900": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f121c-e13b-7413-973e-02a4a660691e",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
