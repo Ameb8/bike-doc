@@ -27,6 +27,7 @@ PNG_BYTES = (
     b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00"
     b"\x90wS\xde\x00\x00\x00\x00IEND\xaeB`\x82"
 )
+WEBP_BYTES = b"RIFF\x12\x00\x00\x00WEBPVP8 \x06\x00\x00\x00\x10\x00\x00\x00"
 
 
 @dataclass
@@ -219,6 +220,29 @@ async def test_successful_png_upload_returns_created_artifact(
     )
 
 
+async def test_successful_webp_upload_returns_created_artifact_from_content_bytes(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: ApiTestUser,
+) -> None:
+    response = await _upload_artifact(
+        api_client,
+        auth_headers,
+        data=_artifact_form(client_artifact_id="client-artifact-webp"),
+        file_bytes=WEBP_BYTES,
+        filename="derailleur.webp",
+        mime_type="application/octet-stream",
+    )
+
+    assert response.status_code == 201
+    _assert_diagnostic_artifact_shape(
+        response.json(),
+        test_user=test_user,
+        session_id=OWNED_SESSION_ID,
+        mime_type="image/webp",
+    )
+
+
 async def test_diagnostic_photo_requires_repair_session_id(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
@@ -366,6 +390,35 @@ async def test_local_provider_writes_expected_relative_object_name(
     assert (
         artifact_service_override.storage_root / artifact.storage_path
     ).read_bytes() == JPEG_BYTES
+
+
+async def test_local_provider_writes_webp_extension(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    test_user: ApiTestUser,
+    artifact_service_override: ArtifactTestContext,
+) -> None:
+    response = await _upload_artifact(
+        api_client,
+        auth_headers,
+        data=_artifact_form(client_artifact_id="client-artifact-webp-path"),
+        file_bytes=WEBP_BYTES,
+        filename="derailleur.webp",
+        mime_type="image/webp",
+    )
+
+    assert response.status_code == 201
+    artifact_id = response.json()["artifact"]["id"]
+    artifact = artifact_service_override.artifacts[artifact_id]
+    content_sha256 = hashlib.sha256(WEBP_BYTES).hexdigest()
+    assert artifact.storage_provider == "local"
+    assert artifact.storage_path == (
+        f"users/{test_user.id}/repair-sessions/{OWNED_SESSION_ID}/artifacts/"
+        f"{artifact_id}/{content_sha256}.webp"
+    )
+    assert (
+        artifact_service_override.storage_root / artifact.storage_path
+    ).read_bytes() == WEBP_BYTES
 
 
 async def test_non_diagnostic_purposes_return_422_until_supported(

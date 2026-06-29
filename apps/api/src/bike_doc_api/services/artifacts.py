@@ -35,7 +35,7 @@ from bike_doc_api.schemas.common import (
 
 logger = logging.getLogger(__name__)
 
-ACCEPTED_DIAGNOSTIC_MIME_TYPES = frozenset({"image/jpeg", "image/png"})
+ACCEPTED_DIAGNOSTIC_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 
 class UploadFileProtocol(Protocol):
@@ -287,6 +287,8 @@ def _effective_mime_type(*, content: bytes, content_type: str | None) -> str:
         return "image/jpeg"
     if content.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
     normalized = (content_type or "").split(";", 1)[0].strip().lower()
     return normalized
 
@@ -361,6 +363,8 @@ def _extension_for_mime_type(mime_type: str) -> str:
         return "jpg"
     if mime_type == "image/png":
         return "png"
+    if mime_type == "image/webp":
+        return "webp"
     raise ValidationAppError("Unsupported diagnostic photo MIME type.")
 
 
