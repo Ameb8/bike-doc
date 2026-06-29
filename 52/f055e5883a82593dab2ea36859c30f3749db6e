@@ -1,0 +1,34 @@
+docs/agents/domain.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 1-45
+CONTEXT-MAP.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 1-11
+apps/api/CONTEXT.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 1-23
+AGENTS.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 22-35
+docs/agents/issue-tracker.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 1-34
+docs/agents/triage-labels.md
+  s_958bfc2eb35b93::t_831f7bf96d9bff 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "52f055e5883a82593dab2ea36859c30f3749db6e",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_958bfc2eb35b93": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f12c6-150b-74d3-a32d-3dacb6a5b4db",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
