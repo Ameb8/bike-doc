@@ -134,6 +134,7 @@ Diagnostic V1 accepts only:
 
 - `image/jpeg`
 - `image/png`
+- `image/webp`
 
 The backend must validate the effective MIME type. It may use the multipart
 content type as a first pass, but it must not trust the file extension alone.
@@ -336,6 +337,7 @@ Where:
 - `content_sha256` is the uploaded content hash
 - `ext` is `jpg` for `image/jpeg`
 - `ext` is `png` for `image/png`
+- `ext` is `webp` for `image/webp`
 
 The object name intentionally does not include the original filename.
 
@@ -458,7 +460,7 @@ The following can be added without changing the V1 public shape:
 
 - signed upload URLs for large media
 - signed read URLs for internal agent vision or user preview workflows
-- HEIC/WebP acceptance for mobile uploads
+- HEIC/HEIF acceptance for mobile uploads
 - async image processing and `processing` status
 - malware scanning or moderation status
 - artifact deletion and provider garbage collection
