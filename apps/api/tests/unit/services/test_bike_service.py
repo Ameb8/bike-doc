@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from bike_doc_api.core.errors import NotFoundError
+from bike_doc_api.core.errors import BikeRepairHistoryConflictError, NotFoundError
 from bike_doc_api.models.bike import BikeProfile as BikeProfileModel
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.bike import BikeProfileCreate, BikeProfilePatch
@@ -21,9 +21,12 @@ class FakeBikeRepository:
         bikes: list[BikeProfileModel] | None = None,
         *,
         repair_session_bike_ids: set[str] | None = None,
+        repair_session_bike_ids_by_user: dict[str, set[str]] | None = None,
     ) -> None:
         self.bikes = bikes or []
-        self.repair_session_bike_ids = repair_session_bike_ids or set()
+        self.repair_session_bike_ids_by_user = repair_session_bike_ids_by_user or {
+            "usr_owner": repair_session_bike_ids or set()
+        }
 
     async def add(self, bike: BikeProfileModel) -> BikeProfileModel:
         if bike.id is None:
@@ -73,11 +76,10 @@ class FakeBikeRepository:
         user_id: str,
         bike_ids: list[str],
     ) -> set[str]:
-        owned_bike_ids = {bike.id for bike in self.bikes if bike.user_id == user_id}
         return {
             bike_id
             for bike_id in bike_ids
-            if bike_id in self.repair_session_bike_ids and bike_id in owned_bike_ids
+            if bike_id in self.repair_session_bike_ids_by_user.get(user_id, set())
         }
 
     async def soft_delete(self, bike: BikeProfileModel) -> BikeProfileModel:
@@ -222,6 +224,32 @@ async def test_update_bike_can_clear_nullable_model_year() -> None:
 async def test_delete_bike_soft_deletes_profile() -> None:
     bike = _bike()
     service = BikeService(FakeBikeRepository([bike]))
+
+    await service.delete_bike(current_user=_user(), bike_id=bike.id)
+
+    assert bike.deleted_at is not None
+
+
+async def test_delete_bike_conflicts_when_owned_history_exists() -> None:
+    bike = _bike()
+    service = BikeService(
+        FakeBikeRepository([bike], repair_session_bike_ids={bike.id}),
+    )
+
+    with pytest.raises(BikeRepairHistoryConflictError):
+        await service.delete_bike(current_user=_user(), bike_id=bike.id)
+
+    assert bike.deleted_at is None
+
+
+async def test_delete_bike_ignores_other_users_history() -> None:
+    bike = _bike()
+    service = BikeService(
+        FakeBikeRepository(
+            [bike],
+            repair_session_bike_ids_by_user={"usr_other": {bike.id}},
+        ),
+    )
 
     await service.delete_bike(current_user=_user(), bike_id=bike.id)
 

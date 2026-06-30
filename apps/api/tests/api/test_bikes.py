@@ -12,11 +12,12 @@ from fastapi import FastAPI
 
 from bike_doc_api.api.deps import get_current_user
 from bike_doc_api.api.v1.bikes import get_bike_service
-from bike_doc_api.core.errors import NotFoundError
+from bike_doc_api.core.errors import BikeRepairHistoryConflictError, NotFoundError
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.schemas.bike import BikeProfile, BikeProfileList
 
 OWNED_BIKE_ID = "bike_owned_contract"
+BLOCKED_BIKE_ID = "bike_blocked_contract"
 OTHER_BIKE_ID = "bike_other_user"
 
 
@@ -28,6 +29,13 @@ class FakeBikeService:
         self.bikes: dict[str, BikeProfile] = {
             OWNED_BIKE_ID: _public_bike(
                 bike_id=OWNED_BIKE_ID,
+                user_id="usr_contract_user",
+                has_repair_sessions=False,
+                created_at=timestamp,
+                updated_at=timestamp,
+            ),
+            BLOCKED_BIKE_ID: _public_bike(
+                bike_id=BLOCKED_BIKE_ID,
                 user_id="usr_contract_user",
                 has_repair_sessions=True,
                 created_at=timestamp,
@@ -115,7 +123,9 @@ class FakeBikeService:
         current_user: UserModel,
         bike_id: str,
     ) -> None:
-        await self.get_bike(current_user=current_user, bike_id=bike_id)
+        bike = await self.get_bike(current_user=current_user, bike_id=bike_id)
+        if bike.has_repair_sessions:
+            raise BikeRepairHistoryConflictError()
         del self.bikes[bike_id]
 
 
@@ -183,9 +193,9 @@ async def test_list_bikes_returns_owned_profiles(
     assert response.status_code == 200
     body = response.json()
     assert body["next_cursor"] is None
-    assert [bike["id"] for bike in body["items"]] == [OWNED_BIKE_ID]
-    assert body["items"][0]["user_id"] == test_user.id
-    assert body["items"][0]["has_repair_sessions"] is True
+    assert [bike["id"] for bike in body["items"]] == [OWNED_BIKE_ID, BLOCKED_BIKE_ID]
+    assert all(bike["user_id"] == test_user.id for bike in body["items"])
+    assert [bike["has_repair_sessions"] for bike in body["items"]] == [False, True]
     assert_no_private_fields(body)
 
 
@@ -231,13 +241,13 @@ async def test_get_bike_returns_owned_profile(
     auth_headers: dict[str, str],
 ) -> None:
     response = await api_client.get(
-        f"/v1/bikes/{OWNED_BIKE_ID}",
+        f"/v1/bikes/{BLOCKED_BIKE_ID}",
         headers=auth_headers,
     )
 
     assert response.status_code == 200
     bike = response.json()
-    assert bike["id"] == OWNED_BIKE_ID
+    assert bike["id"] == BLOCKED_BIKE_ID
     assert bike["display_name"] == "Commuter"
     assert bike["has_repair_sessions"] is True
     assert_no_private_fields(bike)
@@ -266,7 +276,7 @@ async def test_patch_bike_preserves_omitted_fields_and_clears_explicit_nulls(
     bike = response.json()
     assert bike["display_name"] == "Updated"
     assert bike["notes"] is None
-    assert bike["has_repair_sessions"] is True
+    assert bike["has_repair_sessions"] is False
     assert bike["make"] == "Surly"
     assert bike["model_year"] == 2021
 
@@ -312,6 +322,26 @@ async def test_delete_bike_returns_no_content(
 
     assert response.status_code == 204
     assert response.content == b""
+
+
+async def test_delete_bike_with_repair_history_returns_409(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    response = await api_client.delete(
+        f"/v1/bikes/{BLOCKED_BIKE_ID}",
+        headers=auth_headers,
+    )
+
+    assert_error_response(
+        response,
+        status_code=409,
+        error_code="bike_repair_history_conflict",
+    )
+    assert (
+        response.json()["error"]["message"]
+        == "Bike cannot be deleted while repair-session history exists."
+    )
 
 
 async def test_delete_unknown_or_not_owned_bike_returns_404(

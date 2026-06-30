@@ -101,6 +101,17 @@ class SessionStateConflictError(AppError):
         )
 
 
+class BikeRepairHistoryConflictError(AppError):
+    """A bike cannot be deleted while owned repair-session history exists."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="bike_repair_history_conflict",
+            message="Bike cannot be deleted while repair-session history exists.",
+        )
+
+
 class StaleSessionError(AppError):
     """A server-owned phase/session context is no longer current."""
 

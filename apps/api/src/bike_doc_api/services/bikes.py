@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
-from bike_doc_api.core.errors import NotFoundError
+from bike_doc_api.core.errors import BikeRepairHistoryConflictError, NotFoundError
 from bike_doc_api.models.bike import BikeProfile as BikeProfileModel
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.bike import (
@@ -185,6 +185,14 @@ class BikeService:
         """Soft-delete an owned bike profile."""
 
         bike = await self._get_owned_bike(current_user=current_user, bike_id=bike_id)
+        bike_ids_with_repair_sessions = (
+            await self._bikes.list_bike_ids_with_owned_repair_sessions(
+                user_id=current_user.id,
+                bike_ids=[bike.id],
+            )
+        )
+        if bike.id in bike_ids_with_repair_sessions:
+            raise BikeRepairHistoryConflictError()
         await self._bikes.soft_delete(bike)
         if self._commit is not None:
             await self._commit()

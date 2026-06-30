@@ -138,12 +138,18 @@ paths:
     delete:
       tags: [Bikes]
       summary: Delete a bike profile
+      description: |
+        Soft-deletes an owned bike profile. If the authenticated user still has
+        any repair-session history for that bike, the request is rejected with
+        `409 Conflict` and `error.code: bike_repair_history_conflict`.
       operationId: deleteBikeProfile
       responses:
         "204":
           description: Bike profile deleted
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /v1/bikes/{bikeId}/repair-history:
     parameters:
