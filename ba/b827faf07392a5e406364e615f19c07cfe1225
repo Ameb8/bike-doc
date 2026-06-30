@@ -1,0 +1,67 @@
+apps/android/app/src/main/java/com/bikedoc/android/api/models/UserProfile.kt
+  s_eb7ac46aab366b::t_82c4f2f47ad33f 1-18
+apps/android/app/src/main/java/com/bikedoc/android/api/AuthInterceptor.kt
+  s_eb7ac46aab366b::t_c269680ae51fd7 1-10,22,30-31,42
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 11-21,23-29,32-41
+apps/android/app/src/main/java/com/bikedoc/android/api/models/ReportModels.kt
+  s_eb7ac46aab366b::t_43029be1f121b5 1-23
+apps/android/app/src/main/java/com/bikedoc/android/api/models/SessionModels.kt
+  s_eb7ac46aab366b::t_43029be1f121b5 1-84
+apps/android/app/src/main/java/com/bikedoc/android/di/BikeModule.kt
+  s_eb7ac46aab366b::t_54163984f5e60d 1-15
+apps/android/app/src/main/java/com/bikedoc/android/sessions/models/ChatMessage.kt
+  s_eb7ac46aab366b::t_fbf10ad30f209f 1-18
+apps/android/app/src/main/java/com/bikedoc/android/sessions/models/SseEvent.kt
+  s_eb7ac46aab366b::t_287c4ff20c595e 106
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 83-105,135-141
+  s_eb7ac46aab366b::t_fbf10ad30f209f 1-82,107-134,142-162,164-192
+  s_eb7ac46aab366b::t_23549720c3b8ac 163
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeRepository.kt
+  s_eb7ac46aab366b::t_54163984f5e60d 1-10,12,14,21-23,30,32,34,39
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 11,13,15-20,24-29,31,33,35-38,40-41
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeDocApiClient.kt
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 4,14-25,27-28
+  s_eb7ac46aab366b::t_c269680ae51fd7 1-3,5-13,26
+apps/android/app/src/main/java/com/bikedoc/android/api/models/BikeModels.kt
+  s_eb7ac46aab366b::t_43029be1f121b5 1-86
+apps/android/app/src/test/java/com/bikedoc/android/sessions/models/SseEventTest.kt
+  s_eb7ac46aab366b::t_e2a0f440837c5b 4-6,21-22,37-38
+  s_eb7ac46aab366b::t_763d84a50c2979 1-2
+  s_eb7ac46aab366b::t_c3e2126373a431 3,7-12,20,23-28,36,39-42
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 13-19,29-35
+apps/android/app/src/main/java/com/bikedoc/android/di/DiagnosticModule.kt
+  s_eb7ac46aab366b::t_54163984f5e60d 1-15
+apps/android/app/src/main/java/com/bikedoc/android/api/ApiResult.kt
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 4,8,10,14-21,23-30
+  s_eb7ac46aab366b::t_c269680ae51fd7 1-3,5-7,9,11-13,22
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/SseEventSource.kt
+  s_eb7ac46aab366b::t_fbf10ad30f209f 1-17,21-22,50,54,64,67,79,85-86
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 18-20,23-49,51-53,55-63,65-66,68-78,80-84
+apps/android/app/src/main/java/com/bikedoc/android/api/SessionRepository.kt
+  s_eb7ac46aab366b::t_54163984f5e60d 1-12,14,16,21
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 13,15,17-20,22-41
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeDocApiService.kt
+  s_eb7ac46aab366b::t_c8113ad3ccfa98 34-36,39-41,50-52,62-64,67-69
+  s_eb7ac46aab366b::t_c269680ae51fd7 1-33,37-38,42-49,53-61,65-66,70-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "bab827faf07392a5e406364e615f19c07cfe1225",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_eb7ac46aab366b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1a2e-f845-7b23-9dcc-9a962aca87fa",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
