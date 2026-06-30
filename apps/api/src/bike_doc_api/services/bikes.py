@@ -48,6 +48,14 @@ class BikeRepositoryProtocol(Protocol):
     async def soft_delete(self, bike: BikeProfileModel) -> BikeProfileModel:
         """Soft-delete a bike profile."""
 
+    async def list_bike_ids_with_owned_repair_sessions(
+        self,
+        *,
+        user_id: str,
+        bike_ids: list[str],
+    ) -> set[str]:
+        """Return bike ids with one or more owned repair sessions."""
+
 
 class BikeService:
     """Application-owned bike profile behavior."""
@@ -72,8 +80,20 @@ class BikeService:
 
         _ = cursor
         bikes = await self._bikes.list_owned_active(current_user.id, limit=limit)
+        bike_ids_with_repair_sessions = (
+            await self._bikes.list_bike_ids_with_owned_repair_sessions(
+                user_id=current_user.id,
+                bike_ids=[bike.id for bike in bikes],
+            )
+        )
         return BikeProfileList(
-            items=[bike_profile_from_model(bike) for bike in bikes],
+            items=[
+                bike_profile_from_model(
+                    bike,
+                    has_repair_sessions=bike.id in bike_ids_with_repair_sessions,
+                )
+                for bike in bikes
+            ],
             next_cursor=None,
         )
 
@@ -103,7 +123,7 @@ class BikeService:
         )
         if self._commit is not None:
             await self._commit()
-        return bike_profile_from_model(created)
+        return bike_profile_from_model(created, has_repair_sessions=False)
 
     async def get_bike(
         self,
@@ -114,7 +134,16 @@ class BikeService:
         """Return an owned bike profile."""
 
         bike = await self._get_owned_bike(current_user=current_user, bike_id=bike_id)
-        return bike_profile_from_model(bike)
+        bike_ids_with_repair_sessions = (
+            await self._bikes.list_bike_ids_with_owned_repair_sessions(
+                user_id=current_user.id,
+                bike_ids=[bike.id],
+            )
+        )
+        return bike_profile_from_model(
+            bike,
+            has_repair_sessions=bike.id in bike_ids_with_repair_sessions,
+        )
 
     async def update_bike(
         self,
@@ -136,7 +165,16 @@ class BikeService:
         updated = await self._bikes.save(bike)
         if self._commit is not None:
             await self._commit()
-        return bike_profile_from_model(updated)
+        bike_ids_with_repair_sessions = (
+            await self._bikes.list_bike_ids_with_owned_repair_sessions(
+                user_id=current_user.id,
+                bike_ids=[updated.id],
+            )
+        )
+        return bike_profile_from_model(
+            updated,
+            has_repair_sessions=updated.id in bike_ids_with_repair_sessions,
+        )
 
     async def delete_bike(
         self,
