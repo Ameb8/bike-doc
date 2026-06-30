@@ -10,7 +10,7 @@ import yaml
 from fastapi import FastAPI
 
 DIAGNOSTIC_OPERATIONS = {
-    "/v1/repair-sessions": {"post"},
+    "/v1/repair-sessions": {"get", "post"},
     "/v1/repair-sessions/{sessionId}": {"get"},
     "/v1/repair-sessions/{sessionId}/turns": {"post"},
     "/v1/repair-sessions/{sessionId}/events": {"get"},

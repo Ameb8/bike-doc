@@ -32,8 +32,12 @@ from bike_doc_api.schemas.common import (
 from bike_doc_api.schemas.repair_session import (
     RepairSession,
     RepairSessionCreate,
+    RepairSessionList,
     repair_session_from_model,
 )
+
+DEFAULT_REPAIR_SESSION_LIMIT = 20
+MAX_REPAIR_SESSION_LIMIT = 100
 
 
 class BikeRepositoryProtocol(Protocol):
@@ -69,6 +73,16 @@ class RepairSessionRepositoryProtocol(Protocol):
         client_session_id: str,
     ) -> RepairSessionModel | None:
         """Return a repair session by user-scoped idempotency key."""
+
+    async def list_owned(
+        self,
+        user_id: str,
+        *,
+        bike_id: str | None = None,
+        status: str | None = None,
+        limit: int = DEFAULT_REPAIR_SESSION_LIMIT,
+    ) -> list[RepairSessionModel]:
+        """Return repair sessions owned by a user."""
 
 
 class RepairPhaseSessionRepositoryProtocol(Protocol):
@@ -130,6 +144,38 @@ class RepairSessionService:
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
         self._rollback = rollback
+
+    async def list_sessions(
+        self,
+        *,
+        current_user: User,
+        bike_id: str,
+        status: RepairSessionStatus | None = None,
+        limit: int = DEFAULT_REPAIR_SESSION_LIMIT,
+        cursor: str | None = None,
+    ) -> RepairSessionList:
+        """Return repair sessions for an owned bike, newest first."""
+
+        _ = cursor
+        bike = await self._bikes.get_owned_active(
+            bike_id=bike_id,
+            user_id=current_user.id,
+        )
+        if bike is None:
+            raise NotFoundError()
+        repair_sessions = await self._repair_sessions.list_owned(
+            current_user.id,
+            bike_id=bike.id,
+            status=None if status is None else status.value,
+            limit=limit,
+        )
+        return RepairSessionList(
+            items=[
+                repair_session_from_model(repair_session)
+                for repair_session in repair_sessions
+            ],
+            next_cursor=None,
+        )
 
     async def create_session(
         self,

@@ -86,11 +86,14 @@ class RepairSessionRepository:
         self,
         user_id: str,
         *,
+        bike_id: str | None = None,
         status: str | None = None,
-        limit: int = 50,
+        limit: int = 20,
     ) -> list[RepairSession]:
         """Return repair sessions for a user."""
         statement = select(RepairSession).where(RepairSession.user_id == user_id)
+        if bike_id is not None:
+            statement = statement.where(RepairSession.bike_id == bike_id)
         if status is not None:
             statement = statement.where(RepairSession.status == status)
         result = await self._session.execute(

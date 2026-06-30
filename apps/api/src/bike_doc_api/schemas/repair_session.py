@@ -87,6 +87,13 @@ class RepairSession(APIBaseModel):
     updated_at: datetime
 
 
+class RepairSessionList(APIBaseModel):
+    """Repair session list envelope."""
+
+    items: list[RepairSession]
+    next_cursor: str | None
+
+
 def repair_session_from_model(repair_session: RepairSessionModel) -> RepairSession:
     """Map a persistence repair session to the public schema."""
 

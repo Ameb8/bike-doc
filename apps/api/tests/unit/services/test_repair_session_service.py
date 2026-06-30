@@ -11,6 +11,7 @@ from bike_doc_api.core.errors import IdempotencyConflictError, NotFoundError
 from bike_doc_api.models.bike import BikeProfile
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
+from bike_doc_api.schemas.common import RepairSessionStatus
 from bike_doc_api.schemas.repair_session import RepairSessionCreate
 from bike_doc_api.services.repair_sessions import RepairSessionService
 
@@ -47,8 +48,10 @@ class FakeRepairSessionRepository:
         if repair_session.id is None:
             repair_session.id = f"rs_{len(self.sessions) + 1}"
         timestamp = datetime(2026, 1, len(self.sessions) + 1, tzinfo=UTC)
-        repair_session.created_at = timestamp
-        repair_session.updated_at = timestamp
+        if repair_session.created_at is None:
+            repair_session.created_at = timestamp
+        if repair_session.updated_at is None:
+            repair_session.updated_at = timestamp
         self.sessions.append(repair_session)
         return repair_session
 
@@ -79,6 +82,30 @@ class FakeRepairSessionRepository:
             ):
                 return repair_session
         return None
+
+    async def list_owned(
+        self,
+        user_id: str,
+        *,
+        bike_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[RepairSessionModel]:
+        sessions = [
+            repair_session
+            for repair_session in self.sessions
+            if repair_session.user_id == user_id
+            and (bike_id is None or repair_session.bike_id == bike_id)
+            and (status is None or repair_session.status == status)
+        ]
+        sessions.sort(
+            key=lambda repair_session: (
+                repair_session.created_at,
+                repair_session.id,
+            ),
+            reverse=True,
+        )
+        return sessions[:limit]
 
 
 class _UniqueViolationError(Exception):
@@ -137,6 +164,28 @@ def _bike(*, bike_id: str = "bike_owned", user_id: str = "usr_owner") -> BikePro
     )
 
 
+def _repair_session(
+    *,
+    session_id: str,
+    user_id: str,
+    bike_id: str,
+    created_at: datetime,
+    status: str = "created",
+) -> RepairSessionModel:
+    return RepairSessionModel(
+        id=session_id,
+        user_id=user_id,
+        bike_id=bike_id,
+        phase="diagnostic",
+        status=status,
+        safety_state="ok",
+        active_safety_flags=[],
+        latest_event_sequence=0,
+        created_at=created_at,
+        updated_at=created_at,
+    )
+
+
 def _service(
     *,
     bikes: list[BikeProfile] | None = None,
@@ -169,6 +218,125 @@ async def test_create_session_initializes_public_diagnostic_defaults() -> None:
     assert session.execution_progress is None
     assert session.latest_reports.diagnostic_report_id is None
     assert session.latest_event_id == "0"
+
+
+async def test_list_sessions_returns_owned_bike_sessions_newest_first() -> None:
+    service, repair_sessions = _service()
+    old = await repair_sessions.add(
+        _repair_session(
+            session_id="rs_old",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    newest = await repair_sessions.add(
+        _repair_session(
+            session_id="rs_new",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+    )
+    tied_newer_id = await repair_sessions.add(
+        _repair_session(
+            session_id="rs_tie_z",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            created_at=old.created_at,
+        ),
+    )
+    await repair_sessions.add(
+        _repair_session(
+            session_id="rs_other_bike",
+            user_id="usr_owner",
+            bike_id="bike_second",
+            created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        ),
+    )
+    await repair_sessions.add(
+        _repair_session(
+            session_id="rs_other_user",
+            user_id="usr_other",
+            bike_id="bike_owned",
+            created_at=datetime(2026, 1, 4, tzinfo=UTC),
+        ),
+    )
+
+    result = await service.list_sessions(
+        current_user=_user(),
+        bike_id="bike_owned",
+    )
+
+    assert [session.id for session in result.items] == [
+        newest.id,
+        tied_newer_id.id,
+        old.id,
+    ]
+    assert result.next_cursor is None
+
+
+async def test_list_sessions_supports_empty_status_filter_and_limit() -> None:
+    service, repair_sessions = _service()
+    await repair_sessions.add(
+        _repair_session(
+            session_id="rs_created",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            status="created",
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+    )
+    await repair_sessions.add(
+        _repair_session(
+            session_id="rs_awaiting_old",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            status="awaiting_user",
+            created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+    )
+    await repair_sessions.add(
+        _repair_session(
+            session_id="rs_awaiting_new",
+            user_id="usr_owner",
+            bike_id="bike_owned",
+            status="awaiting_user",
+            created_at=datetime(2026, 1, 3, tzinfo=UTC),
+        ),
+    )
+
+    completed = await service.list_sessions(
+        current_user=_user(),
+        bike_id="bike_owned",
+        status=RepairSessionStatus.COMPLETED,
+    )
+    limited = await service.list_sessions(
+        current_user=_user(),
+        bike_id="bike_owned",
+        status=RepairSessionStatus.AWAITING_USER,
+        limit=1,
+    )
+
+    assert completed.items == []
+    assert [session.id for session in limited.items] == ["rs_awaiting_new"]
+
+
+async def test_list_sessions_requires_owned_active_bike() -> None:
+    for bike in [
+        _bike(user_id="usr_other"),
+        _bike(user_id="usr_owner", bike_id="bike_deleted"),
+    ]:
+        bike.deleted_at = (
+            datetime(2026, 1, 2, tzinfo=UTC) if bike.id == "bike_deleted" else None
+        )
+        service, _ = _service(bikes=[bike])
+
+        with pytest.raises(NotFoundError):
+            await service.list_sessions(
+                current_user=_user(),
+                bike_id=bike.id,
+            )
 
 
 async def test_create_session_requires_owned_active_bike() -> None:
