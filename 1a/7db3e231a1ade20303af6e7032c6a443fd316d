@@ -1,0 +1,45 @@
+apps/android/.editorconfig
+  s_eb7ac46aab366b::t_c2614549bdbb27 1-4
+apps/android/gradle/libs.versions.toml
+  s_eb7ac46aab366b::t_4958f7c268fa86 1-66
+apps/android/gradle/wrapper/gradle-wrapper.properties
+  s_eb7ac46aab366b::t_8b2dfa45fdaf47 1-7
+apps/android/settings.gradle.kts
+  s_eb7ac46aab366b::t_4958f7c268fa86 1-18
+apps/android/gradlew
+  s_eb7ac46aab366b::t_4c8fae3b837b0b 6
+  s_eb7ac46aab366b::t_8b2dfa45fdaf47 1-5,7-13,15,21-29
+  s_eb7ac46aab366b::t_55d13b9511a263 14,16-20
+apps/android/gradle.properties
+  s_eb7ac46aab366b::t_4958f7c268fa86 1-4
+apps/android/build.gradle.kts
+  s_eb7ac46aab366b::t_4958f7c268fa86 1-29
+apps/android/gradlew.bat
+  s_eb7ac46aab366b::t_8b2dfa45fdaf47 1-32
+apps/android/config/detekt/detekt.yml
+  s_eb7ac46aab366b::t_4958f7c268fa86 1-6,12-16
+  s_eb7ac46aab366b::t_94958d679bc6d4 7-11
+.gitignore
+  s_eb7ac46aab366b::t_c328698d6768a3 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1a7db3e231a1ade20303af6e7032c6a443fd316d",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_eb7ac46aab366b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1a2e-f845-7b23-9dcc-9a962aca87fa",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
