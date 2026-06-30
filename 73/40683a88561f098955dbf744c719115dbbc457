@@ -1,0 +1,24 @@
+docs/specs/openapi.yaml
+  s_3245848946ef46::t_210b2d5213c918 284-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "7340683a88561f098955dbf744c719115dbbc457",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_3245848946ef46": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f17ca-15f8-7db1-b640-e354a6da9c75",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
