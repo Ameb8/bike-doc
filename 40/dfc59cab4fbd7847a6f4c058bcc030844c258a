@@ -1,0 +1,14 @@
+apps/android/AGENTS.md
+  h_11a994996f9bb9 1-106
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "40dfc59cab4fbd7847a6f4c058bcc030844c258a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
