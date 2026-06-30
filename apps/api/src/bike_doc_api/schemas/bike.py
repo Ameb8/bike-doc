@@ -52,6 +52,7 @@ class BikeProfile(APIBaseModel):
     id: str
     user_id: str
     display_name: str
+    has_repair_sessions: bool
     make: str | None = None
     model: str | None = None
     model_year: int | None = None
@@ -123,13 +124,18 @@ class BikeProfileList(APIBaseModel):
     next_cursor: str | None
 
 
-def bike_profile_from_model(bike: BikeProfileModel) -> BikeProfile:
+def bike_profile_from_model(
+    bike: BikeProfileModel,
+    *,
+    has_repair_sessions: bool = False,
+) -> BikeProfile:
     """Map a persistence bike profile to the public schema."""
 
     return BikeProfile(
         id=bike.id,
         user_id=bike.user_id,
         display_name=bike.display_name,
+        has_repair_sessions=has_repair_sessions,
         make=bike.make,
         model=bike.model,
         model_year=bike.model_year,

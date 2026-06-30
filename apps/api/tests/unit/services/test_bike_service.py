@@ -16,8 +16,14 @@ from bike_doc_api.services.bikes import BikeService
 class FakeBikeRepository:
     """In-memory bike repository for service tests."""
 
-    def __init__(self, bikes: list[BikeProfileModel] | None = None) -> None:
+    def __init__(
+        self,
+        bikes: list[BikeProfileModel] | None = None,
+        *,
+        repair_session_bike_ids: set[str] | None = None,
+    ) -> None:
         self.bikes = bikes or []
+        self.repair_session_bike_ids = repair_session_bike_ids or set()
 
     async def add(self, bike: BikeProfileModel) -> BikeProfileModel:
         if bike.id is None:
@@ -60,6 +66,19 @@ class FakeBikeRepository:
     async def save(self, bike: BikeProfileModel) -> BikeProfileModel:
         bike.updated_at = datetime(2026, 2, 1, tzinfo=UTC)
         return bike
+
+    async def list_bike_ids_with_owned_repair_sessions(
+        self,
+        *,
+        user_id: str,
+        bike_ids: list[str],
+    ) -> set[str]:
+        owned_bike_ids = {bike.id for bike in self.bikes if bike.user_id == user_id}
+        return {
+            bike_id
+            for bike_id in bike_ids
+            if bike_id in self.repair_session_bike_ids and bike_id in owned_bike_ids
+        }
 
     async def soft_delete(self, bike: BikeProfileModel) -> BikeProfileModel:
         timestamp = datetime(2026, 3, 1, tzinfo=UTC)
@@ -125,6 +144,7 @@ async def test_create_bike_uses_defaults_and_returns_public_profile() -> None:
     assert bike.bike_type == "unknown"
     assert bike.frame_material == "unknown"
     assert bike.brake_type == "unknown"
+    assert bike.has_repair_sessions is False
 
 
 async def test_list_bikes_returns_owned_active_profiles_only() -> None:
@@ -138,12 +158,14 @@ async def test_list_bikes_returns_owned_active_profiles_only() -> None:
                 deleted_at=datetime(2026, 1, 3, tzinfo=UTC),
             ),
         ],
+        repair_session_bike_ids={"bike_old", "bike_other", "bike_deleted"},
     )
     service = BikeService(repo)
 
     bikes = await service.list_bikes(current_user=_user())
 
     assert [bike.id for bike in bikes.items] == ["bike_new", "bike_old"]
+    assert [bike.has_repair_sessions for bike in bikes.items] == [False, True]
     assert bikes.next_cursor is None
 
 
@@ -152,6 +174,17 @@ async def test_get_bike_requires_ownership() -> None:
 
     with pytest.raises(NotFoundError):
         await service.get_bike(current_user=_user(), bike_id="bike_owned")
+
+
+async def test_get_bike_includes_repair_session_history_flag() -> None:
+    bike = _bike()
+    service = BikeService(
+        FakeBikeRepository([bike], repair_session_bike_ids={bike.id}),
+    )
+
+    result = await service.get_bike(current_user=_user(), bike_id=bike.id)
+
+    assert result.has_repair_sessions is True
 
 
 async def test_update_bike_preserves_omitted_fields_and_clears_explicit_nulls() -> None:
@@ -169,6 +202,7 @@ async def test_update_bike_preserves_omitted_fields_and_clears_explicit_nulls() 
     assert updated.make == "Surly"
     assert updated.model == "Straggler"
     assert updated.model_year == 2021
+    assert updated.has_repair_sessions is False
 
 
 async def test_update_bike_can_clear_nullable_model_year() -> None:

@@ -29,12 +29,14 @@ class FakeBikeService:
             OWNED_BIKE_ID: _public_bike(
                 bike_id=OWNED_BIKE_ID,
                 user_id="usr_contract_user",
+                has_repair_sessions=True,
                 created_at=timestamp,
                 updated_at=timestamp,
             ),
             OTHER_BIKE_ID: _public_bike(
                 bike_id=OTHER_BIKE_ID,
                 user_id="usr_other_user",
+                has_repair_sessions=False,
                 created_at=timestamp,
                 updated_at=timestamp,
             ),
@@ -64,6 +66,7 @@ class FakeBikeService:
             id=f"bike_created_{len(self.bikes) + 1}",
             user_id=current_user.id,
             display_name=request.display_name,
+            has_repair_sessions=False,
             make=request.make,
             model=request.model,
             model_year=request.model_year,
@@ -120,6 +123,7 @@ def _public_bike(
     *,
     bike_id: str,
     user_id: str,
+    has_repair_sessions: bool,
     created_at: datetime,
     updated_at: datetime,
 ) -> BikeProfile:
@@ -127,6 +131,7 @@ def _public_bike(
         id=bike_id,
         user_id=user_id,
         display_name="Commuter",
+        has_repair_sessions=has_repair_sessions,
         make="Surly",
         model="Straggler",
         model_year=2021,
@@ -180,6 +185,7 @@ async def test_list_bikes_returns_owned_profiles(
     assert body["next_cursor"] is None
     assert [bike["id"] for bike in body["items"]] == [OWNED_BIKE_ID]
     assert body["items"][0]["user_id"] == test_user.id
+    assert body["items"][0]["has_repair_sessions"] is True
     assert_no_private_fields(body)
 
 
@@ -199,6 +205,7 @@ async def test_create_bike_returns_created_profile(
     assert bike["user_id"] == test_user.id
     assert bike["display_name"] == "Commuter"
     assert bike["bike_type"] == "gravel"
+    assert bike["has_repair_sessions"] is False
     assert_no_private_fields(bike)
 
 
@@ -232,6 +239,7 @@ async def test_get_bike_returns_owned_profile(
     bike = response.json()
     assert bike["id"] == OWNED_BIKE_ID
     assert bike["display_name"] == "Commuter"
+    assert bike["has_repair_sessions"] is True
     assert_no_private_fields(bike)
 
 
@@ -258,6 +266,7 @@ async def test_patch_bike_preserves_omitted_fields_and_clears_explicit_nulls(
     bike = response.json()
     assert bike["display_name"] == "Updated"
     assert bike["notes"] is None
+    assert bike["has_repair_sessions"] is True
     assert bike["make"] == "Surly"
     assert bike["model_year"] == 2021
 

@@ -19,3 +19,17 @@ Backend is a FastAPI service, with Google ADK agent backend. PostgreSQL is used 
 - **AGENTS.md**: `apps/api/AGENTS.md`
 - **High-Level Spec**: `docs/specs/apps/api.md`
 - **Canonical Specs**: `docs/specs/apps/`
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for this repository. External PRs are not part of the triage intake flow. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+This repo uses the default canonical triage labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a multi-context layout with a root `CONTEXT-MAP.md` that points to per-area `CONTEXT.md` files, plus shared ADRs in `docs/adr/`. See `docs/agents/domain.md`.
