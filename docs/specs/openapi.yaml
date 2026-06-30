@@ -733,6 +733,7 @@ components:
         - id
         - user_id
         - display_name
+        - has_repair_sessions
         - bike_type
         - created_at
         - updated_at
@@ -743,6 +744,9 @@ components:
           type: string
         display_name:
           type: string
+        has_repair_sessions:
+          type: boolean
+          description: True when the authenticated user owns one or more repair sessions for this bike.
         make:
           type: string
           nullable: true
