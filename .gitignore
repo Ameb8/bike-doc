@@ -34,6 +34,7 @@ Thumbs.db
 **/FirebaseAppDistribution/
 .gradle/
 **/gradlew.bat
+!apps/android/gradlew.bat
 **/obj/
 **/libs/
 

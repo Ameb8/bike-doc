@@ -9,7 +9,15 @@ BikeDoc is an AI-powered bike repair and diagnostic assistant.
 
 ## Components
 
-### App (Not Implemented)
+### App
+
+App is Android Kotlin. always read `apps/android/AGENTS.md` if working on android app.
+
+### Notable Docs
+- **AGENTS.md**: `apps/android/AGENTS.md`
+- **High-Level Spec**: `docs/specs/android/mvp-spec.md`
+- **Canonical Specs**: `docs/specs/android/`
+
 
 ### Backend API
 

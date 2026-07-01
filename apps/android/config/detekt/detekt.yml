@@ -1,0 +1,16 @@
+complexity:
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated:
+      - Composable
+
+style:
+  MagicNumber:
+    active: false
+  UnusedPrivateMember:
+    active: true

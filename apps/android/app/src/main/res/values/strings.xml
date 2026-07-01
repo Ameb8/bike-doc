@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Bike Doc</string>
+    <string name="auth_title">Bike Doc</string>
+    <string name="auth_placeholder">Authentication will be implemented in the auth slice.</string>
+    <string name="auth_continue">Continue to app</string>
+    <string name="home_title">Bike Doc</string>
+    <string name="home_greeting">Authenticated app shell</string>
+    <string name="home_my_bikes">My Bikes</string>
+    <string name="home_start_repair">Start New Repair</string>
+    <string name="home_sign_out">Sign Out</string>
+    <string name="not_implemented">This screen will be implemented in a later MVP slice.</string>
+</resources>
