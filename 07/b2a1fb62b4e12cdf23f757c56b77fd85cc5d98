@@ -1,0 +1,43 @@
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListScreen.kt
+  s_88a055d23204bf::t_c85ff7accab740 122-124,165-170
+  s_88a055d23204bf::t_d4b465d95edf16 14,22-23,25,28,31,38,47-57,60,68-70,78,82-84,87,117,119-121,125-136,147,177-178,181,202-203,206,223-225,266-268,297-310
+apps/android/app/src/main/res/values/strings.xml
+  s_88a055d23204bf::t_249d9f11b8e4ff 26
+  s_88a055d23204bf::t_316bf0b6b2eb39 25,27-29
+apps/android/app/src/test/java/com/bikedoc/android/bikes/BikeListViewModelTest.kt
+  s_88a055d23204bf::t_26ab7e39d0a800 3,87-112,152-153,176-177,180,184-189,192-203
+  s_88a055d23204bf::t_69c07faeaf3e27 75-77
+  s_88a055d23204bf::t_e28fcaad19fd65 25-27
+  s_88a055d23204bf::t_f54a4ab92929d4 6,113-117,124-151
+  s_88a055d23204bf::t_6b02ec8e25a03b 154-156,163-174
+  s_88a055d23204bf::t_f36dec0e63cb3a 28-35
+  s_88a055d23204bf::t_86b70b22a43590 55-58,74,118-123,157-162
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListViewModel.kt
+  s_88a055d23204bf::t_e337db1e620e30 57-61,106-110,145-150
+  s_88a055d23204bf::t_69fec9d3d85324 124,152
+  s_88a055d23204bf::t_9997746307aa6f 7,9,13,22-23,41-43,62-105,111-123,125,129,164-167
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListRepository.kt
+  s_88a055d23204bf::t_2eb63caf65c123 41-42,49-54
+  s_88a055d23204bf::t_e2392d3c325908 17-26,48,55-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "07b2a1fb62b4e12cdf23f757c56b77fd85cc5d98",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_88a055d23204bf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f21ce-f6e4-7df3-8da5-5e14bf78eff0",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
