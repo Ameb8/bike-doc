@@ -1,0 +1,28 @@
+apps/android/app/src/debug/res/xml/debug_network_security_config.xml
+  s_3c80d0b6955866::t_cb0d0597535a0a 1-8
+apps/android/app/src/debug/AndroidManifest.xml
+  s_3c80d0b6955866::t_cb0d0597535a0a 1-6
+compose.yaml
+  s_3c80d0b6955866::t_25da40b4c43f17 26-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "074977555448420d3bf390662d378350a3435be7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_3c80d0b6955866": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1f8c-2039-79e1-ae06-c1ef52098a5a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
