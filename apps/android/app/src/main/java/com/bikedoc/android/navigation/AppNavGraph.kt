@@ -27,6 +27,11 @@ import androidx.navigation.navArgument
 import com.bikedoc.android.R
 import com.bikedoc.android.auth.AuthScreen
 import com.bikedoc.android.auth.AuthViewModel
+import com.bikedoc.android.bikes.BIKE_LIST_REFRESH_REQUESTED
+import com.bikedoc.android.bikes.BikeEditScreen
+import com.bikedoc.android.bikes.BikeEditViewModel
+import com.bikedoc.android.bikes.BikeListScreen
+import com.bikedoc.android.bikes.BikeListViewModel
 import com.bikedoc.android.home.HomeScreen
 import com.bikedoc.android.home.HomeViewModel
 
@@ -43,7 +48,8 @@ fun AppNavGraph(
     ) {
         authDestination(navController)
         homeDestination(navController)
-        placeholderDestinations()
+        bikeDestinations(navController)
+        appDestinations(navController)
     }
 }
 
@@ -71,6 +77,7 @@ private fun NavGraphBuilder.homeDestination(navController: NavHostController) {
                 when (event) {
                     is UiEvent.NavigateTo -> navController.handleNavigation(event)
                     UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> Unit
                     is UiEvent.ShowSnackbar -> Unit
                 }
             }
@@ -89,7 +96,7 @@ private fun NavHostController.handleNavigation(event: UiEvent.NavigateTo) {
     }
 }
 
-private fun NavGraphBuilder.placeholderDestinations() {
+private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
     composable(
         route = AppRoute.Bikes.route,
         arguments =
@@ -100,20 +107,78 @@ private fun NavGraphBuilder.placeholderDestinations() {
                 },
             ),
     ) {
-        PlaceholderScreen()
+        val bikeListViewModel: BikeListViewModel = hiltViewModel()
+        val refreshRequested by
+            it.savedStateHandle
+                .getStateFlow(BIKE_LIST_REFRESH_REQUESTED, false)
+                .collectAsState()
+        LaunchedEffect(refreshRequested) {
+            if (refreshRequested) {
+                bikeListViewModel.refresh()
+                it.savedStateHandle[BIKE_LIST_REFRESH_REQUESTED] = false
+            }
+        }
+        BikeListScreen(
+            viewModel = bikeListViewModel,
+            onAddBike = { navController.navigate(AppRoute.BikeNew.route) },
+            onOpenBike = { bikeId -> navController.navigate(AppRoute.BikeEdit.create(bikeId)) },
+        )
     }
+}
 
+private fun NavGraphBuilder.appDestinations(navController: NavHostController) {
     composable(AppRoute.BikeNew.route) {
-        PlaceholderScreen()
+        val bikeEditViewModel: BikeEditViewModel = hiltViewModel()
+        LaunchedEffect(bikeEditViewModel) {
+            bikeEditViewModel.events.collect { event ->
+                when (event) {
+                    UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> navController.navigateBackWithResult(event)
+                    is UiEvent.NavigateTo -> navController.navigate(event.route)
+                    is UiEvent.ShowSnackbar -> Unit
+                }
+            }
+        }
+        BikeEditScreen(
+            viewModel = bikeEditViewModel,
+            onNavigateBack = { navController.popBackStack() },
+        )
     }
 
-    composable(AppRoute.BikeEdit.route) {
-        PlaceholderScreen()
+    composable(
+        route = AppRoute.BikeEdit.route,
+        arguments =
+            listOf(
+                navArgument("bikeId") {
+                    type = NavType.StringType
+                },
+            ),
+    ) {
+        val bikeEditViewModel: BikeEditViewModel = hiltViewModel()
+        LaunchedEffect(bikeEditViewModel) {
+            bikeEditViewModel.events.collect { event ->
+                when (event) {
+                    UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> navController.navigateBackWithResult(event)
+                    is UiEvent.NavigateTo -> navController.navigate(event.route)
+                    is UiEvent.ShowSnackbar -> Unit
+                }
+            }
+        }
+        BikeEditScreen(
+            viewModel = bikeEditViewModel,
+            onNavigateBack = { navController.popBackStack() },
+        )
     }
 
     composable(AppRoute.DiagnosticChat.route) {
         PlaceholderScreen()
     }
+}
+
+private fun NavHostController.navigateBackWithResult(event: UiEvent.NavigateBackWithResult) {
+    previousBackStackEntry?.savedStateHandle?.set(event.key, event.value)
+    popBackStack()
 }
 
 @Composable
