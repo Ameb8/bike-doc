@@ -27,6 +27,8 @@ import androidx.navigation.navArgument
 import com.bikedoc.android.R
 import com.bikedoc.android.auth.AuthScreen
 import com.bikedoc.android.auth.AuthViewModel
+import com.bikedoc.android.bikes.BikeListScreen
+import com.bikedoc.android.bikes.BikeListViewModel
 import com.bikedoc.android.home.HomeScreen
 import com.bikedoc.android.home.HomeViewModel
 
@@ -43,6 +45,7 @@ fun AppNavGraph(
     ) {
         authDestination(navController)
         homeDestination(navController)
+        bikeDestinations(navController)
         placeholderDestinations()
     }
 }
@@ -89,7 +92,7 @@ private fun NavHostController.handleNavigation(event: UiEvent.NavigateTo) {
     }
 }
 
-private fun NavGraphBuilder.placeholderDestinations() {
+private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
     composable(
         route = AppRoute.Bikes.route,
         arguments =
@@ -100,9 +103,16 @@ private fun NavGraphBuilder.placeholderDestinations() {
                 },
             ),
     ) {
-        PlaceholderScreen()
+        val bikeListViewModel: BikeListViewModel = hiltViewModel()
+        BikeListScreen(
+            viewModel = bikeListViewModel,
+            onAddBike = { navController.navigate(AppRoute.BikeNew.route) },
+            onOpenBike = { bikeId -> navController.navigate(AppRoute.BikeEdit.create(bikeId)) },
+        )
     }
+}
 
+private fun NavGraphBuilder.placeholderDestinations() {
     composable(AppRoute.BikeNew.route) {
         PlaceholderScreen()
     }

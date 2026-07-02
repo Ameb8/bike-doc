@@ -15,5 +15,12 @@
     <string name="home_my_bikes">My Bikes</string>
     <string name="home_start_repair">Start New Repair</string>
     <string name="home_sign_out">Sign Out</string>
+    <string name="bike_list_title">My Bikes</string>
+    <string name="bike_list_selection_subtitle">Select a bike to diagnose</string>
+    <string name="bike_list_add_bike">Add Bike</string>
+    <string name="bike_list_empty_title">No bikes yet.</string>
+    <string name="bike_list_empty_message">Add your first bike.</string>
+    <string name="bike_list_error_title">Couldn\'t load bikes</string>
+    <string name="bike_list_retry">Retry</string>
     <string name="not_implemented">This screen will be implemented in a later MVP slice.</string>
 </resources>
