@@ -1,0 +1,42 @@
+apps/android/app/src/main/java/com/bikedoc/android/home/HomeScreen.kt
+  s_7912f86221e197::t_825b400a24cdf9 8-9,18-19,44-45,51-64,78-89,91-97
+apps/android/app/src/main/java/com/bikedoc/android/di/HomeModule.kt
+  s_7912f86221e197::t_825b400a24cdf9 1-15
+apps/android/app/src/main/java/com/bikedoc/android/api/ApiResult.kt
+  s_ec504869fdb84c::t_d790f6f94103cc 3,22-23
+apps/android/app/src/main/java/com/bikedoc/android/api/models/UserProfile.kt
+  s_ec504869fdb84c::t_d790f6f94103cc 9,11-13,15
+apps/android/app/src/main/java/com/bikedoc/android/home/HomeViewModel.kt
+  s_7912f86221e197::t_825b400a24cdf9 5,29,37-40,47,49-79,82-89
+apps/android/app/src/main/java/com/bikedoc/android/home/HomeRepository.kt
+  s_7912f86221e197::t_825b400a24cdf9 1-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "68fee6683749a78a1d636b179f7eefacd1430b86",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7912f86221e197": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1caa-8c85-7fc0-8ac5-a4324839e298",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_ec504869fdb84c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1f94-a81e-76d1-9fe1-89dd58376b2e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
