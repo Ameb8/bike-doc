@@ -1,0 +1,33 @@
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListViewModel.kt
+  s_05ed1ad187cc76::t_9cda44dcafee29 81-85
+  s_05ed1ad187cc76::t_dec0f9b43bce69 7-9,25-26,29,37,57,61,80,86-118,213-243
+apps/android/app/src/main/java/com/bikedoc/android/navigation/AppNavGraph.kt
+  s_05ed1ad187cc76::t_f0653b5413ad76 125-129
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListScreen.kt
+  s_05ed1ad187cc76::t_9580307ace8554 45,54,66-68,183-184,210-211,233,277,307-308
+apps/android/app/src/test/java/com/bikedoc/android/bikes/BikeListViewModelTest.kt
+  s_05ed1ad187cc76::t_bc3e5af0fed7f1 6-12,204-250,269-287,291-295
+  s_05ed1ad187cc76::t_7156f889eabb22 48-53,71,92,111-116,153-158,191-195
+  s_05ed1ad187cc76::t_d47bdb84e06983 288-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "ebe721ed76c64b28a93aa92947827575eccc043b",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_05ed1ad187cc76": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f24ed-1a65-75d1-86f8-c00bf540a796",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
