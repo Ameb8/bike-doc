@@ -42,6 +42,7 @@ fun BikeListScreen(
     viewModel: BikeListViewModel,
     onAddBike: () -> Unit,
     onOpenBike: (String) -> Unit,
+    onNavigateTo: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -50,6 +51,7 @@ fun BikeListScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is UiEvent.ShowSnackbar -> snackbarHostState.showSnackbar(event.message)
+                is UiEvent.NavigateTo -> onNavigateTo(event.route)
                 else -> Unit
             }
         }
@@ -61,7 +63,9 @@ fun BikeListScreen(
         onRetry = viewModel::refresh,
         onAddBike = onAddBike,
         onBikeSelected = { bike ->
-            if (!uiState.selectionMode) {
+            if (uiState.selectionMode) {
+                viewModel.selectBike(bike)
+            } else {
                 onOpenBike(bike.id)
             }
         },
@@ -176,6 +180,8 @@ private fun BikeListBody(
                 bikes = state.bikes,
                 selectionMode = state.selectionMode,
                 deletingBikeId = state.deletingBikeId,
+                selectedBikeId = state.selectedBikeId,
+                isBusy = state.isLoadingBikeSessions || state.isCreatingSession,
                 padding = padding,
                 onBikeSelected = onBikeSelected,
                 onRequestDelete = onRequestDelete,
@@ -201,6 +207,8 @@ private fun BikeListItems(
     bikes: List<BikeListItem>,
     selectionMode: Boolean,
     deletingBikeId: String?,
+    selectedBikeId: String?,
+    isBusy: Boolean,
     padding: PaddingValues,
     onBikeSelected: (BikeListItem) -> Unit,
     onRequestDelete: (BikeListItem) -> Unit,
@@ -222,6 +230,7 @@ private fun BikeListItems(
                 onClick = { onBikeSelected(bike) },
                 showDeleteAction = !selectionMode && !bike.hasRepairSessions,
                 isDeleting = deletingBikeId == bike.id,
+                showSelectionProgress = selectionMode && isBusy && selectedBikeId == bike.id,
                 onDelete = { onRequestDelete(bike) },
             )
         }
@@ -265,6 +274,7 @@ private fun BikeRow(
     onClick: () -> Unit,
     showDeleteAction: Boolean,
     isDeleting: Boolean,
+    showSelectionProgress: Boolean,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -293,6 +303,9 @@ private fun BikeRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (showSelectionProgress) {
+                CircularProgressIndicator()
             }
             if (showDeleteAction) {
                 TextButton(

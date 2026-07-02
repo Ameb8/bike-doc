@@ -122,6 +122,11 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
             viewModel = bikeListViewModel,
             onAddBike = { navController.navigate(AppRoute.BikeNew.route) },
             onOpenBike = { bikeId -> navController.navigate(AppRoute.BikeEdit.create(bikeId)) },
+            onNavigateTo = { route ->
+                navController.navigate(route) {
+                    popUpTo(AppRoute.Bikes.route) { inclusive = true }
+                }
+            },
         )
     }
 }
