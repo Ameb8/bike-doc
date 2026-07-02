@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -18,17 +19,23 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bikedoc.android.R
+import com.bikedoc.android.navigation.UiEvent
 
 @Composable
 fun BikeListScreen(
@@ -37,8 +44,20 @@ fun BikeListScreen(
     onOpenBike: (String) -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is UiEvent.ShowSnackbar -> snackbarHostState.showSnackbar(event.message)
+                else -> Unit
+            }
+        }
+    }
+
     BikeListContent(
         state = uiState,
+        snackbarHostState = snackbarHostState,
         onRetry = viewModel::refresh,
         onAddBike = onAddBike,
         onBikeSelected = { bike ->
@@ -46,6 +65,9 @@ fun BikeListScreen(
                 onOpenBike(bike.id)
             }
         },
+        onRequestDelete = viewModel::requestDelete,
+        onDismissDelete = viewModel::dismissDelete,
+        onConfirmDelete = viewModel::confirmDelete,
     )
 }
 
@@ -53,11 +75,16 @@ fun BikeListScreen(
 @Composable
 private fun BikeListContent(
     state: BikeListUiState,
+    snackbarHostState: SnackbarHostState,
     onRetry: () -> Unit,
     onAddBike: () -> Unit,
     onBikeSelected: (BikeListItem) -> Unit,
+    onRequestDelete: (BikeListItem) -> Unit,
+    onDismissDelete: () -> Unit,
+    onConfirmDelete: () -> Unit,
 ) {
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -87,7 +114,26 @@ private fun BikeListContent(
             onRetry = onRetry,
             onAddBike = onAddBike,
             onBikeSelected = onBikeSelected,
+            onRequestDelete = onRequestDelete,
         )
+        state.pendingDeleteBike?.let { bike ->
+            AlertDialog(
+                onDismissRequest = onDismissDelete,
+                title = {
+                    Text(text = stringResource(R.string.bike_list_delete_confirm_title, bike.name))
+                },
+                confirmButton = {
+                    TextButton(onClick = onConfirmDelete) {
+                        Text(text = stringResource(R.string.bike_list_delete_confirm_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismissDelete) {
+                        Text(text = stringResource(R.string.bike_list_delete_cancel_action))
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -98,6 +144,7 @@ private fun BikeListBody(
     onRetry: () -> Unit,
     onAddBike: () -> Unit,
     onBikeSelected: (BikeListItem) -> Unit,
+    onRequestDelete: (BikeListItem) -> Unit,
 ) {
     when {
         state.isLoading -> BikeListLoadingState(padding = padding)
@@ -115,15 +162,23 @@ private fun BikeListBody(
                 padding = padding,
                 title = stringResource(R.string.bike_list_empty_title),
                 message = stringResource(R.string.bike_list_empty_message),
-                actionLabel = if (state.selectionMode) null else stringResource(R.string.bike_list_add_bike),
+                actionLabel =
+                    if (state.selectionMode) {
+                        null
+                    } else {
+                        stringResource(R.string.bike_list_add_bike)
+                    },
                 onAction = onAddBike,
             )
 
         else ->
             BikeListItems(
                 bikes = state.bikes,
+                selectionMode = state.selectionMode,
+                deletingBikeId = state.deletingBikeId,
                 padding = padding,
                 onBikeSelected = onBikeSelected,
+                onRequestDelete = onRequestDelete,
             )
     }
 }
@@ -144,8 +199,11 @@ private fun BikeListLoadingState(padding: PaddingValues) {
 @Composable
 private fun BikeListItems(
     bikes: List<BikeListItem>,
+    selectionMode: Boolean,
+    deletingBikeId: String?,
     padding: PaddingValues,
     onBikeSelected: (BikeListItem) -> Unit,
+    onRequestDelete: (BikeListItem) -> Unit,
 ) {
     LazyColumn(
         modifier =
@@ -162,6 +220,9 @@ private fun BikeListItems(
             BikeRow(
                 bike = bike,
                 onClick = { onBikeSelected(bike) },
+                showDeleteAction = !selectionMode && !bike.hasRepairSessions,
+                isDeleting = deletingBikeId == bike.id,
+                onDelete = { onRequestDelete(bike) },
             )
         }
     }
@@ -202,6 +263,9 @@ private fun BikeListMessageState(
 private fun BikeRow(
     bike: BikeListItem,
     onClick: () -> Unit,
+    showDeleteAction: Boolean,
+    isDeleting: Boolean,
+    onDelete: () -> Unit,
 ) {
     Card(
         modifier =
@@ -229,6 +293,21 @@ private fun BikeRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (showDeleteAction) {
+                TextButton(
+                    onClick = onDelete,
+                    enabled = !isDeleting,
+                ) {
+                    Text(
+                        text =
+                            if (isDeleting) {
+                                stringResource(R.string.bike_list_delete_in_progress)
+                            } else {
+                                stringResource(R.string.bike_list_delete_action)
+                            },
+                    )
+                }
             }
         }
     }

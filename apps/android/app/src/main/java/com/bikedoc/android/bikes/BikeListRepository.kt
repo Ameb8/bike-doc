@@ -14,6 +14,16 @@ data class BikeListItem(
 
 interface BikeListRepository {
     suspend fun getBikes(): ApiResult<List<BikeListItem>>
+
+    suspend fun deleteBike(bikeId: String): BikeDeleteResult
+}
+
+sealed interface BikeDeleteResult {
+    data object Success : BikeDeleteResult
+
+    data object RepairHistoryConflict : BikeDeleteResult
+
+    data class Error(val message: String) : BikeDeleteResult
 }
 
 class DefaultBikeListRepository
@@ -28,10 +38,28 @@ class DefaultBikeListRepository
                         id = bike.id,
                         name = bike.displayName,
                         makeModelYear = buildMakeModelYear(bike.make, bike.model, bike.modelYear),
-                        specificationSummary = buildSpecificationSummary(bike.drivetrain, bike.brakeType),
+                        specificationSummary =
+                            buildSpecificationSummary(bike.drivetrain, bike.brakeType),
                         hasRepairSessions = bike.hasRepairSessions,
                     )
                 }
+            }
+
+        override suspend fun deleteBike(bikeId: String): BikeDeleteResult =
+            when (
+                val result =
+                    com.bikedoc.android.api.safeApiCall {
+                        apiService.deleteBike(bikeId)
+                    }
+            ) {
+                is ApiResult.Success -> BikeDeleteResult.Success
+                is ApiResult.Error ->
+                    if (result.code == 409) {
+                        BikeDeleteResult.RepairHistoryConflict
+                    } else {
+                        BikeDeleteResult.Error(result.message)
+                    }
+                ApiResult.Loading -> BikeDeleteResult.Error("Something went wrong. Try again.")
             }
 
         private fun buildMakeModelYear(

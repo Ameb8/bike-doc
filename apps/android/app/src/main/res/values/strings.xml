@@ -22,6 +22,11 @@
     <string name="bike_list_empty_message">Add your first bike.</string>
     <string name="bike_list_error_title">Couldn\'t load bikes</string>
     <string name="bike_list_retry">Retry</string>
+    <string name="bike_list_delete_action">Remove</string>
+    <string name="bike_list_delete_in_progress">Removing...</string>
+    <string name="bike_list_delete_confirm_title">Remove %1$s?</string>
+    <string name="bike_list_delete_confirm_action">Remove</string>
+    <string name="bike_list_delete_cancel_action">Cancel</string>
     <string name="bike_edit_title_add">Add Bike</string>
     <string name="bike_edit_title_edit">Edit Bike</string>
     <string name="bike_edit_back">Back</string>
