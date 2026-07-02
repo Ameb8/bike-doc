@@ -1,0 +1,32 @@
+apps/android/app/src/test/java/com/bikedoc/android/home/HomeViewModelTest.kt
+  s_7912f86221e197::t_de25444f05186a 1-89
+apps/android/app/src/test/java/com/bikedoc/android/MainDispatcherRule.kt
+  s_7912f86221e197::t_de25444f05186a 1-23
+apps/android/app/src/test/java/com/bikedoc/android/auth/AuthViewModelTest.kt
+  s_7912f86221e197::t_de25444f05186a 1-111
+apps/android/app/src/test/java/com/bikedoc/android/api/AuthInterceptorTest.kt
+  s_7912f86221e197::t_de25444f05186a 1-129
+apps/android/app/src/test/java/com/bikedoc/android/navigation/AppNavViewModelTest.kt
+  s_7912f86221e197::t_de25444f05186a 1-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3b20fac583f282156a9498995b93dc856ba2ee94",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7912f86221e197": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1caa-8c85-7fc0-8ac5-a4324839e298",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
