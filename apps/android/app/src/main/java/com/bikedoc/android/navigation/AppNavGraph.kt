@@ -27,6 +27,9 @@ import androidx.navigation.navArgument
 import com.bikedoc.android.R
 import com.bikedoc.android.auth.AuthScreen
 import com.bikedoc.android.auth.AuthViewModel
+import com.bikedoc.android.bikes.BIKE_LIST_REFRESH_REQUESTED
+import com.bikedoc.android.bikes.BikeEditScreen
+import com.bikedoc.android.bikes.BikeEditViewModel
 import com.bikedoc.android.bikes.BikeListScreen
 import com.bikedoc.android.bikes.BikeListViewModel
 import com.bikedoc.android.home.HomeScreen
@@ -46,7 +49,7 @@ fun AppNavGraph(
         authDestination(navController)
         homeDestination(navController)
         bikeDestinations(navController)
-        placeholderDestinations()
+        appDestinations(navController)
     }
 }
 
@@ -74,6 +77,7 @@ private fun NavGraphBuilder.homeDestination(navController: NavHostController) {
                 when (event) {
                     is UiEvent.NavigateTo -> navController.handleNavigation(event)
                     UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> Unit
                     is UiEvent.ShowSnackbar -> Unit
                 }
             }
@@ -104,6 +108,16 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
             ),
     ) {
         val bikeListViewModel: BikeListViewModel = hiltViewModel()
+        val refreshRequested by
+            it.savedStateHandle
+                .getStateFlow(BIKE_LIST_REFRESH_REQUESTED, false)
+                .collectAsState()
+        LaunchedEffect(refreshRequested) {
+            if (refreshRequested) {
+                bikeListViewModel.refresh()
+                it.savedStateHandle[BIKE_LIST_REFRESH_REQUESTED] = false
+            }
+        }
         BikeListScreen(
             viewModel = bikeListViewModel,
             onAddBike = { navController.navigate(AppRoute.BikeNew.route) },
@@ -112,18 +126,59 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
     }
 }
 
-private fun NavGraphBuilder.placeholderDestinations() {
+private fun NavGraphBuilder.appDestinations(navController: NavHostController) {
     composable(AppRoute.BikeNew.route) {
-        PlaceholderScreen()
+        val bikeEditViewModel: BikeEditViewModel = hiltViewModel()
+        LaunchedEffect(bikeEditViewModel) {
+            bikeEditViewModel.events.collect { event ->
+                when (event) {
+                    UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> navController.navigateBackWithResult(event)
+                    is UiEvent.NavigateTo -> navController.navigate(event.route)
+                    is UiEvent.ShowSnackbar -> Unit
+                }
+            }
+        }
+        BikeEditScreen(
+            viewModel = bikeEditViewModel,
+            onNavigateBack = { navController.popBackStack() },
+        )
     }
 
-    composable(AppRoute.BikeEdit.route) {
-        PlaceholderScreen()
+    composable(
+        route = AppRoute.BikeEdit.route,
+        arguments =
+            listOf(
+                navArgument("bikeId") {
+                    type = NavType.StringType
+                },
+            ),
+    ) {
+        val bikeEditViewModel: BikeEditViewModel = hiltViewModel()
+        LaunchedEffect(bikeEditViewModel) {
+            bikeEditViewModel.events.collect { event ->
+                when (event) {
+                    UiEvent.NavigateBack -> navController.popBackStack()
+                    is UiEvent.NavigateBackWithResult -> navController.navigateBackWithResult(event)
+                    is UiEvent.NavigateTo -> navController.navigate(event.route)
+                    is UiEvent.ShowSnackbar -> Unit
+                }
+            }
+        }
+        BikeEditScreen(
+            viewModel = bikeEditViewModel,
+            onNavigateBack = { navController.popBackStack() },
+        )
     }
 
     composable(AppRoute.DiagnosticChat.route) {
         PlaceholderScreen()
     }
+}
+
+private fun NavHostController.navigateBackWithResult(event: UiEvent.NavigateBackWithResult) {
+    previousBackStackEntry?.savedStateHandle?.set(event.key, event.value)
+    popBackStack()
 }
 
 @Composable

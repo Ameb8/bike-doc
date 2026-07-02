@@ -5,5 +5,10 @@ sealed class UiEvent {
 
     data class NavigateTo(val route: String) : UiEvent()
 
+    data class NavigateBackWithResult(
+        val key: String,
+        val value: Boolean,
+    ) : UiEvent()
+
     data object NavigateBack : UiEvent()
 }
