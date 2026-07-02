@@ -27,6 +27,14 @@
     <string name="bike_list_delete_confirm_title">Remove %1$s?</string>
     <string name="bike_list_delete_confirm_action">Remove</string>
     <string name="bike_list_delete_cancel_action">Cancel</string>
+    <string name="session_chooser_title">Previous diagnostic sessions</string>
+    <string name="session_chooser_resume_latest_action">Resume Latest Active Session</string>
+    <string name="session_chooser_start_new_action">Start New Diagnostic Session</string>
+    <string name="session_chooser_start_new_in_progress">Starting new diagnostic session...</string>
+    <string name="session_chooser_previous_sessions_title">Older sessions</string>
+    <string name="session_chooser_resumable_badge">Resumable</string>
+    <string name="session_chooser_start_new_confirmation_title">Start a new diagnostic session?</string>
+    <string name="session_chooser_start_new_confirmation_message">You can still return to your earlier session later.</string>
     <string name="bike_edit_title_add">Add Bike</string>
     <string name="bike_edit_title_edit">Edit Bike</string>
     <string name="bike_edit_back">Back</string>
