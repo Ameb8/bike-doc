@@ -1,0 +1,52 @@
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthScreen.kt
+  s_7912f86221e197::t_825b400a24cdf9 8,11,13-14,16,20-21,25-28,37-41,48-52,54-56,63,65,74
+  s_7912f86221e197::t_cd0d046ed9af61 75-78,80-86,91-150
+  s_7912f86221e197::t_6ce6a9d854a4bc 71-73,79,151-242
+  s_7912f86221e197::t_dae7c714b068a0 6
+apps/android/gradle/libs.versions.toml
+  s_ed6b1e6dd3ceb7::t_7dea058075127c 17,66
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthProvider.kt
+  s_7912f86221e197::t_825b400a24cdf9 3-23,27-35
+apps/android/app/build.gradle.kts
+  s_ed6b1e6dd3ceb7::t_7dea058075127c 8
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthViewModel.kt
+  s_7912f86221e197::t_dae7c714b068a0 101,110
+  s_7912f86221e197::t_825b400a24cdf9 17-20,22-23,38-74,76-100,102-109,111-113,118-164
+apps/android/app/src/main/java/com/bikedoc/android/auth/FirebaseAuthProvider.kt
+  s_ed6b1e6dd3ceb7::t_7dea058075127c 31-32,44-45
+  s_7912f86221e197::t_825b400a24cdf9 5-9,24-30,34-43,47-49,68-89
+  s_7912f86221e197::t_6ce6a9d854a4bc 3,33,46
+apps/android/app/src/main/res/values/strings.xml
+  s_7912f86221e197::t_825b400a24cdf9 5-11,13-14
+apps/android/build.gradle.kts
+  s_ed6b1e6dd3ceb7::t_7dea058075127c 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "25c740c53ee9a99d2052e89280064d4e94272639",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7912f86221e197": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1caa-8c85-7fc0-8ac5-a4324839e298",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_ed6b1e6dd3ceb7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f1f6c-238a-79a3-aacc-aad7071f54fa",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
