@@ -3,17 +3,29 @@ package com.bikedoc.android.auth
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.bikedoc.android.R
 
@@ -22,41 +34,210 @@ fun AuthScreen(viewModel: AuthViewModel) {
     val uiState by viewModel.uiState.collectAsState()
     AuthContent(
         state = uiState,
-        onContinue = viewModel::continueToAuthenticatedShell,
+        onModeSelected = viewModel::onModeSelected,
+        onEmailChanged = viewModel::onEmailChanged,
+        onPasswordChanged = viewModel::onPasswordChanged,
+        onConfirmPasswordChanged = viewModel::onConfirmPasswordChanged,
+        onSubmit = viewModel::submit,
     )
 }
 
 @Composable
 private fun AuthContent(
     state: AuthUiState,
-    onContinue: () -> Unit,
+    onModeSelected: (AuthMode) -> Unit,
+    onEmailChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onConfirmPasswordChanged: (String) -> Unit,
+    onSubmit: () -> Unit,
 ) {
+    val isPasswordVisible = remember { mutableStateOf(false) }
+    val isConfirmPasswordVisible = remember { mutableStateOf(false) }
+
     Scaffold { padding ->
         Column(
             modifier =
                 Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 24.dp),
+                    .padding(horizontal = 24.dp, vertical = 32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
                 text = stringResource(R.string.auth_title),
                 style = MaterialTheme.typography.headlineLarge,
             )
-            Text(
-                modifier = Modifier.padding(top = 12.dp),
-                text = stringResource(R.string.auth_placeholder),
-                style = MaterialTheme.typography.bodyMedium,
+            AuthModeTabs(
+                selectedMode = state.mode,
+                onModeSelected = onModeSelected,
             )
-            Button(
-                modifier = Modifier.padding(top = 24.dp),
-                enabled = !state.isLoading,
-                onClick = onContinue,
-            ) {
-                Text(text = stringResource(R.string.auth_continue))
-            }
+            AuthFormFields(
+                state = state,
+                isPasswordVisible = isPasswordVisible.value,
+                isConfirmPasswordVisible = isConfirmPasswordVisible.value,
+                onEmailChanged = onEmailChanged,
+                onPasswordChanged = onPasswordChanged,
+                onConfirmPasswordChanged = onConfirmPasswordChanged,
+                onTogglePasswordVisibility = { isPasswordVisible.value = !isPasswordVisible.value },
+                onToggleConfirmPasswordVisibility = {
+                    isConfirmPasswordVisible.value = !isConfirmPasswordVisible.value
+                },
+                onSubmit = onSubmit,
+            )
         }
     }
+}
+
+@Composable
+private fun AuthFormFields(
+    state: AuthUiState,
+    isPasswordVisible: Boolean,
+    isConfirmPasswordVisible: Boolean,
+    onEmailChanged: (String) -> Unit,
+    onPasswordChanged: (String) -> Unit,
+    onConfirmPasswordChanged: (String) -> Unit,
+    onTogglePasswordVisibility: () -> Unit,
+    onToggleConfirmPasswordVisibility: () -> Unit,
+    onSubmit: () -> Unit,
+) {
+    AuthEmailField(
+        email = state.email,
+        error = state.validationErrors["email"],
+        onEmailChanged = onEmailChanged,
+    )
+    AuthPasswordField(
+        value = state.password,
+        label = stringResource(R.string.auth_password_label),
+        isVisible = isPasswordVisible,
+        error = state.validationErrors["password"],
+        imeAction = if (state.mode == AuthMode.CreateAccount) ImeAction.Next else ImeAction.Done,
+        onToggleVisibility = onTogglePasswordVisibility,
+        onValueChange = onPasswordChanged,
+    )
+    if (state.mode == AuthMode.CreateAccount) {
+        AuthPasswordField(
+            value = state.confirmPassword,
+            label = stringResource(R.string.auth_confirm_password_label),
+            isVisible = isConfirmPasswordVisible,
+            error = state.validationErrors["confirmPassword"],
+            imeAction = ImeAction.Done,
+            onToggleVisibility = onToggleConfirmPasswordVisibility,
+            onValueChange = onConfirmPasswordChanged,
+        )
+    }
+    Button(
+        modifier = Modifier.padding(top = 8.dp),
+        enabled = !state.isLoading,
+        onClick = onSubmit,
+    ) {
+        Text(
+            text =
+                stringResource(
+                    if (state.mode == AuthMode.SignIn) {
+                        R.string.auth_tab_sign_in
+                    } else {
+                        R.string.auth_tab_create_account
+                    },
+                ),
+        )
+    }
+    state.error?.let {
+        Text(
+            text = it,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+@Composable
+private fun AuthModeTabs(
+    selectedMode: AuthMode,
+    onModeSelected: (AuthMode) -> Unit,
+) {
+    TabRow(selectedTabIndex = selectedMode.ordinal) {
+        Tab(
+            selected = selectedMode == AuthMode.SignIn,
+            onClick = { onModeSelected(AuthMode.SignIn) },
+            text = { Text(text = stringResource(R.string.auth_tab_sign_in)) },
+        )
+        Tab(
+            selected = selectedMode == AuthMode.CreateAccount,
+            onClick = { onModeSelected(AuthMode.CreateAccount) },
+            text = { Text(text = stringResource(R.string.auth_tab_create_account)) },
+        )
+    }
+}
+
+@Composable
+private fun AuthEmailField(
+    email: String,
+    error: String?,
+    onEmailChanged: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = email,
+        onValueChange = onEmailChanged,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(text = stringResource(R.string.auth_email_label)) },
+        singleLine = true,
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Email,
+                imeAction = ImeAction.Next,
+            ),
+        isError = error != null,
+        supportingText = {
+            error?.let { Text(text = it) }
+        },
+    )
+}
+
+@Composable
+private fun AuthPasswordField(
+    value: String,
+    label: String,
+    isVisible: Boolean,
+    error: String?,
+    imeAction: ImeAction,
+    onToggleVisibility: () -> Unit,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(text = label) },
+        singleLine = true,
+        visualTransformation =
+            if (isVisible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+        trailingIcon = {
+            TextButton(onClick = onToggleVisibility) {
+                Text(
+                    text =
+                        stringResource(
+                            if (isVisible) {
+                                R.string.auth_hide_password
+                            } else {
+                                R.string.auth_show_password
+                            },
+                        ),
+                )
+            }
+        },
+        keyboardOptions =
+            KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = imeAction,
+            ),
+        isError = error != null,
+        supportingText = {
+            error?.let { Text(text = it) }
+        },
+    )
 }
