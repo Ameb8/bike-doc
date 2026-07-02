@@ -6,13 +6,11 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class UserProfile(
     val id: String,
-    @SerialName("firebase_uid")
-    val firebaseUid: String,
-    val email: String? = null,
+    val email: String,
     @SerialName("display_name")
-    val displayName: String? = null,
+    val displayName: String,
+    @SerialName("skill_level")
+    val skillLevel: String,
     @SerialName("created_at")
-    val createdAt: String? = null,
-    @SerialName("updated_at")
-    val updatedAt: String? = null,
+    val createdAt: String,
 )

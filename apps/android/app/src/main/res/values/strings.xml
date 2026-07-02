@@ -2,10 +2,16 @@
 <resources>
     <string name="app_name">Bike Doc</string>
     <string name="auth_title">Bike Doc</string>
-    <string name="auth_placeholder">Authentication will be implemented in the auth slice.</string>
-    <string name="auth_continue">Continue to app</string>
+    <string name="auth_tab_sign_in">Sign In</string>
+    <string name="auth_tab_create_account">Create Account</string>
+    <string name="auth_email_label">Email</string>
+    <string name="auth_password_label">Password</string>
+    <string name="auth_confirm_password_label">Confirm Password</string>
+    <string name="auth_show_password">Show</string>
+    <string name="auth_hide_password">Hide</string>
     <string name="home_title">Bike Doc</string>
-    <string name="home_greeting">Authenticated app shell</string>
+    <string name="home_menu">Menu</string>
+    <string name="home_greeting">Hi, %1$s</string>
     <string name="home_my_bikes">My Bikes</string>
     <string name="home_start_repair">Start New Repair</string>
     <string name="home_sign_out">Sign Out</string>

@@ -1,5 +1,6 @@
 package com.bikedoc.android.api
 
+import kotlinx.serialization.SerializationException
 import retrofit2.HttpException
 import java.io.IOException
 
@@ -18,6 +19,8 @@ suspend fun <T> safeApiCall(call: suspend () -> T): ApiResult<T> =
         ApiResult.Error(exception.code(), mapHttpError(exception))
     } catch (_: IOException) {
         ApiResult.Error(null, "Network error. Check your connection.")
+    } catch (_: SerializationException) {
+        ApiResult.Error(null, "Unexpected server response. Please try again.")
     }
 
 private fun mapHttpError(exception: HttpException): String =
