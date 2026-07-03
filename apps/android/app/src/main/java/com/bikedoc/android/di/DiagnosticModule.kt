@@ -2,6 +2,8 @@ package com.bikedoc.android.di
 
 import com.bikedoc.android.api.DefaultSessionRepository
 import com.bikedoc.android.api.SessionRepository
+import com.bikedoc.android.sessions.chat.OkHttpSseEventSource
+import com.bikedoc.android.sessions.chat.SseEventSource
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -12,4 +14,7 @@ import dagger.hilt.components.SingletonComponent
 abstract class DiagnosticModule {
     @Binds
     abstract fun bindSessionRepository(repository: DefaultSessionRepository): SessionRepository
+
+    @Binds
+    abstract fun bindSseEventSource(eventSource: OkHttpSseEventSource): SseEventSource
 }

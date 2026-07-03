@@ -7,6 +7,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 sealed class SseEvent {
     abstract val id: String?
@@ -85,27 +87,75 @@ sealed class SseEvent {
             id: String?,
             data: String,
             json: Json,
-        ): SseEvent =
-            when (type) {
-                "turn.started" -> json.decodeFromString<TurnStartedPayload>(data).toEvent(id)
-                "assistant.delta" -> json.decodeFromString<AssistantDeltaPayload>(data).toEvent(id)
-                "assistant.message.completed" ->
-                    json.decodeFromString<AssistantMessageCompletedPayload>(data).toEvent(id)
-                "input.requested" -> json.decodeFromString<InputRequestedPayload>(data).toEvent(id)
-                "artifact.referenced" -> json.decodeFromString<ArtifactReferencedPayload>(data).toEvent(id)
-                "phase.report.created" -> {
-                    val payload = json.decodeFromString<PhaseReportCreatedPayload>(data)
-                    SseEvent.PhaseReportCreated(id, payload.reportId, json.parseToJsonElement(data))
-                }
-                "phase.transitioned" -> json.decodeFromString<PhaseTransitionedPayload>(data).toEvent(id)
-                "safety.escalated" -> SafetyEscalated(id, json.parseToJsonElement(data))
-                "turn.completed" -> json.decodeFromString<TurnCompletedPayload>(data).toEvent(id)
-                "error" -> json.decodeFromString<ErrorPayload>(data).toEvent(id)
-                "heartbeat" -> Heartbeat(id)
-                else -> Unknown(id, type)
+        ): SseEvent {
+            val envelope = data.toRepairSessionEventEnvelope(json)
+            val eventType = envelope?.type ?: type
+            val eventId = id ?: envelope?.id
+            val payload = envelope?.data?.toString() ?: data
+
+            return eventType
+                ?.let { EVENT_PARSERS[it]?.invoke(eventId, payload, json) }
+                ?: Unknown(eventId, eventType)
+        }
+
+        private fun String.toRepairSessionEventEnvelope(json: Json): RepairSessionEventEnvelope? {
+            val root = runCatching { json.parseToJsonElement(this).jsonObject }.getOrNull()
+            val type = root?.get("type")?.jsonPrimitive?.content
+            val envelopeData = root?.get("data")
+            return if (type != null && envelopeData != null) {
+                RepairSessionEventEnvelope(
+                    id = root["id"]?.jsonPrimitive?.content,
+                    type = type,
+                    data = envelopeData,
+                )
+            } else {
+                null
             }
+        }
+
+        private val EVENT_PARSERS: Map<String, (String?, String, Json) -> SseEvent> =
+            mapOf(
+                "turn.started" to { eventId, payload, json ->
+                    json.decodeFromString<TurnStartedPayload>(payload).toEvent(eventId)
+                },
+                "assistant.delta" to { eventId, payload, json ->
+                    json.decodeFromString<AssistantDeltaPayload>(payload).toEvent(eventId)
+                },
+                "assistant.message.completed" to { eventId, payload, json ->
+                    json.decodeFromString<AssistantMessageCompletedPayload>(payload).toEvent(eventId)
+                },
+                "input.requested" to { eventId, payload, json ->
+                    json.decodeFromString<InputRequestedPayload>(payload).toEvent(eventId)
+                },
+                "artifact.referenced" to { eventId, payload, json ->
+                    json.decodeFromString<ArtifactReferencedPayload>(payload).toEvent(eventId)
+                },
+                "phase.report.created" to { eventId, payload, json ->
+                    val decodedPayload = json.decodeFromString<PhaseReportCreatedPayload>(payload)
+                    PhaseReportCreated(eventId, decodedPayload.reportId, json.parseToJsonElement(payload))
+                },
+                "phase.transitioned" to { eventId, payload, json ->
+                    json.decodeFromString<PhaseTransitionedPayload>(payload).toEvent(eventId)
+                },
+                "safety.escalated" to { eventId, payload, json ->
+                    SafetyEscalated(eventId, json.parseToJsonElement(payload))
+                },
+                "turn.completed" to { eventId, payload, json ->
+                    json.decodeFromString<TurnCompletedPayload>(payload).toEvent(eventId)
+                },
+                "error" to { eventId, payload, json ->
+                    json.decodeFromString<ErrorPayload>(payload).toEvent(eventId)
+                },
+                "heartbeat" to { eventId, _, _ -> Heartbeat(eventId) },
+            )
     }
 }
+
+private data class RepairSessionEventEnvelope(
+    val id: String?,
+    val type: String,
+    val data: JsonElement,
+)
 
 @Serializable
 private data class TurnStartedPayload(

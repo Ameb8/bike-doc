@@ -69,5 +69,11 @@
     <string name="bike_edit_option_mechanical_disc">Mechanical disc</string>
     <string name="bike_edit_option_hydraulic_disc">Hydraulic disc</string>
     <string name="bike_edit_option_coaster">Coaster</string>
+    <string name="diagnostic_chat_title">Diagnosing</string>
+    <string name="diagnostic_chat_subtitle">Diagnostic session</string>
+    <string name="diagnostic_chat_reply_label">Reply</string>
+    <string name="diagnostic_chat_send">Send</string>
+    <string name="diagnostic_chat_confirm">Confirm</string>
+    <string name="diagnostic_chat_complete_banner">Diagnosis complete — your results are ready.</string>
     <string name="not_implemented">This screen will be implemented in a later MVP slice.</string>
 </resources>

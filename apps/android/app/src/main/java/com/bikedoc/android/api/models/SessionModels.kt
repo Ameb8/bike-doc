@@ -1,8 +1,10 @@
 package com.bikedoc.android.api.models
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNames
 
 @Serializable
 data class RepairSession(
@@ -44,7 +46,9 @@ data class InputRequest(
 )
 
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 data class InputChoice(
+    @JsonNames("value")
     val id: String,
     val label: String,
 )
