@@ -1,0 +1,69 @@
+apps/android/app/src/test/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModelTest.kt
+  s_c6860a622f3f4b::t_2a15bbcedf9995 5,7,174-262
+  s_c6860a622f3f4b::t_a56790fdc7a651 266-321
+  s_48ab55ac09aa7c::t_2075df767218c8 479-520
+  s_c6860a622f3f4b::t_73803975969de0 572-606,629,636,656-688
+  s_c6860a622f3f4b::t_0b8307e47b9c7f 10
+apps/android/app/src/main/res/values/strings.xml
+  s_c6860a622f3f4b::t_ea9a16e244455d 76-80
+apps/android/app/src/main/res/xml/file_paths.xml
+  s_c6860a622f3f4b::t_766a8a3ffba955 1-6
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatScreen.kt
+  s_48ab55ac09aa7c::t_c76e837cf90a7d 352-366
+  s_c6860a622f3f4b::t_dfe162733a7c72 409-419,434-458,483-485,613-619
+  s_c6860a622f3f4b::t_03006016c280e4 3-8,33-35,38,42,48,62-63,75-76,88-89,265-266,280-281,308-309,373-408,420-433,459-482,486-505,539,601-612,620-629
+  s_48ab55ac09aa7c::t_704c18335a74da 596-600
+apps/android/app/src/main/java/com/bikedoc/android/api/models/SessionModels.kt
+  s_c6860a622f3f4b::t_509271d27cbd0a 107-134,137-164
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModel.kt
+  s_48ab55ac09aa7c::t_cd71c48eba4a97 634
+  s_c6860a622f3f4b::t_c2acde13d3fb06 9,11,29,543-551,620,625
+  s_c6860a622f3f4b::t_a1f6f4a901de80 621
+  s_48ab55ac09aa7c::t_bbfcecef78ef14 53,139,337-340,344-345,422,633,635-640
+  s_c6860a622f3f4b::t_d1f2c56331a9a2 7,41,49-52,54-66,69-74,80-81,99-100,106-107,138,140-175,453-458,470,537-542,553-604,617-619,622-624,626-627,641-648
+  s_c6860a622f3f4b::t_f569d73e155bd7 420-421,423-425
+  s_c6860a622f3f4b::t_462b8f3c312ebb 552
+apps/android/app/src/main/java/com/bikedoc/android/di/DiagnosticModule.kt
+  s_c6860a622f3f4b::t_31b7c9c5998dc8 3-4,7-8,22-26
+apps/android/app/src/main/java/com/bikedoc/android/di/CoreModule.kt
+  s_c6860a622f3f4b::t_0b8307e47b9c7f 15
+  s_c6860a622f3f4b::t_40771203825db2 3-4,56-60
+apps/android/app/src/main/AndroidManifest.xml
+  s_c6860a622f3f4b::t_b812307f94f642 14-23
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeDocApiService.kt
+  s_c6860a622f3f4b::t_0b8307e47b9c7f 3,24
+  s_c6860a622f3f4b::t_4cece6e65fb824 16-17,21,82-89
+apps/android/app/src/main/java/com/bikedoc/android/api/ArtifactRepository.kt
+  s_c6860a622f3f4b::t_317690a800935b 1-50
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticPhotoPreparer.kt
+  s_c6860a622f3f4b::t_22c333de404fdf 1-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "7fbaf5328fd9a3e0a8b3dd436ccf63f9cf7851f1",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_48ab55ac09aa7c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2a20-0367-7711-9523-463b8eb73874",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_c6860a622f3f4b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f29c7-f591-7a93-a7c0-2cd1979f34a8",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
