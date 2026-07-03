@@ -1,5 +1,7 @@
 package com.bikedoc.android.di
 
+import android.content.ContentResolver
+import android.content.Context
 import com.bikedoc.android.api.AuthInterceptor
 import com.bikedoc.android.api.BikeDocApiClient
 import com.bikedoc.android.api.BikeDocApiService
@@ -10,6 +12,7 @@ import dagger.Binds
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -50,4 +53,9 @@ object CoreModule {
     @Provides
     @Singleton
     fun provideBikeDocApiService(apiClient: BikeDocApiClient): BikeDocApiService = apiClient.service
+
+    @Provides
+    fun provideContentResolver(
+        @ApplicationContext context: Context,
+    ): ContentResolver = context.contentResolver
 }

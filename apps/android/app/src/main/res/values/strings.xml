@@ -73,6 +73,11 @@
     <string name="diagnostic_chat_subtitle">Diagnostic session</string>
     <string name="diagnostic_chat_reply_label">Reply</string>
     <string name="diagnostic_chat_send">Send</string>
+    <string name="diagnostic_chat_camera">Camera</string>
+    <string name="diagnostic_chat_gallery">Gallery</string>
+    <string name="diagnostic_chat_uploading">Uploading...</string>
+    <string name="diagnostic_chat_ready">Ready</string>
+    <string name="diagnostic_chat_upload_failed">Upload failed</string>
     <string name="diagnostic_chat_confirm">Confirm</string>
     <string name="diagnostic_chat_retry">Retry</string>
     <string name="diagnostic_chat_failed">Not sent</string>

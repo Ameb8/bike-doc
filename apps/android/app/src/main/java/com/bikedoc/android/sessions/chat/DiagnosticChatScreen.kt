@@ -1,5 +1,11 @@
 package com.bikedoc.android.sessions.chat
 
+import android.content.ContentResolver
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,16 +30,22 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import com.bikedoc.android.R
 import com.bikedoc.android.api.models.InputRequest
 import com.bikedoc.android.sessions.models.ChatMessage
 import com.bikedoc.android.sessions.models.DeliveryState
 import com.bikedoc.android.sessions.models.Role
+import java.io.File
 
 @Composable
 fun DiagnosticChatScreen(
@@ -47,6 +59,8 @@ fun DiagnosticChatScreen(
         onDraftTextChanged = viewModel::onDraftTextChanged,
         onSubmitTextTurn = viewModel::submitTextTurn,
         onSubmitChoiceTurn = viewModel::submitChoiceTurn,
+        onPhotosSelected = viewModel::onPhotosSelected,
+        onRetryPhotoUpload = viewModel::retryPhotoUpload,
         onRetryMessage = viewModel::retryMessage,
         onNavigateBack = onNavigateBack,
     )
@@ -58,6 +72,8 @@ private fun DiagnosticChatContent(
     onDraftTextChanged: (String) -> Unit,
     onSubmitTextTurn: () -> Unit,
     onSubmitChoiceTurn: (String) -> Unit,
+    onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
+    onRetryPhotoUpload: (String) -> Unit,
     onRetryMessage: (String) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
@@ -69,6 +85,8 @@ private fun DiagnosticChatContent(
                 onDraftTextChanged = onDraftTextChanged,
                 onSubmitTextTurn = onSubmitTextTurn,
                 onSubmitChoiceTurn = onSubmitChoiceTurn,
+                onPhotosSelected = onPhotosSelected,
+                onRetryPhotoUpload = onRetryPhotoUpload,
             )
         },
     ) { padding ->
@@ -244,6 +262,8 @@ private fun DiagnosticInputArea(
     onDraftTextChanged: (String) -> Unit,
     onSubmitTextTurn: () -> Unit,
     onSubmitChoiceTurn: (String) -> Unit,
+    onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
+    onRetryPhotoUpload: (String) -> Unit,
 ) {
     val inputRequest = state.inputRequest
     when {
@@ -257,6 +277,8 @@ private fun DiagnosticInputArea(
                 onDraftTextChanged = onDraftTextChanged,
                 onSubmitTextTurn = onSubmitTextTurn,
                 onSubmitChoiceTurn = onSubmitChoiceTurn,
+                onPhotosSelected = onPhotosSelected,
+                onRetryPhotoUpload = onRetryPhotoUpload,
             )
     }
 }
@@ -283,6 +305,8 @@ private fun ActiveInputArea(
     onDraftTextChanged: (String) -> Unit,
     onSubmitTextTurn: () -> Unit,
     onSubmitChoiceTurn: (String) -> Unit,
+    onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
+    onRetryPhotoUpload: (String) -> Unit,
 ) {
     val isInputDisabled = state.isTurnInFlight || state.isStreaming
     Surface(
@@ -325,12 +349,155 @@ private fun ActiveInputArea(
                 }
 
                 else -> {
-                    ReplyRow(
-                        state = state,
-                        onDraftTextChanged = onDraftTextChanged,
-                        onSubmitTextTurn = onSubmitTextTurn,
-                    )
+                    if (inputRequest.isPhotoRequest()) {
+                        PhotoReplyArea(
+                            state = state,
+                            onDraftTextChanged = onDraftTextChanged,
+                            onSubmitTextTurn = onSubmitTextTurn,
+                            onPhotosSelected = onPhotosSelected,
+                            onRetryPhotoUpload = onRetryPhotoUpload,
+                        )
+                    } else {
+                        ReplyRow(
+                            state = state,
+                            onDraftTextChanged = onDraftTextChanged,
+                            onSubmitTextTurn = onSubmitTextTurn,
+                        )
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PhotoReplyArea(
+    state: DiagnosticChatUiState,
+    onDraftTextChanged: (String) -> Unit,
+    onSubmitTextTurn: () -> Unit,
+    onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
+    onRetryPhotoUpload: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCameraName by remember { mutableStateOf<String?>(null) }
+    val galleryLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            onPhotosSelected(uris.map { uri -> context.toPhotoSelection(uri) })
+        }
+    val cameraLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { didCapture ->
+            val uri = pendingCameraUri
+            val name = pendingCameraName
+            if (didCapture && uri != null && name != null) {
+                onPhotosSelected(
+                    listOf(
+                        DiagnosticPhotoSelection(
+                            uri = uri.toString(),
+                            displayName = name,
+                            mimeType = "image/jpeg",
+                        ),
+                    ),
+                )
+            }
+            pendingCameraUri = null
+            pendingCameraName = null
+        }
+    val isEnabled = !state.isTurnInFlight && !state.isStreaming
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PhotoPickerActions(
+            isEnabled = isEnabled,
+            onCameraSelected = {
+                val cameraFile = context.createDiagnosticCameraFile()
+                val cameraUri = context.fileProviderUri(cameraFile)
+                pendingCameraName = cameraFile.name
+                pendingCameraUri = cameraUri
+                cameraLauncher.launch(cameraUri)
+            },
+            onGallerySelected = { galleryLauncher.launch("image/*") },
+        )
+
+        state.photoAttachments.forEach { attachment ->
+            PhotoAttachmentRow(
+                attachment = attachment,
+                isEnabled = isEnabled,
+                onRetryPhotoUpload = onRetryPhotoUpload,
+            )
+        }
+
+        ReplyRow(
+            state = state,
+            onDraftTextChanged = onDraftTextChanged,
+            onSubmitTextTurn = onSubmitTextTurn,
+        )
+    }
+}
+
+@Composable
+private fun PhotoPickerActions(
+    isEnabled: Boolean,
+    onCameraSelected: () -> Unit,
+    onGallerySelected: () -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = onCameraSelected,
+            enabled = isEnabled,
+        ) {
+            Text(text = stringResource(R.string.diagnostic_chat_camera))
+        }
+        Button(
+            onClick = onGallerySelected,
+            enabled = isEnabled,
+        ) {
+            Text(text = stringResource(R.string.diagnostic_chat_gallery))
+        }
+    }
+}
+
+@Composable
+private fun PhotoAttachmentRow(
+    attachment: DiagnosticPhotoAttachment,
+    isEnabled: Boolean,
+    onRetryPhotoUpload: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = attachment.selection.displayName,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            text =
+                when (attachment.status) {
+                    DiagnosticPhotoUploadStatus.Uploading -> stringResource(R.string.diagnostic_chat_uploading)
+                    DiagnosticPhotoUploadStatus.Ready -> stringResource(R.string.diagnostic_chat_ready)
+                    DiagnosticPhotoUploadStatus.Failed ->
+                        attachment.error
+                            ?: stringResource(R.string.diagnostic_chat_upload_failed)
+                },
+            color =
+                if (attachment.status == DiagnosticPhotoUploadStatus.Failed) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            style = MaterialTheme.typography.bodySmall,
+        )
+        if (attachment.status == DiagnosticPhotoUploadStatus.Failed) {
+            TextButton(
+                onClick = { onRetryPhotoUpload(attachment.id) },
+                enabled = isEnabled,
+            ) {
+                Text(text = stringResource(R.string.diagnostic_chat_retry))
             }
         }
     }
@@ -369,7 +536,7 @@ private fun ReplyRow(
         )
         Button(
             onClick = onSubmitTextTurn,
-            enabled = isEnabled && state.draftText.isNotBlank(),
+            enabled = isEnabled && state.canSubmitCurrentInput,
         ) {
             Text(text = stringResource(R.string.diagnostic_chat_send))
         }
@@ -425,6 +592,41 @@ private fun ConfirmationRow(
 }
 
 private const val CONFIRMATION_VALUE = "confirm"
+
+private fun InputRequest?.isPhotoRequest(): Boolean =
+    this?.type.equals("photo", ignoreCase = true) ||
+        this?.acceptedMediaTypes.orEmpty().any { it.startsWith("image/") } ||
+        this?.minArtifacts != null ||
+        this?.maxArtifacts != null
+
+private fun Context.toPhotoSelection(uri: Uri): DiagnosticPhotoSelection =
+    DiagnosticPhotoSelection(
+        uri = uri.toString(),
+        displayName = contentResolver.displayName(uri) ?: "diagnostic-photo",
+        mimeType = contentResolver.getType(uri) ?: "application/octet-stream",
+    )
+
+private fun Context.createDiagnosticCameraFile(): File {
+    val directory = File(cacheDir, "diagnostic-photos").also { it.mkdirs() }
+    return File.createTempFile("diagnostic-photo-", ".jpg", directory)
+}
+
+private fun Context.fileProviderUri(file: File): Uri =
+    FileProvider.getUriForFile(
+        this,
+        "$packageName.fileprovider",
+        file,
+    )
+
+private fun ContentResolver.displayName(uri: Uri): String? =
+    query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+        val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (columnIndex >= 0 && cursor.moveToFirst()) {
+            cursor.getString(columnIndex)
+        } else {
+            null
+        }
+    }
 
 private fun ChatMessage.containerAlignment() =
     when (role) {

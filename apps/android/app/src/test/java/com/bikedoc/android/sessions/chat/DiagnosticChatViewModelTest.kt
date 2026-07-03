@@ -2,9 +2,12 @@ package com.bikedoc.android.sessions.chat
 
 import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
+import com.bikedoc.android.api.ArtifactRepository
 import com.bikedoc.android.api.SessionRepository
+import com.bikedoc.android.api.models.ArtifactRef
 import com.bikedoc.android.api.models.InputRequest
 import com.bikedoc.android.api.models.LatestReports
+import com.bikedoc.android.api.models.PreparedDiagnosticPhoto
 import com.bikedoc.android.api.models.RepairSession
 import com.bikedoc.android.api.models.RepairSessionCreate
 import com.bikedoc.android.api.models.RepairSessionListResponse
@@ -170,6 +173,154 @@ class DiagnosticChatViewModelTest {
 
     @Test
     @Suppress("LongMethod")
+    fun `selected photos upload and submit artifact ids in user selected order`() =
+        runTest {
+            val session =
+                repairSession(
+                    status = "awaiting_user",
+                    currentInputRequest =
+                        inputRequest(
+                            id = "request-photos",
+                            type = "photo",
+                            minArtifacts = 2,
+                        ),
+                )
+            val acceptedSession = repairSession(status = "running", currentInputRequest = null)
+            val sessionRepository =
+                FakeSessionRepository(
+                    getRepairSessionResult = ApiResult.Success(session),
+                    createTurnResult =
+                        ApiResult.Success(
+                            turnAccepted(
+                                turnId = "turn-photos",
+                                session = acceptedSession,
+                            ),
+                        ),
+                )
+            val photoPreparer = FakeDiagnosticPhotoPreparer()
+            val artifactRepository =
+                FakeArtifactRepository(
+                    uploadResults =
+                        ArrayDeque(
+                            listOf(
+                                ApiResult.Success(artifactRef("artifact-first")),
+                                ApiResult.Success(artifactRef("artifact-second")),
+                            ),
+                        ),
+                )
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = sessionRepository,
+                    artifactRepository = artifactRepository,
+                    photoPreparer = photoPreparer,
+                    eventSource = FakeSseEventSource(),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+
+            viewModel.onPhotosSelected(
+                listOf(
+                    DiagnosticPhotoSelection(
+                        uri = "content://photos/first",
+                        displayName = "first.heic",
+                        mimeType = "image/heic",
+                    ),
+                    DiagnosticPhotoSelection(
+                        uri = "content://photos/second",
+                        displayName = "second.jpg",
+                        mimeType = "image/jpeg",
+                    ),
+                ),
+            )
+
+            val readyState = viewModel.uiState.value
+            assertEquals(listOf("artifact-first", "artifact-second"), readyState.selectedArtifactIds)
+            assertEquals(2, readyState.photoAttachments.size)
+            assertTrue(readyState.canSubmitCurrentInput)
+            assertEquals(
+                listOf(
+                    PreparedPhoto("content://photos/first", "image/jpeg"),
+                    PreparedPhoto("content://photos/second", "image/jpeg"),
+                ),
+                photoPreparer.preparedPhotos,
+            )
+            assertEquals(
+                listOf(
+                    ArtifactUpload("session-1", "first.jpg", "image/jpeg"),
+                    ArtifactUpload("session-1", "second.jpg", "image/jpeg"),
+                ),
+                artifactRepository.uploads,
+            )
+
+            viewModel.submitTextTurn()
+
+            assertEquals(
+                listOf("artifact-first", "artifact-second"),
+                sessionRepository.createdTurns.single().body.message.artifactIds,
+            )
+            assertEquals("request-photos", sessionRepository.createdTurns.single().body.respondsToInputRequestId)
+            assertEquals(emptyList<String>(), viewModel.uiState.value.selectedArtifactIds)
+        }
+
+    @Test
+    fun `failed photo upload can be retried without changing selected order`() =
+        runTest {
+            val session =
+                repairSession(
+                    status = "awaiting_user",
+                    currentInputRequest =
+                        inputRequest(
+                            id = "request-photos",
+                            type = "photo",
+                            minArtifacts = 1,
+                        ),
+                )
+            val artifactRepository =
+                FakeArtifactRepository(
+                    uploadResults =
+                        ArrayDeque(
+                            listOf(
+                                ApiResult.Error(413, "Photo is too large."),
+                                ApiResult.Success(artifactRef("artifact-retry")),
+                            ),
+                        ),
+                )
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    artifactRepository = artifactRepository,
+                    photoPreparer = FakeDiagnosticPhotoPreparer(),
+                    eventSource = FakeSseEventSource(),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+
+            viewModel.onPhotosSelected(
+                listOf(
+                    DiagnosticPhotoSelection(
+                        uri = "content://photos/failed",
+                        displayName = "failed.jpg",
+                        mimeType = "image/jpeg",
+                    ),
+                ),
+            )
+
+            val failedAttachment = viewModel.uiState.value.photoAttachments.single()
+            assertEquals(DiagnosticPhotoUploadStatus.Failed, failedAttachment.status)
+            assertEquals("Photo is too large.", failedAttachment.error)
+            assertFalse(viewModel.uiState.value.canSubmitCurrentInput)
+
+            viewModel.retryPhotoUpload(failedAttachment.id)
+
+            val retriedState = viewModel.uiState.value
+            assertEquals(DiagnosticPhotoUploadStatus.Ready, retriedState.photoAttachments.single().status)
+            assertEquals(listOf("artifact-retry"), retriedState.selectedArtifactIds)
+            assertTrue(retriedState.canSubmitCurrentInput)
+            assertEquals(2, artifactRepository.uploads.size)
+        }
+
+    @Test
+    @Suppress("LongMethod")
     fun `failed turn keeps optimistic message visible and retry resubmits it`() =
         runTest {
             val session =
@@ -325,6 +476,48 @@ class DiagnosticChatViewModelTest {
             assertEquals("running", viewModel.uiState.value.session?.status)
             assertEquals(emptyList<TurnRequest>(), repository.createdTurns)
         }
+
+    @Test
+    fun `turn completed keeps replayed photo request when completed snapshot omits it`() =
+        runTest {
+            val session = repairSession(status = "running", currentInputRequest = null)
+            val eventSource = FakeSseEventSource()
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    eventSource = eventSource,
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+            val photoRequest =
+                inputRequest(
+                    id = "request-photo",
+                    type = "photo",
+                    minArtifacts = 1,
+                )
+
+            eventSource.events.emit(
+                SseEvent.InputRequested(
+                    id = "4",
+                    inputRequest = photoRequest,
+                ),
+            )
+            eventSource.events.emit(
+                SseEvent.TurnCompleted(
+                    id = "5",
+                    turnId = "turn-1",
+                    session =
+                        repairSession(
+                            status = "awaiting_user",
+                            currentInputRequest = null,
+                            latestEventId = "5",
+                        ),
+                ),
+            )
+
+            assertEquals(photoRequest, viewModel.uiState.value.inputRequest)
+            assertEquals(photoRequest, viewModel.uiState.value.session?.currentInputRequest)
+        }
 }
 
 private data class EventConnection(
@@ -376,6 +569,41 @@ private class FakeSessionRepository(
     }
 }
 
+private class FakeArtifactRepository(
+    private val uploadResults: ArrayDeque<ApiResult<ArtifactRef>>,
+) : ArtifactRepository {
+    val uploads = mutableListOf<ArtifactUpload>()
+
+    override suspend fun uploadDiagnosticPhoto(
+        sessionId: String,
+        photo: PreparedDiagnosticPhoto,
+    ): ApiResult<ArtifactRef> {
+        uploads += ArtifactUpload(sessionId, photo.fileName, photo.mimeType)
+        return uploadResults.removeFirst()
+    }
+}
+
+private class FakeDiagnosticPhotoPreparer : DiagnosticPhotoPreparer {
+    val preparedPhotos = mutableListOf<PreparedPhoto>()
+
+    override suspend fun prepare(selection: DiagnosticPhotoSelection): PreparedDiagnosticPhoto {
+        val outputMimeType =
+            when (selection.mimeType) {
+                "image/heic",
+                "image/heif",
+                -> "image/jpeg"
+
+                else -> selection.mimeType
+            }
+        preparedPhotos += PreparedPhoto(selection.uri, outputMimeType)
+        return PreparedDiagnosticPhoto(
+            bytes = selection.uri.encodeToByteArray(),
+            fileName = selection.displayName.substringBeforeLast(".") + outputMimeType.fileExtension(),
+            mimeType = outputMimeType,
+        )
+    }
+}
+
 private fun repairSession(
     status: String = "created",
     currentInputRequest: InputRequest? = null,
@@ -398,12 +626,14 @@ private fun inputRequest(
     id: String = "request-1",
     type: String = "text",
     prompt: String = "Prompt",
+    minArtifacts: Int? = null,
 ) = InputRequest(
     id = id,
     type = type,
     prompt = prompt,
     required = true,
     acceptedMediaTypes = emptyList(),
+    minArtifacts = minArtifacts,
     createdAt = "2026-07-02T00:00:00Z",
 )
 
@@ -423,3 +653,36 @@ private data class TurnRequest(
     val sessionId: String,
     val body: TurnCreate,
 )
+
+private data class ArtifactUpload(
+    val sessionId: String,
+    val fileName: String,
+    val mimeType: String,
+)
+
+private data class PreparedPhoto(
+    val uri: String,
+    val mimeType: String,
+)
+
+private fun artifactRef(id: String) =
+    ArtifactRef(
+        id = id,
+        userId = "user-1",
+        repairSessionId = "session-1",
+        bikeId = null,
+        purpose = "diagnostic_photo",
+        mediaType = "image",
+        mimeType = "image/jpeg",
+        filename = "$id.jpg",
+        byteSize = 12,
+        status = "ready",
+        createdAt = "2026-07-02T00:00:00Z",
+    )
+
+private fun String.fileExtension() =
+    when (this) {
+        "image/png" -> ".png"
+        "image/webp" -> ".webp"
+        else -> ".jpg"
+    }

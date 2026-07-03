@@ -104,10 +104,64 @@ data class TurnAccepted(
 @Serializable
 data class ArtifactRef(
     val id: String,
-    @SerialName("content_type")
-    val contentType: String? = null,
-    val purpose: String? = null,
+    @SerialName("user_id")
+    val userId: String = "",
+    @SerialName("repair_session_id")
+    val repairSessionId: String? = null,
+    @SerialName("bike_id")
+    val bikeId: String? = null,
+    val purpose: String = "",
+    @SerialName("media_type")
+    val mediaType: String = "",
+    @SerialName("mime_type")
+    val mimeType: String = "",
+    val filename: String = "",
+    @SerialName("byte_size")
+    val byteSize: Long = 0,
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("duration_seconds")
+    val durationSeconds: Double? = null,
+    val status: String = "",
+    @SerialName("rejection_reason")
+    val rejectionReason: String? = null,
+    @SerialName("created_at")
+    val createdAt: String = "",
 )
+
+@Serializable
+data class ArtifactUploadResponse(
+    val artifact: ArtifactRef,
+)
+
+data class PreparedDiagnosticPhoto(
+    val bytes: ByteArray,
+    val fileName: String,
+    val mimeType: String,
+    val clientArtifactId: String? = null,
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+
+        other as PreparedDiagnosticPhoto
+
+        if (!bytes.contentEquals(other.bytes)) return false
+        if (fileName != other.fileName) return false
+        if (mimeType != other.mimeType) return false
+        if (clientArtifactId != other.clientArtifactId) return false
+
+        return true
+    }
+
+    override fun hashCode(): Int {
+        var result = bytes.contentHashCode()
+        result = 31 * result + fileName.hashCode()
+        result = 31 * result + mimeType.hashCode()
+        result = 31 * result + (clientArtifactId?.hashCode() ?: 0)
+        return result
+    }
+}
 
 @Serializable
 data class ExecutionProgress(

@@ -4,8 +4,11 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bikedoc.android.api.ApiResult
+import com.bikedoc.android.api.ArtifactRepository
 import com.bikedoc.android.api.SessionRepository
+import com.bikedoc.android.api.models.ArtifactRef
 import com.bikedoc.android.api.models.InputRequest
+import com.bikedoc.android.api.models.PreparedDiagnosticPhoto
 import com.bikedoc.android.api.models.RepairSession
 import com.bikedoc.android.api.models.TurnCreate
 import com.bikedoc.android.api.models.UserTurnMessage
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.time.Instant
 import java.util.UUID
 import javax.inject.Inject
@@ -34,6 +38,7 @@ data class DiagnosticChatUiState(
     val inputRequest: InputRequest? = null,
     val draftText: String = "",
     val selectedArtifactIds: List<String> = emptyList(),
+    val photoAttachments: List<DiagnosticPhotoAttachment> = emptyList(),
     val isLoadingSession: Boolean = true,
     val isTurnInFlight: Boolean = false,
     val isStreaming: Boolean = false,
@@ -41,13 +46,39 @@ data class DiagnosticChatUiState(
     val phaseTransitioned: Boolean = false,
     val latestReportId: String? = null,
     val error: String? = null,
+) {
+    val canSubmitCurrentInput: Boolean
+        get() {
+            val hasContent = draftText.isNotBlank() || selectedArtifactIds.isNotEmpty()
+            val minimumArtifacts = inputRequest?.minArtifacts ?: if (inputRequest.isPhotoRequest()) 1 else 0
+            return hasContent &&
+                selectedArtifactIds.size >= minimumArtifacts &&
+                !isTurnInFlight &&
+                !isStreaming
+        }
+}
+
+data class DiagnosticPhotoAttachment(
+    val id: String,
+    val selection: DiagnosticPhotoSelection,
+    val artifactId: String? = null,
+    val status: DiagnosticPhotoUploadStatus,
+    val error: String? = null,
 )
+
+enum class DiagnosticPhotoUploadStatus {
+    Uploading,
+    Ready,
+    Failed,
+}
 
 @HiltViewModel
 class DiagnosticChatViewModel
     @Inject
     constructor(
         private val sessionRepository: SessionRepository,
+        private val artifactRepository: ArtifactRepository,
+        private val photoPreparer: DiagnosticPhotoPreparer,
         private val eventSource: SseEventSource,
         @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
         savedStateHandle: SavedStateHandle,
@@ -65,11 +96,15 @@ class DiagnosticChatViewModel
 
         constructor(
             sessionRepository: SessionRepository,
+            artifactRepository: ArtifactRepository = NoopArtifactRepository,
+            photoPreparer: DiagnosticPhotoPreparer = NoopDiagnosticPhotoPreparer,
             eventSource: SseEventSource,
             ioDispatcher: CoroutineDispatcher,
             sessionId: String,
         ) : this(
             sessionRepository = sessionRepository,
+            artifactRepository = artifactRepository,
+            photoPreparer = photoPreparer,
             eventSource = eventSource,
             ioDispatcher = ioDispatcher,
             savedStateHandle = SavedStateHandle(mapOf("sessionId" to sessionId)),
@@ -98,6 +133,46 @@ class DiagnosticChatViewModel
                 artifactIds = emptyList(),
                 respondsToInputRequestId = _uiState.value.activeInputRequestId(),
             )
+        }
+
+        fun onPhotosSelected(selections: List<DiagnosticPhotoSelection>) {
+            if (selections.isEmpty() || !_uiState.value.inputRequest.isPhotoRequest()) {
+                return
+            }
+
+            val attachments =
+                selections.map { selection ->
+                    DiagnosticPhotoAttachment(
+                        id = UUID.randomUUID().toString(),
+                        selection = selection,
+                        status = DiagnosticPhotoUploadStatus.Uploading,
+                    )
+                }
+            _uiState.value =
+                _uiState.value.copy(
+                    photoAttachments = _uiState.value.photoAttachments + attachments,
+                    error = null,
+                )
+            attachments.forEach(::uploadAttachment)
+        }
+
+        fun retryPhotoUpload(attachmentId: String) {
+            val attachment =
+                _uiState.value.photoAttachments.firstOrNull { it.id == attachmentId }
+                    ?: return
+            _uiState.value =
+                _uiState.value.copy(
+                    photoAttachments =
+                        _uiState.value.photoAttachments.map {
+                            if (it.id == attachmentId) {
+                                it.copy(status = DiagnosticPhotoUploadStatus.Uploading, error = null)
+                            } else {
+                                it
+                            }
+                        },
+                    error = null,
+                )
+            uploadAttachment(attachment.copy(status = DiagnosticPhotoUploadStatus.Uploading, error = null))
         }
 
         fun retryMessage(messageId: String) {
@@ -259,11 +334,15 @@ class DiagnosticChatViewModel
         }
 
         private fun applyTurnCompleted(event: SseEvent.TurnCompleted) {
+            val currentInputRequest = _uiState.value.inputRequest
+            val completedInputRequest =
+                event.session.currentInputRequest
+                    ?: currentInputRequest?.takeIf { event.session.isAwaitingUserInput() }
             _uiState.value =
                 _uiState.value.copy(
                     isTurnInFlight = false,
-                    session = event.session,
-                    inputRequest = event.session.currentInputRequest,
+                    session = event.session.copy(currentInputRequest = completedInputRequest),
+                    inputRequest = completedInputRequest,
                 )
         }
 
@@ -338,7 +417,12 @@ class DiagnosticChatViewModel
             if (text.isBlank() && artifactIds.isEmpty()) {
                 return false
             }
-            return !_uiState.value.isTurnInFlight && !_uiState.value.isStreaming
+            val inputRequest = _uiState.value.inputRequest
+            val minimumArtifacts =
+                inputRequest?.minArtifacts ?: if (inputRequest.isPhotoRequest()) 1 else 0
+            return artifactIds.size >= minimumArtifacts &&
+                !_uiState.value.isTurnInFlight &&
+                !_uiState.value.isStreaming
         }
 
         private fun buildOptimisticMessage(
@@ -366,6 +450,12 @@ class DiagnosticChatViewModel
                         } else {
                             _uiState.value.selectedArtifactIds
                         },
+                    photoAttachments =
+                        if (optimisticMessageId == null) {
+                            emptyList()
+                        } else {
+                            _uiState.value.photoAttachments
+                        },
                     isTurnInFlight = true,
                     error = null,
                 )
@@ -377,6 +467,7 @@ class DiagnosticChatViewModel
                     messages = _uiState.value.messages + message,
                     draftText = "",
                     selectedArtifactIds = emptyList(),
+                    photoAttachments = emptyList(),
                 )
         }
 
@@ -443,6 +534,74 @@ class DiagnosticChatViewModel
                     .transform()
         }
 
+        private fun uploadAttachment(attachment: DiagnosticPhotoAttachment) {
+            viewModelScope.launch(ioDispatcher) {
+                val result =
+                    try {
+                        val preparedPhoto = photoPreparer.prepare(attachment.selection)
+                        artifactRepository.uploadDiagnosticPhoto(sessionId, preparedPhoto)
+                    } catch (cancellationException: CancellationException) {
+                        throw cancellationException
+                    } catch (exception: IOException) {
+                        ApiResult.Error(null, exception.message ?: "Could not prepare selected image.")
+                    } catch (exception: IllegalArgumentException) {
+                        ApiResult.Error(null, exception.message ?: "Could not prepare selected image.")
+                    } catch (exception: IllegalStateException) {
+                        ApiResult.Error(null, exception.message ?: "Could not prepare selected image.")
+                    } catch (exception: SecurityException) {
+                        ApiResult.Error(null, exception.message ?: "Could not prepare selected image.")
+                    }
+
+                when (result) {
+                    is ApiResult.Success -> markAttachmentReady(attachment.id, result.data.id)
+                    is ApiResult.Error -> markAttachmentFailed(attachment.id, result.message)
+                    ApiResult.Loading -> Unit
+                }
+            }
+        }
+
+        private fun markAttachmentReady(
+            attachmentId: String,
+            artifactId: String,
+        ) {
+            _uiState.value =
+                _uiState.value.copy(
+                    photoAttachments =
+                        _uiState.value.photoAttachments.map { attachment ->
+                            if (attachment.id == attachmentId) {
+                                attachment.copy(
+                                    artifactId = artifactId,
+                                    status = DiagnosticPhotoUploadStatus.Ready,
+                                    error = null,
+                                )
+                            } else {
+                                attachment
+                            }
+                        },
+                ).syncSelectedArtifactIds()
+        }
+
+        private fun markAttachmentFailed(
+            attachmentId: String,
+            errorMessage: String,
+        ) {
+            _uiState.value =
+                _uiState.value.copy(
+                    photoAttachments =
+                        _uiState.value.photoAttachments.map { attachment ->
+                            if (attachment.id == attachmentId) {
+                                attachment.copy(
+                                    artifactId = null,
+                                    status = DiagnosticPhotoUploadStatus.Failed,
+                                    error = errorMessage,
+                                )
+                            } else {
+                                attachment
+                            }
+                        },
+                ).syncSelectedArtifactIds()
+        }
+
         companion object {
             const val DIAGNOSTIC_COMPLETE_MESSAGE = "Diagnosis complete — your results are ready."
             private const val AWAITING_USER = "awaiting_user"
@@ -455,7 +614,35 @@ class DiagnosticChatViewModel
         }
     }
 
+private object NoopArtifactRepository : ArtifactRepository {
+    override suspend fun uploadDiagnosticPhoto(
+        sessionId: String,
+        photo: PreparedDiagnosticPhoto,
+    ): ApiResult<ArtifactRef> = ApiResult.Error(500, "Artifact upload is not configured.")
+}
+
+private object NoopDiagnosticPhotoPreparer : DiagnosticPhotoPreparer {
+    override suspend fun prepare(selection: DiagnosticPhotoSelection): PreparedDiagnosticPhoto =
+        error("Photo preparation is not configured.")
+}
+
 private fun DiagnosticChatUiState.activeInputRequestId(): String? {
     val sessionRequestId = session?.currentInputRequest?.id
     return inputRequest?.id?.takeIf { it == sessionRequestId }
 }
+
+private fun RepairSession.isAwaitingUserInput(): Boolean = status == "awaiting_user" || status == "awaiting_decision"
+
+private fun InputRequest?.isPhotoRequest(): Boolean =
+    this?.type.equals("photo", ignoreCase = true) ||
+        this?.acceptedMediaTypes.orEmpty().any { it.startsWith("image/") } ||
+        this?.minArtifacts != null ||
+        this?.maxArtifacts != null
+
+private fun DiagnosticChatUiState.syncSelectedArtifactIds(): DiagnosticChatUiState =
+    copy(
+        selectedArtifactIds =
+            photoAttachments.mapNotNull { attachment ->
+                attachment.artifactId?.takeIf { attachment.status == DiagnosticPhotoUploadStatus.Ready }
+            },
+    )
