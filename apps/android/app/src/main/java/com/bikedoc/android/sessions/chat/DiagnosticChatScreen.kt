@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.bikedoc.android.R
 import com.bikedoc.android.api.models.InputRequest
 import com.bikedoc.android.sessions.models.ChatMessage
+import com.bikedoc.android.sessions.models.DeliveryState
 import com.bikedoc.android.sessions.models.Role
 
 @Composable
@@ -44,6 +45,9 @@ fun DiagnosticChatScreen(
     DiagnosticChatContent(
         state = state,
         onDraftTextChanged = viewModel::onDraftTextChanged,
+        onSubmitTextTurn = viewModel::submitTextTurn,
+        onSubmitChoiceTurn = viewModel::submitChoiceTurn,
+        onRetryMessage = viewModel::retryMessage,
         onNavigateBack = onNavigateBack,
     )
 }
@@ -52,6 +56,9 @@ fun DiagnosticChatScreen(
 private fun DiagnosticChatContent(
     state: DiagnosticChatUiState,
     onDraftTextChanged: (String) -> Unit,
+    onSubmitTextTurn: () -> Unit,
+    onSubmitChoiceTurn: (String) -> Unit,
+    onRetryMessage: (String) -> Unit,
     onNavigateBack: () -> Unit,
 ) {
     Scaffold(
@@ -60,11 +67,14 @@ private fun DiagnosticChatContent(
             DiagnosticInputArea(
                 state = state,
                 onDraftTextChanged = onDraftTextChanged,
+                onSubmitTextTurn = onSubmitTextTurn,
+                onSubmitChoiceTurn = onSubmitChoiceTurn,
             )
         },
     ) { padding ->
         DiagnosticChatBody(
             state = state,
+            onRetryMessage = onRetryMessage,
             modifier =
                 Modifier
                     .fillMaxSize()
@@ -97,6 +107,7 @@ private fun DiagnosticChatTopBar(onNavigateBack: () -> Unit) {
 @Composable
 private fun DiagnosticChatBody(
     state: DiagnosticChatUiState,
+    onRetryMessage: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier) {
@@ -114,25 +125,37 @@ private fun DiagnosticChatBody(
                     textAlign = TextAlign.Center,
                 )
 
-            else -> DiagnosticMessageList(state = state)
+            else -> DiagnosticMessageList(state = state, onRetryMessage = onRetryMessage)
         }
     }
 }
 
 @Composable
-private fun DiagnosticMessageList(state: DiagnosticChatUiState) {
+private fun DiagnosticMessageList(
+    state: DiagnosticChatUiState,
+    onRetryMessage: (String) -> Unit,
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(state.messages, key = { it.id }) { message ->
-            ChatMessageRow(message = message)
+            ChatMessageRow(
+                message = message,
+                onRetryMessage = onRetryMessage,
+            )
         }
 
         if (state.isStreaming && state.streamingBubbleText.isNotBlank()) {
             item {
-                ChatMessageRow(message = state.toStreamingMessage())
+                ChatMessageRow(message = state.toStreamingMessage(), onRetryMessage = onRetryMessage)
+            }
+        }
+
+        state.error?.let { error ->
+            item {
+                ChatErrorRow(error = error)
             }
         }
     }
@@ -148,41 +171,70 @@ private fun DiagnosticChatUiState.toStreamingMessage() =
     )
 
 @Composable
-private fun ChatMessageRow(message: ChatMessage) {
-    val alignment =
-        when (message.role) {
-            Role.User -> Alignment.CenterEnd
-            Role.Assistant -> Alignment.CenterStart
-            Role.System -> Alignment.Center
-        }
-    val color =
-        when (message.role) {
-            Role.User -> MaterialTheme.colorScheme.primaryContainer
-            Role.Assistant -> MaterialTheme.colorScheme.surfaceVariant
-            Role.System -> MaterialTheme.colorScheme.surface
-        }
-
+private fun ChatMessageRow(
+    message: ChatMessage,
+    onRetryMessage: (String) -> Unit,
+) {
     Box(modifier = Modifier.fillMaxWidth()) {
-        Surface(
+        Column(
             modifier =
                 Modifier
-                    .align(alignment)
+                    .align(message.containerAlignment())
                     .widthIn(max = 320.dp),
-            color = color,
-            shape = MaterialTheme.shapes.medium,
+            horizontalAlignment = message.contentAlignment(),
         ) {
-            Text(
-                text = if (message.isStreaming) message.text + " ..." else message.text,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                style =
-                    if (message.role == Role.System) {
-                        MaterialTheme.typography.bodyMedium
-                    } else {
-                        MaterialTheme.typography.bodyLarge
-                    },
-                textAlign = if (message.role == Role.System) TextAlign.Center else TextAlign.Start,
-            )
+            Surface(
+                color = message.containerColor(),
+                shape = MaterialTheme.shapes.medium,
+            ) {
+                Text(
+                    text = message.displayText(),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    style = message.textStyle(),
+                    textAlign = message.textAlignment(),
+                )
+            }
+
+            if (message.showRetry()) {
+                RetryMessageRow(messageId = message.id, onRetryMessage = onRetryMessage)
+            }
         }
+    }
+}
+
+@Composable
+private fun RetryMessageRow(
+    messageId: String,
+    onRetryMessage: (String) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = stringResource(R.string.diagnostic_chat_failed),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+        TextButton(onClick = { onRetryMessage(messageId) }) {
+            Text(text = stringResource(R.string.diagnostic_chat_retry))
+        }
+    }
+}
+
+@Composable
+private fun ChatErrorRow(error: String) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = error,
+            modifier =
+                Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 24.dp, vertical = 8.dp),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -190,6 +242,8 @@ private fun ChatMessageRow(message: ChatMessage) {
 private fun DiagnosticInputArea(
     state: DiagnosticChatUiState,
     onDraftTextChanged: (String) -> Unit,
+    onSubmitTextTurn: () -> Unit,
+    onSubmitChoiceTurn: (String) -> Unit,
 ) {
     val inputRequest = state.inputRequest
     when {
@@ -201,6 +255,8 @@ private fun DiagnosticInputArea(
                 state = state,
                 inputRequest = inputRequest,
                 onDraftTextChanged = onDraftTextChanged,
+                onSubmitTextTurn = onSubmitTextTurn,
+                onSubmitChoiceTurn = onSubmitChoiceTurn,
             )
     }
 }
@@ -225,7 +281,10 @@ private fun ActiveInputArea(
     state: DiagnosticChatUiState,
     inputRequest: InputRequest?,
     onDraftTextChanged: (String) -> Unit,
+    onSubmitTextTurn: () -> Unit,
+    onSubmitChoiceTurn: (String) -> Unit,
 ) {
+    val isInputDisabled = state.isTurnInFlight || state.isStreaming
     Surface(
         tonalElevation = 3.dp,
         modifier = Modifier.fillMaxWidth(),
@@ -235,11 +294,44 @@ private fun ActiveInputArea(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             InputPrompt(inputRequest = inputRequest)
-            ChoiceRow(inputRequest = inputRequest)
-            ReplyRow(
-                state = state,
-                onDraftTextChanged = onDraftTextChanged,
-            )
+            when (inputRequest?.type) {
+                "decision" -> {
+                    ChoiceRow(
+                        inputRequest = inputRequest,
+                        enabled = !isInputDisabled,
+                        onChoiceSelected = onSubmitChoiceTurn,
+                    )
+                }
+
+                "confirmation" -> {
+                    ConfirmationRow(
+                        inputRequest = inputRequest,
+                        enabled = !isInputDisabled,
+                        onConfirm = onSubmitChoiceTurn,
+                    )
+                }
+
+                "multiple_choice" -> {
+                    ChoiceRow(
+                        inputRequest = inputRequest,
+                        enabled = !isInputDisabled,
+                        onChoiceSelected = onSubmitChoiceTurn,
+                    )
+                    ReplyRow(
+                        state = state,
+                        onDraftTextChanged = onDraftTextChanged,
+                        onSubmitTextTurn = onSubmitTextTurn,
+                    )
+                }
+
+                else -> {
+                    ReplyRow(
+                        state = state,
+                        onDraftTextChanged = onDraftTextChanged,
+                        onSubmitTextTurn = onSubmitTextTurn,
+                    )
+                }
+            }
         }
     }
 }
@@ -258,7 +350,9 @@ private fun InputPrompt(inputRequest: InputRequest?) {
 private fun ReplyRow(
     state: DiagnosticChatUiState,
     onDraftTextChanged: (String) -> Unit,
+    onSubmitTextTurn: () -> Unit,
 ) {
+    val isEnabled = !state.isTurnInFlight && !state.isStreaming
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -267,15 +361,15 @@ private fun ReplyRow(
             value = state.draftText,
             onValueChange = onDraftTextChanged,
             modifier = Modifier.weight(1f),
-            enabled = !state.isTurnInFlight && !state.isStreaming,
+            enabled = isEnabled,
             label = { Text(text = stringResource(R.string.diagnostic_chat_reply_label)) },
             singleLine = false,
             minLines = 1,
             maxLines = 4,
         )
         Button(
-            onClick = {},
-            enabled = false,
+            onClick = onSubmitTextTurn,
+            enabled = isEnabled && state.draftText.isNotBlank(),
         ) {
             Text(text = stringResource(R.string.diagnostic_chat_send))
         }
@@ -283,7 +377,11 @@ private fun ReplyRow(
 }
 
 @Composable
-private fun ChoiceRow(inputRequest: InputRequest?) {
+private fun ChoiceRow(
+    inputRequest: InputRequest?,
+    enabled: Boolean,
+    onChoiceSelected: (String) -> Unit,
+) {
     val request = inputRequest ?: return
     if (request.type !in setOf("multiple_choice", "decision", "confirmation")) {
         return
@@ -295,16 +393,76 @@ private fun ChoiceRow(inputRequest: InputRequest?) {
     ) {
         if (request.type == "confirmation" && request.choices.isEmpty()) {
             AssistChip(
-                onClick = {},
+                onClick = { onChoiceSelected(CONFIRMATION_VALUE) },
+                enabled = enabled,
                 label = { Text(text = stringResource(R.string.diagnostic_chat_confirm)) },
             )
         } else {
             request.choices.forEach { choice ->
                 AssistChip(
-                    onClick = {},
+                    onClick = { onChoiceSelected(choice.id) },
+                    enabled = enabled,
                     label = { Text(text = choice.label) },
                 )
             }
         }
     }
 }
+
+@Composable
+private fun ConfirmationRow(
+    inputRequest: InputRequest?,
+    enabled: Boolean,
+    onConfirm: (String) -> Unit,
+) {
+    val confirmationValue = inputRequest?.choices?.firstOrNull()?.id ?: CONFIRMATION_VALUE
+    Button(
+        onClick = { onConfirm(confirmationValue) },
+        enabled = enabled,
+    ) {
+        Text(text = stringResource(R.string.diagnostic_chat_confirm))
+    }
+}
+
+private const val CONFIRMATION_VALUE = "confirm"
+
+private fun ChatMessage.containerAlignment() =
+    when (role) {
+        Role.User -> Alignment.CenterEnd
+        Role.Assistant -> Alignment.CenterStart
+        Role.System -> Alignment.Center
+    }
+
+private fun ChatMessage.contentAlignment() =
+    when (role) {
+        Role.User -> Alignment.End
+        Role.Assistant -> Alignment.Start
+        Role.System -> Alignment.CenterHorizontally
+    }
+
+@Composable
+private fun ChatMessage.containerColor() =
+    when (role) {
+        Role.User -> MaterialTheme.colorScheme.primaryContainer
+        Role.Assistant -> MaterialTheme.colorScheme.surfaceVariant
+        Role.System -> MaterialTheme.colorScheme.surface
+    }
+
+private fun ChatMessage.displayText() = if (isStreaming) "$text ..." else text
+
+@Composable
+private fun ChatMessage.textStyle() =
+    if (role == Role.System) {
+        MaterialTheme.typography.bodyMedium
+    } else {
+        MaterialTheme.typography.bodyLarge
+    }
+
+private fun ChatMessage.textAlignment() =
+    if (role == Role.System) {
+        TextAlign.Center
+    } else {
+        TextAlign.Start
+    }
+
+private fun ChatMessage.showRetry() = role == Role.User && deliveryState == DeliveryState.Failed

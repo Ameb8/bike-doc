@@ -128,9 +128,10 @@ class DiagnosticTurnOrchestrator:
     ) -> None:
         """Run diagnostic orchestration for an already accepted turn."""
 
+        turn_snapshot = _AcceptedTurnSnapshot.from_model(turn)
         try:
             phase_session = await self.phase_sessions.get(
-                turn.repair_phase_session_id,
+                turn_snapshot.repair_phase_session_id,
             )
             if phase_session is None:
                 raise NotFoundError()
@@ -138,26 +139,29 @@ class DiagnosticTurnOrchestrator:
             context = DiagnosticToolContext(
                 user_id=current_user.id,
                 user_skill_level=current_user.skill_level,
-                repair_session_id=turn.repair_session_id,
+                repair_session_id=turn_snapshot.repair_session_id,
                 active_phase=RepairSessionPhase.DIAGNOSTIC,
                 diagnostic_session_id=phase_session.id,
-                turn_id=turn.id,
+                turn_id=turn_snapshot.id,
             )
-            seed = await self._build_seed_context(context=context, turn=turn)
+            seed = await self._build_seed_context(
+                context=context,
+                turn=turn_snapshot,
+            )
             await self._emit_turn_artifact_references(
                 current_user=current_user,
-                turn=turn,
+                turn=turn_snapshot,
             )
             processing_state = _TurnProcessingState()
             request = DiagnosticRunnerRequest(
                 user_id=current_user.id,
                 user_skill_level=current_user.skill_level,
-                repair_session_id=turn.repair_session_id,
-                turn_id=turn.id,
+                repair_session_id=turn_snapshot.repair_session_id,
+                turn_id=turn_snapshot.id,
                 diagnostic_session_id=phase_session.id,
                 adk_session_id=phase_session.adk_session_id,
-                message_text=_turn_message_text(turn),
-                artifact_ids=_turn_artifact_ids(turn),
+                message_text=turn_snapshot.message_text,
+                artifact_ids=turn_snapshot.artifact_ids,
                 bike_profile=seed.bike_profile,
                 repair_history=seed.repair_history,
                 diagnostic_artifacts=seed.diagnostic_artifacts,
@@ -165,31 +169,31 @@ class DiagnosticTurnOrchestrator:
             async for event in self.runner.stream(request):
                 await self._process_runner_event(
                     context=context,
-                    turn=turn,
+                    turn=turn_snapshot,
                     event=event,
                     processing_state=processing_state,
                 )
 
             await self._append_turn_completed(
                 current_user=current_user,
-                repair_session_id=turn.repair_session_id,
-                turn_id=turn.id,
+                repair_session_id=turn_snapshot.repair_session_id,
+                turn_id=turn_snapshot.id,
                 status=processing_state.terminal_status,
             )
         except asyncio.CancelledError:
             raise
         except Exception:
             await self._append_recoverable_error(
-                repair_session_id=turn.repair_session_id,
-                turn_id=turn.id,
+                repair_session_id=turn_snapshot.repair_session_id,
+                turn_id=turn_snapshot.id,
                 code="diagnostic_processing_error",
                 message="Diagnostic processing could not be completed.",
                 retryable=True,
             )
             await self._append_turn_completed(
                 current_user=current_user,
-                repair_session_id=turn.repair_session_id,
-                turn_id=turn.id,
+                repair_session_id=turn_snapshot.repair_session_id,
+                turn_id=turn_snapshot.id,
                 status=RepairSessionStatus.AWAITING_USER,
             )
 
@@ -197,7 +201,7 @@ class DiagnosticTurnOrchestrator:
         self,
         *,
         context: DiagnosticToolContext,
-        turn: RepairTurnModel,
+        turn: _AcceptedTurnSnapshot,
         event: Any,
         processing_state: _TurnProcessingState,
     ) -> None:
@@ -268,7 +272,7 @@ class DiagnosticTurnOrchestrator:
         self,
         *,
         context: DiagnosticToolContext,
-        turn: RepairTurnModel,
+        turn: _AcceptedTurnSnapshot,
     ) -> _DiagnosticSeedContext:
         """Seed the diagnostic run with durable product context."""
 
@@ -316,11 +320,11 @@ class DiagnosticTurnOrchestrator:
         self,
         *,
         current_user: User,
-        turn: RepairTurnModel,
+        turn: _AcceptedTurnSnapshot,
     ) -> None:
         """Persist public references for artifacts included in the user turn."""
 
-        for artifact_id in _turn_artifact_ids(turn):
+        for artifact_id in turn.artifact_ids:
             artifact = await self.artifacts.get_owned(
                 artifact_id=artifact_id,
                 user_id=current_user.id,
@@ -407,6 +411,29 @@ class DiagnosticTurnOrchestrator:
 
         if self.rollback is not None:
             await self.rollback()
+
+
+@dataclass(frozen=True, slots=True)
+class _AcceptedTurnSnapshot:
+    """Immutable scalar turn data safe to use after session commits/rollbacks."""
+
+    id: str
+    repair_session_id: str
+    repair_phase_session_id: str
+    message_text: str | None
+    artifact_ids: tuple[str, ...]
+
+    @classmethod
+    def from_model(cls, turn: RepairTurnModel) -> _AcceptedTurnSnapshot:
+        """Capture accepted turn values before async work can expire ORM state."""
+
+        return cls(
+            id=turn.id,
+            repair_session_id=turn.repair_session_id,
+            repair_phase_session_id=turn.repair_phase_session_id,
+            message_text=_turn_message_text(turn),
+            artifact_ids=_turn_artifact_ids(turn),
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -180,6 +180,33 @@ class _Runner:
         return _events()
 
 
+class _ExpiringTurn:
+    """Turn double that raises if ORM-like attributes are read after expiry."""
+
+    def __init__(self) -> None:
+        self.expired = False
+        self.message = {"text": "The brake lever bottoms out.", "artifact_ids": []}
+
+    @property
+    def id(self) -> str:
+        self._raise_if_expired()
+        return "turn_orch"
+
+    @property
+    def repair_session_id(self) -> str:
+        self._raise_if_expired()
+        return "rs_orch"
+
+    @property
+    def repair_phase_session_id(self) -> str:
+        self._raise_if_expired()
+        return "phs_orch"
+
+    def _raise_if_expired(self) -> None:
+        if self.expired:
+            raise RuntimeError("expired ORM attribute refresh attempted")
+
+
 @dataclass
 class _Tool:
     """Fake ADK tool wrapper."""
@@ -524,3 +551,22 @@ async def test_stream_exception_after_prior_event_preserves_order() -> None:
     assert "raw provider" not in repr(store.events)
     assert "adk_internal_orch" not in repr(store.events)
     assert store.events[-1].data["session"]["status"] != "running"
+
+
+async def test_turn_scalar_snapshot_survives_expired_orm_state() -> None:
+    store = _Store()
+    turn = _ExpiringTurn()
+    runner = _Runner(
+        [RuntimeError("provider failed after session rollback")],
+        before_emit={0: lambda: setattr(turn, "expired", True)},
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=turn,  # type: ignore[arg-type]
+    )
+
+    assert [event.type for event in store.events] == ["error", "turn.completed"]
+    assert store.events[0].turn_id == "turn_orch"
+    assert store.events[0].repair_session_id == "rs_orch"
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"

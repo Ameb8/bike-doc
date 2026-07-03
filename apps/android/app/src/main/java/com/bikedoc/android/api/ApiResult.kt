@@ -2,6 +2,7 @@ package com.bikedoc.android.api
 
 import kotlinx.serialization.SerializationException
 import retrofit2.HttpException
+import timber.log.Timber
 import java.io.IOException
 
 sealed class ApiResult<out T> {
@@ -16,10 +17,13 @@ suspend fun <T> safeApiCall(call: suspend () -> T): ApiResult<T> =
     try {
         ApiResult.Success(call())
     } catch (exception: HttpException) {
+        Timber.e(exception, "HTTP API call failed with status %s", exception.code())
         ApiResult.Error(exception.code(), mapHttpError(exception))
-    } catch (_: IOException) {
+    } catch (exception: IOException) {
+        Timber.e(exception, "Network API call failed")
         ApiResult.Error(null, "Network error. Check your connection.")
-    } catch (_: SerializationException) {
+    } catch (exception: SerializationException) {
+        Timber.e(exception, "API response decoding failed")
         ApiResult.Error(null, "Unexpected server response. Please try again.")
     }
 

@@ -36,6 +36,7 @@ object CoreModule {
     @Singleton
     fun provideJson(): Json =
         Json {
+            encodeDefaults = true
             ignoreUnknownKeys = true
         }
 
