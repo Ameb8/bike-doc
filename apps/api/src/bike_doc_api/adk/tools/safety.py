@@ -74,7 +74,7 @@ class RaiseSafetyFlagTool:
             result = await self._service.raise_safety_flag(
                 current_user=current_tool_user(context),
                 repair_session_id=parsed.repair_session_id,
-                safety_flag=parsed.safety_flag,
+                safety_flag=_normalize_safety_flag_input(parsed.safety_flag),
             )
             data: dict[str, Any] = {
                 "safety_state": result.safety_state,
@@ -99,3 +99,25 @@ async def raise_safety_flag(
     """Function-style entrypoint for raise_safety_flag."""
 
     return await RaiseSafetyFlagTool(service).run(tool_input, context)
+
+
+def _normalize_safety_flag_input(safety_flag: dict[str, Any]) -> dict[str, Any]:
+    """Fill model-omitted optional prose required by the public safety schema."""
+
+    normalized = dict(safety_flag)
+    message = normalized.get("message")
+    if isinstance(message, str) and message.strip():
+        normalized["message"] = message.strip()
+        return normalized
+
+    code = normalized.get("code")
+    if code == "brake_failure_suspected":
+        normalized["message"] = (
+            "The reported brake issue may prevent safe stopping and should be "
+            "inspected before riding."
+        )
+    else:
+        normalized["message"] = (
+            "A safety concern was identified during diagnostic assessment."
+        )
+    return normalized

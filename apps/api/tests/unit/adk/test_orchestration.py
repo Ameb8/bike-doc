@@ -207,6 +207,27 @@ class _ExpiringTurn:
             raise RuntimeError("expired ORM attribute refresh attempted")
 
 
+class _ExpiringUser:
+    """User double that raises if ORM-like attributes are read after expiry."""
+
+    def __init__(self) -> None:
+        self.expired = False
+
+    @property
+    def id(self) -> str:
+        self._raise_if_expired()
+        return "usr_orch"
+
+    @property
+    def skill_level(self) -> str:
+        self._raise_if_expired()
+        return "beginner"
+
+    def _raise_if_expired(self) -> None:
+        if self.expired:
+            raise RuntimeError("expired user ORM attribute refresh attempted")
+
+
 @dataclass
 class _Tool:
     """Fake ADK tool wrapper."""
@@ -569,4 +590,28 @@ async def test_turn_scalar_snapshot_survives_expired_orm_state() -> None:
     assert [event.type for event in store.events] == ["error", "turn.completed"]
     assert store.events[0].turn_id == "turn_orch"
     assert store.events[0].repair_session_id == "rs_orch"
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_user_scalar_snapshot_survives_tool_commit_expiry() -> None:
+    store = _Store()
+    user = _ExpiringUser()
+    runner = _Runner(
+        [
+            DiagnosticRunnerInputRequested(
+                request_type="photo",
+                prompt="Upload brake photos.",
+                accepted_media_types=("image/jpeg",),
+                max_artifacts=2,
+            ),
+        ],
+        before_emit={0: lambda: setattr(user, "expired", True)},
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=user,  # type: ignore[arg-type]
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == ["turn.completed"]
     assert store.events[-1].data["session"]["status"] == "awaiting_user"

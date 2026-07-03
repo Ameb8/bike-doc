@@ -128,6 +128,7 @@ class DiagnosticTurnOrchestrator:
     ) -> None:
         """Run diagnostic orchestration for an already accepted turn."""
 
+        user_snapshot = _CurrentUserSnapshot.from_model(current_user)
         turn_snapshot = _AcceptedTurnSnapshot.from_model(turn)
         try:
             phase_session = await self.phase_sessions.get(
@@ -137,8 +138,8 @@ class DiagnosticTurnOrchestrator:
                 raise NotFoundError()
 
             context = DiagnosticToolContext(
-                user_id=current_user.id,
-                user_skill_level=current_user.skill_level,
+                user_id=user_snapshot.id,
+                user_skill_level=user_snapshot.skill_level,
                 repair_session_id=turn_snapshot.repair_session_id,
                 active_phase=RepairSessionPhase.DIAGNOSTIC,
                 diagnostic_session_id=phase_session.id,
@@ -149,13 +150,13 @@ class DiagnosticTurnOrchestrator:
                 turn=turn_snapshot,
             )
             await self._emit_turn_artifact_references(
-                current_user=current_user,
+                user_id=user_snapshot.id,
                 turn=turn_snapshot,
             )
             processing_state = _TurnProcessingState()
             request = DiagnosticRunnerRequest(
-                user_id=current_user.id,
-                user_skill_level=current_user.skill_level,
+                user_id=user_snapshot.id,
+                user_skill_level=user_snapshot.skill_level,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
                 diagnostic_session_id=phase_session.id,
@@ -175,7 +176,7 @@ class DiagnosticTurnOrchestrator:
                 )
 
             await self._append_turn_completed(
-                current_user=current_user,
+                user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
                 status=processing_state.terminal_status,
@@ -191,7 +192,7 @@ class DiagnosticTurnOrchestrator:
                 retryable=True,
             )
             await self._append_turn_completed(
-                current_user=current_user,
+                user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
                 status=RepairSessionStatus.AWAITING_USER,
@@ -319,7 +320,7 @@ class DiagnosticTurnOrchestrator:
     async def _emit_turn_artifact_references(
         self,
         *,
-        current_user: User,
+        user_id: str,
         turn: _AcceptedTurnSnapshot,
     ) -> None:
         """Persist public references for artifacts included in the user turn."""
@@ -327,7 +328,7 @@ class DiagnosticTurnOrchestrator:
         for artifact_id in turn.artifact_ids:
             artifact = await self.artifacts.get_owned(
                 artifact_id=artifact_id,
-                user_id=current_user.id,
+                user_id=user_id,
             )
             if artifact is None:
                 continue
@@ -363,7 +364,7 @@ class DiagnosticTurnOrchestrator:
     async def _append_turn_completed(
         self,
         *,
-        current_user: User,
+        user_id: str,
         repair_session_id: str,
         turn_id: str,
         status: RepairSessionStatus,
@@ -373,7 +374,7 @@ class DiagnosticTurnOrchestrator:
         try:
             repair_session = await self.repair_sessions.get_owned_for_update(
                 repair_session_id=repair_session_id,
-                user_id=current_user.id,
+                user_id=user_id,
             )
             if repair_session is None:
                 raise NotFoundError()
@@ -411,6 +412,20 @@ class DiagnosticTurnOrchestrator:
 
         if self.rollback is not None:
             await self.rollback()
+
+
+@dataclass(frozen=True, slots=True)
+class _CurrentUserSnapshot:
+    """Immutable scalar user data safe to use after session commits/rollbacks."""
+
+    id: str
+    skill_level: str
+
+    @classmethod
+    def from_model(cls, user: User) -> _CurrentUserSnapshot:
+        """Capture user values before async work can expire ORM state."""
+
+        return cls(id=user.id, skill_level=user.skill_level)
 
 
 @dataclass(frozen=True, slots=True)
