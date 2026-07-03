@@ -1,0 +1,85 @@
+apps/android/app/src/test/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModelTest.kt
+  s_d1cdc04e8dc0e5::t_2584ba65675797 91,97-102,119-120,150-153,198-199,233-236,261-268
+  s_d1cdc04e8dc0e5::t_e31162e93e03b9 13
+  s_d1cdc04e8dc0e5::t_66dd196acf442e 7
+  s_a83aab148f6332::t_2322d84dd1a2cf 288,323-326
+  s_d1cdc04e8dc0e5::t_5da7f855a7b161 89-90,92-96,103-118,121-149,154-169,354,373-374,376,382,385,389,391-392,396-407,420-424
+  s_d1cdc04e8dc0e5::t_e108f82cba415b 172
+  s_d1cdc04e8dc0e5::t_71e3bf79158e06 170-171,173-197,200-232,237-238,350-351,355,375
+  s_a83aab148f6332::t_48785a280c19ea 286-287,289-322,327,408-419
+  s_d1cdc04e8dc0e5::t_b3e2c27135cdb4 239-260,269-285
+apps/android/app/src/main/res/values/strings.xml
+  s_d1cdc04e8dc0e5::t_f8e93d49c98618 77-78
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModel.kt
+  s_d1cdc04e8dc0e5::t_6a2fd08e23ccd1 10-11,14,18,21,27,57,87-90,92-98,100-118,130,147,162,166,168-169,171-175,177-181,183-186,191,237,286,302-307,309-313,315-317,319-323,325-326,329-330,340,372-379,416-433,452-453
+  s_d1cdc04e8dc0e5::t_664770a375f0ff 308,314,318,324,327-328,331-339,341-371,380-415
+  s_d1cdc04e8dc0e5::t_d5743fc1606929 167,170,176
+  s_a83aab148f6332::t_b7d031d13f1f94 91,99,193,209-221,450,457-461
+  s_d1cdc04e8dc0e5::t_fc93a10c6fae32 29,182,454
+apps/api/src/bike_doc_api/adk/orchestration.py
+  s_628a0dc987230b::t_4741ca19b56dfc 327
+  s_628a0dc987230b::t_2480004651d820 131,134,142,145-149,153,159-160,163-164,172,179-180,187-188,195-196,204,275,323,416-436
+apps/android/app/src/test/java/com/bikedoc/android/api/TurnCreateSerializationTest.kt
+  s_db96a0bfb15310::t_18fe707a470929 1-39
+apps/android/app/src/main/java/com/bikedoc/android/di/CoreModule.kt
+  s_db96a0bfb15310::t_a18a1cebb0fb19 39
+apps/android/app/src/main/java/com/bikedoc/android/sessions/models/ChatMessage.kt
+  s_d1cdc04e8dc0e5::t_480d1434405ce4 11-12,21-25
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatScreen.kt
+  s_d1cdc04e8dc0e5::t_98e251991fae4e 182,184,187,191,193-194,198-199,205-220,428-468
+  s_a83aab148f6332::t_42c0618164d8fc 155-158,222-237
+  s_d1cdc04e8dc0e5::t_475805fa22c69b 77,110,128,134-137,146,152
+  s_d1cdc04e8dc0e5::t_15b9e3d70c99e2 35,48-50,59-61,70-71,144-145,147,174-177,179,186,188-190,192,195-197,200,245-246,258-259,284-285,287,297-334,353,355,364,371-372,380-384,396-397,403-404,411-427
+apps/android/app/src/main/java/com/bikedoc/android/api/ApiResult.kt
+  s_a83aab148f6332::t_f6e8ca3de3f5b8 5,20,22-23,25-26
+apps/android/app/src/main/java/com/bikedoc/android/api/models/SessionModels.kt
+  s_d1cdc04e8dc0e5::t_b2735fb65937c5 12,18,22-24,26,49,53,58-60,95-96,98-101,111-129
+  s_d1cdc04e8dc0e5::t_37851a3d61e5da 13,19,25,27,51-52,54,61
+apps/api/tests/unit/adk/test_orchestration.py
+  s_628a0dc987230b::t_49c6a1e00ad6d7 183-209,554-572
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "f3497b957baddb623f20d7e65e983a2ec4f33432",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_628a0dc987230b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f29b8-77ec-7962-a22e-391e27eecd68",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_a83aab148f6332": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f296f-6d38-7ba2-8577-ecfc2fd93d1f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_d1cdc04e8dc0e5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f291f-3329-7fa1-b884-9706bdff5c61",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_db96a0bfb15310": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2980-7565-7053-af7f-7de85d8c8174",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
