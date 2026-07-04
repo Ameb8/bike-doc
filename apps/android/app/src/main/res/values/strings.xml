@@ -82,5 +82,21 @@
     <string name="diagnostic_chat_retry">Retry</string>
     <string name="diagnostic_chat_failed">Not sent</string>
     <string name="diagnostic_chat_complete_banner">Diagnosis complete — your results are ready.</string>
+    <string name="diagnostic_chat_view_report">View report</string>
+    <string name="diagnostic_report_title">Diagnostic report</string>
+    <string name="diagnostic_report_load_error_title">Couldn\'t load report</string>
+    <string name="diagnostic_report_retry">Retry</string>
+    <string name="diagnostic_report_safety_title">Safety notes</string>
+    <string name="diagnostic_report_primary_title">Primary diagnosis</string>
+    <string name="diagnostic_report_evidence_title">Evidence summary</string>
+    <string name="diagnostic_report_alternates_title">Other possibilities</string>
+    <string name="diagnostic_report_details_title">Details</string>
+    <string name="diagnostic_report_confidence_detail_label">Confidence</string>
+    <string name="diagnostic_report_diy_detail_label">DIY suitability</string>
+    <string name="diagnostic_report_confidence_label">Confidence: %1$s</string>
+    <string name="diagnostic_report_diy_label">DIY: %1$s</string>
+    <string name="diagnostic_report_ruled_out_label">Ruled out by: %1$s</string>
+    <string name="diagnostic_report_skill_level_label">Skill level</string>
+    <string name="diagnostic_report_artifacts_label">Referenced photos</string>
     <string name="not_implemented">This screen will be implemented in a later MVP slice.</string>
 </resources>

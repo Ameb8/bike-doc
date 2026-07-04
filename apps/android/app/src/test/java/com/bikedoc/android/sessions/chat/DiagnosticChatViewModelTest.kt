@@ -91,6 +91,30 @@ class DiagnosticChatViewModelTest {
         }
 
     @Test
+    fun `entry shows completed diagnostic report action for resumed completed session`() =
+        runTest {
+            val session =
+                repairSession(
+                    status = "completed",
+                    latestReports = LatestReports(diagnosticReportId = "report-1"),
+                )
+            val repository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session))
+            val eventSource = FakeSseEventSource()
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = repository,
+                    eventSource = eventSource,
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = "session-1",
+                )
+
+            val state = viewModel.uiState.value
+            assertTrue(state.phaseTransitioned)
+            assertEquals("report-1", state.latestReportId)
+            assertEquals(null, state.inputRequest)
+        }
+
+    @Test
     @Suppress("LongMethod")
     fun `sending text turn appends optimistic message posts turn and keeps already open stream`() =
         runTest {
@@ -683,6 +707,7 @@ private fun repairSession(
     status: String = "created",
     currentInputRequest: InputRequest? = null,
     latestEventId: String = "0",
+    latestReports: LatestReports = LatestReports(),
 ) = RepairSession(
     id = "session-1",
     userId = "user-1",
@@ -691,7 +716,7 @@ private fun repairSession(
     status = status,
     safetyState = "ok",
     currentInputRequest = currentInputRequest,
-    latestReports = LatestReports(),
+    latestReports = latestReports,
     latestEventId = latestEventId,
     createdAt = "2026-07-02T00:00:00Z",
     updatedAt = "2026-07-02T00:00:00Z",

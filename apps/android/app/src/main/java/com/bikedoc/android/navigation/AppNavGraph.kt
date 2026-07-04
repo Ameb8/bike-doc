@@ -23,6 +23,8 @@ import com.bikedoc.android.home.HomeScreen
 import com.bikedoc.android.home.HomeViewModel
 import com.bikedoc.android.sessions.chat.DiagnosticChatScreen
 import com.bikedoc.android.sessions.chat.DiagnosticChatViewModel
+import com.bikedoc.android.sessions.report.DiagnosticReportScreen
+import com.bikedoc.android.sessions.report.DiagnosticReportViewModel
 
 @Composable
 fun AppNavGraph(
@@ -121,6 +123,11 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
 }
 
 private fun NavGraphBuilder.appDestinations(navController: NavHostController) {
+    bikeEditDestinations(navController)
+    diagnosticDestinations(navController)
+}
+
+private fun NavGraphBuilder.bikeEditDestinations(navController: NavHostController) {
     composable(AppRoute.BikeNew.route) {
         val bikeEditViewModel: BikeEditViewModel = hiltViewModel()
         LaunchedEffect(bikeEditViewModel) {
@@ -164,7 +171,9 @@ private fun NavGraphBuilder.appDestinations(navController: NavHostController) {
             onNavigateBack = { navController.popBackStack() },
         )
     }
+}
 
+private fun NavGraphBuilder.diagnosticDestinations(navController: NavHostController) {
     composable(
         route = AppRoute.DiagnosticChat.route,
         arguments =
@@ -177,6 +186,28 @@ private fun NavGraphBuilder.appDestinations(navController: NavHostController) {
         val diagnosticChatViewModel: DiagnosticChatViewModel = hiltViewModel()
         DiagnosticChatScreen(
             viewModel = diagnosticChatViewModel,
+            onNavigateBack = { navController.popBackStack() },
+            onViewReport = { sessionId, reportId ->
+                navController.navigate(AppRoute.DiagnosticReport.create(sessionId, reportId))
+            },
+        )
+    }
+
+    composable(
+        route = AppRoute.DiagnosticReport.route,
+        arguments =
+            listOf(
+                navArgument("sessionId") {
+                    type = NavType.StringType
+                },
+                navArgument("reportId") {
+                    type = NavType.StringType
+                },
+            ),
+    ) {
+        val diagnosticReportViewModel: DiagnosticReportViewModel = hiltViewModel()
+        DiagnosticReportScreen(
+            viewModel = diagnosticReportViewModel,
             onNavigateBack = { navController.popBackStack() },
         )
     }

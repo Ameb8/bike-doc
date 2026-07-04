@@ -209,9 +209,12 @@ class BikeEditViewModelTest {
         }
 
     private class FakeBikeRepository(
-        private val bikeResult: ApiResult<Bike> = ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val createResult: ApiResult<Bike> = ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val updateResult: ApiResult<Bike> = ApiResult.Success(bike(id = "updated-bike", displayName = "Updated")),
+        private val bikeResult: ApiResult<Bike> =
+            ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
+        private val createResult: ApiResult<Bike> =
+            ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
+        private val updateResult: ApiResult<Bike> =
+            ApiResult.Success(bike(id = "updated-bike", displayName = "Updated")),
     ) : BikeRepository {
         var getBikeCalls = 0
         var createdBike: BikeCreate? = null

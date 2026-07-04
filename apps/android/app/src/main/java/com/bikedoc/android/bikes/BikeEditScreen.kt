@@ -61,6 +61,7 @@ fun BikeEditScreen(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("LongMethod")
 @Composable
 private fun BikeEditContent(
     state: BikeEditUiState,
@@ -189,6 +190,7 @@ private fun BikeEditErrorState(
 }
 
 @Composable
+@Suppress("LongMethod")
 private fun BikeEditForm(
     state: BikeEditUiState,
     padding: PaddingValues,

@@ -18,4 +18,11 @@ sealed class AppRoute(val route: String) {
     data object DiagnosticChat : AppRoute("sessions/{sessionId}/chat") {
         fun create(sessionId: String): String = "sessions/$sessionId/chat"
     }
+
+    data object DiagnosticReport : AppRoute("sessions/{sessionId}/reports/{reportId}") {
+        fun create(
+            sessionId: String,
+            reportId: String,
+        ): String = "sessions/$sessionId/reports/$reportId"
+    }
 }

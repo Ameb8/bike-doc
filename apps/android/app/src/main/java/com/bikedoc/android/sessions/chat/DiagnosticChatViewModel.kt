@@ -233,11 +233,17 @@ class DiagnosticChatViewModel
 
         private fun applyLoadedSession(session: RepairSession) {
             lastEventId = session.latestEventId
+            val diagnosticReportId = session.latestReports.diagnosticReportId
             _uiState.value =
                 _uiState.value.copy(
                     session = session,
+                    latestReportId = diagnosticReportId,
+                    phaseTransitioned = diagnosticReportId != null,
                     inputRequest =
-                        if (session.status == AWAITING_USER || session.status == AWAITING_DECISION) {
+                        if (
+                            diagnosticReportId == null &&
+                            (session.status == AWAITING_USER || session.status == AWAITING_DECISION)
+                        ) {
                             session.currentInputRequest
                         } else {
                             null

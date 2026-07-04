@@ -51,6 +51,7 @@ import java.io.File
 fun DiagnosticChatScreen(
     viewModel: DiagnosticChatViewModel,
     onNavigateBack: () -> Unit,
+    onViewReport: (String, String) -> Unit,
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -63,6 +64,7 @@ fun DiagnosticChatScreen(
         onRetryPhotoUpload = viewModel::retryPhotoUpload,
         onRetryMessage = viewModel::retryMessage,
         onNavigateBack = onNavigateBack,
+        onViewReport = onViewReport,
     )
 }
 
@@ -76,6 +78,7 @@ private fun DiagnosticChatContent(
     onRetryPhotoUpload: (String) -> Unit,
     onRetryMessage: (String) -> Unit,
     onNavigateBack: () -> Unit,
+    onViewReport: (String, String) -> Unit,
 ) {
     Scaffold(
         topBar = { DiagnosticChatTopBar(onNavigateBack = onNavigateBack) },
@@ -87,6 +90,7 @@ private fun DiagnosticChatContent(
                 onSubmitChoiceTurn = onSubmitChoiceTurn,
                 onPhotosSelected = onPhotosSelected,
                 onRetryPhotoUpload = onRetryPhotoUpload,
+                onViewReport = onViewReport,
             )
         },
     ) { padding ->
@@ -264,11 +268,23 @@ private fun DiagnosticInputArea(
     onSubmitChoiceTurn: (String) -> Unit,
     onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
     onRetryPhotoUpload: (String) -> Unit,
+    onViewReport: (String, String) -> Unit,
 ) {
     val inputRequest = state.inputRequest
     when {
         state.isLoadingSession || state.session == null -> Unit
-        state.phaseTransitioned -> DiagnosticCompleteBanner()
+        state.phaseTransitioned -> {
+            val sessionId = state.session.id
+            val reportId = state.latestReportId
+            DiagnosticCompleteBanner(
+                canViewReport = reportId != null,
+                onViewReport = {
+                    if (reportId != null) {
+                        onViewReport(sessionId, reportId)
+                    }
+                },
+            )
+        }
         inputRequest?.type == "none" -> Unit
         !state.canAcceptUserInput -> Unit
         else ->
@@ -285,17 +301,31 @@ private fun DiagnosticInputArea(
 }
 
 @Composable
-private fun DiagnosticCompleteBanner() {
+private fun DiagnosticCompleteBanner(
+    canViewReport: Boolean,
+    onViewReport: () -> Unit,
+) {
     Surface(
         tonalElevation = 3.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = stringResource(R.string.diagnostic_chat_complete_banner),
+        Column(
             modifier = Modifier.padding(16.dp),
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.titleMedium,
-        )
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.diagnostic_chat_complete_banner),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Button(
+                onClick = onViewReport,
+                enabled = canViewReport,
+            ) {
+                Text(text = stringResource(R.string.diagnostic_chat_view_report))
+            }
+        }
     }
 }
 
