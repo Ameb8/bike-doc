@@ -1,0 +1,59 @@
+apps/api/tests/unit/services/test_cost_estimate_service.py
+  s_63deee245b1633::t_2ed24d14800ab2 1-197
+apps/api/src/bike_doc_api/schemas/report.py
+  s_63deee245b1633::t_45048300846666 4,78-111,137-311,313-324,337-339,360-370
+  s_63deee245b1633::t_4ebff19aa58b9a 312
+apps/api/tests/unit/schemas/test_diagnostic_schemas.py
+  s_63deee245b1633::t_1559f88d1665ec 23,71-161,180-220
+apps/api/src/bike_doc_api/schemas/__init__.py
+  s_63deee245b1633::t_186c29145de419 46-48,52-57
+apps/api/src/bike_doc_api/adk/report_schemas/plan.py
+  s_63deee245b1633::t_415822b6c41df3 2-7
+apps/api/tests/unit/adk/tools/test_price_lookup_tool.py
+  s_63deee245b1633::t_7cae6129416e38 1-127
+apps/api/src/bike_doc_api/adk/tools/common.py
+  s_63deee245b1633::t_77a2e3cd33cc0e 52-66,216-225
+  s_63deee245b1633::t_7ee4310850a767 75-77
+apps/api/src/bike_doc_api/services/cost_estimates.py
+  s_63deee245b1633::t_0936283e306c25 1-108,110-137,139-145,147-163,172-199,206-292
+  s_63deee245b1633::t_20a153d12783e3 109,200-205
+  s_63deee245b1633::t_a698058f58675d 138,146,164-171
+apps/api/src/bike_doc_api/adk/tools/__init__.py
+  s_63deee245b1633::t_3a95ad0470189a 13,19-22
+apps/api/src/bike_doc_api/adk/tools/reports.py
+  s_63deee245b1633::t_5687bb5fc46b42 125,127,129-130
+  s_63deee245b1633::t_f643739b710812 23-27
+apps/api/src/bike_doc_api/models/price_lookup.py
+  s_63deee245b1633::t_bd3874d1192e87 1-20
+apps/api/src/bike_doc_api/adk/tools/price_lookup.py
+  s_63deee245b1633::t_a10bc79e5570ec 1-88
+apps/api/src/bike_doc_api/providers/price/stub.py
+  s_63deee245b1633::t_114005ee82c9fd 2-43
+apps/api/src/bike_doc_api/services/reports.py
+  s_63deee245b1633::t_20a153d12783e3 549-551
+  s_63deee245b1633::t_774d331b6c78c0 45
+  s_63deee245b1633::t_2dbdd30352b3af 534-548,552-554,581-592
+apps/api/src/bike_doc_api/providers/price/base.py
+  s_63deee245b1633::t_346bde44eec814 2-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "870f96728feb285c4109884e7ff3db77878fe24a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_63deee245b1633": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2f29-0aab-75a3-bf72-fd2c1df472c5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
