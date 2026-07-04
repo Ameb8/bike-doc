@@ -17,6 +17,7 @@ from bike_doc_api.adk.tools.common import (
     tool_error,
     tool_success,
     validate_tool_context,
+    validation_error_details,
 )
 from bike_doc_api.core.errors import ValidationAppError
 from bike_doc_api.schemas.report import PhaseReportEnvelope, SafetyFlag
@@ -102,7 +103,9 @@ class SaveDiagnosticReportTool:
                     parsed.report,
                 )
             except ValidationError as exc:
-                raise ReportValidationToolError() from exc
+                raise ReportValidationToolError(
+                    validation_error_details(exc, prefix="report"),
+                ) from exc
 
             payload = report_payload.model_dump(mode="json")
             payload["diagnostic_session_id"] = context.diagnostic_session_id

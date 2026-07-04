@@ -86,6 +86,24 @@ def test_unknown_code_is_rejected() -> None:
         SafetyService().validate_flag(_flag(code="diagnosis_uncertain"))
 
 
+def test_report_safety_validation_returns_field_details() -> None:
+    with pytest.raises(ValidationAppError) as exc_info:
+        SafetyService().validate_report_safety_flags(
+            payload_flags=[_flag(code="diagnosis_uncertain")],
+            envelope_flags=[_flag(code="diagnosis_uncertain")],
+        )
+
+    assert exc_info.value.details == {
+        "fields": [
+            {
+                "path": "safety_flags.0.code",
+                "message": "Unknown diagnostic V1 safety flag code.",
+                "type": "value_error",
+            },
+        ],
+    }
+
+
 @pytest.mark.parametrize("severity", ["critical", "", 3])
 def test_malformed_or_unsupported_severity_is_rejected(severity: object) -> None:
     with pytest.raises(ValidationAppError):

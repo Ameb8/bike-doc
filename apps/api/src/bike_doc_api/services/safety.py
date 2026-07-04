@@ -145,7 +145,15 @@ class SafetyService:
     ) -> list[SafetyFlag]:
         """Validate and normalize diagnostic V1 safety flags."""
 
-        validated = [self.validate_flag(flag) for flag in flags]
+        validated: list[SafetyFlag] = []
+        for index, flag in enumerate(flags):
+            try:
+                validated.append(self.validate_flag(flag))
+            except ValidationAppError as exc:
+                raise _prefix_validation_error_details(
+                    exc,
+                    f"safety_flags.{index}",
+                ) from exc
         if reject_contradictory_duplicates:
             _reject_contradictory_duplicates(validated)
         return validated
@@ -356,7 +364,11 @@ def _coerce_flag_mapping(flag: Any) -> Mapping[str, Any]:
         dumped = model_dump(mode="json")
         if isinstance(dumped, Mapping):
             return dumped
-    raise ValidationAppError()
+    raise _field_validation_error(
+        "",
+        "Safety flag must be an object.",
+        "model_type",
+    )
 
 
 def _normalize_flag_mapping(raw: Mapping[str, Any]) -> dict[str, Any]:
@@ -369,18 +381,31 @@ def _normalize_flag_mapping(raw: Mapping[str, Any]) -> dict[str, Any]:
         "message",
         "blocks_repair_instructions",
     }
-    if any(field not in raw for field in required_fields):
-        raise ValidationAppError()
+    missing_fields = sorted(field for field in required_fields if field not in raw)
+    if missing_fields:
+        raise _field_validation_error(
+            missing_fields[0],
+            "Field required.",
+            "missing",
+        )
 
     normalized: dict[str, Any] = {}
     for field in ("code", "severity", "phase", "message"):
         value = raw[field]
         if not isinstance(value, str):
-            raise ValidationAppError()
+            raise _field_validation_error(
+                field,
+                "Input should be a valid string.",
+                "string_type",
+            )
         normalized[field] = value.strip()
     blocks_repair_instructions = raw["blocks_repair_instructions"]
     if type(blocks_repair_instructions) is not bool:
-        raise ValidationAppError()
+        raise _field_validation_error(
+            "blocks_repair_instructions",
+            "Input should be a valid boolean.",
+            "bool_type",
+        )
     normalized["blocks_repair_instructions"] = blocks_repair_instructions
     return normalized
 
@@ -389,13 +414,29 @@ def _validate_flag_policy(normalized: Mapping[str, Any]) -> None:
     """Apply diagnostic V1 safety policy before Pydantic enum validation."""
 
     if normalized["code"] not in DIAGNOSTIC_V1_SAFETY_CODES:
-        raise ValidationAppError()
+        raise _field_validation_error(
+            "code",
+            "Unknown diagnostic V1 safety flag code.",
+            "value_error",
+        )
     if normalized["severity"] not in {severity.value for severity in SafetySeverity}:
-        raise ValidationAppError()
+        raise _field_validation_error(
+            "severity",
+            "Unsupported safety severity.",
+            "enum",
+        )
     if normalized["phase"] != RepairSessionPhase.DIAGNOSTIC.value:
-        raise ValidationAppError()
+        raise _field_validation_error(
+            "phase",
+            "Diagnostic safety flags must use phase 'diagnostic'.",
+            "literal_error",
+        )
     if not normalized["message"]:
-        raise ValidationAppError()
+        raise _field_validation_error(
+            "message",
+            "Safety flag message must be non-empty.",
+            "string_too_short",
+        )
     if (
         normalized["severity"] == SafetySeverity.BLOCKING.value
         and not normalized["blocks_repair_instructions"]
@@ -413,6 +454,52 @@ def _reject_contradictory_duplicates(flags: list[SafetyFlag]) -> None:
         if previous is not None and previous is not flag.severity:
             raise ValidationAppError()
         seen[key] = flag.severity
+
+
+def _field_validation_error(
+    path: str,
+    message: str,
+    error_type: str,
+) -> ValidationAppError:
+    """Build a sanitized validation error for generated safety flags."""
+
+    return ValidationAppError(
+        details={
+            "fields": [
+                {
+                    "path": path,
+                    "message": message,
+                    "type": error_type,
+                },
+            ],
+        },
+    )
+
+
+def _prefix_validation_error_details(
+    exc: ValidationAppError,
+    prefix: str,
+) -> ValidationAppError:
+    """Prefix field paths on one safety-flag validation error."""
+
+    fields = []
+    details = exc.details
+    if isinstance(details, dict) and isinstance(details.get("fields"), list):
+        for field in details["fields"]:
+            if not isinstance(field, dict):
+                continue
+            path = str(field.get("path", ""))
+            prefixed_path = f"{prefix}.{path}" if path else prefix
+            fields.append({**field, "path": prefixed_path})
+    if not fields:
+        fields.append(
+            {
+                "path": prefix,
+                "message": exc.message,
+                "type": exc.code,
+            },
+        )
+    return ValidationAppError(details={"fields": fields})
 
 
 def _deduplicate_active_flags(flags: list[SafetyFlag]) -> list[SafetyFlag]:

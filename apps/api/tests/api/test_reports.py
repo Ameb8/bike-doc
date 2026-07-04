@@ -97,6 +97,18 @@ def _public_report(
             },
             "alternate_hypotheses": [],
             "evidence_summary": "The symptom pattern points to rear indexing.",
+            "repair_estimate": {
+                "difficulty": "easy",
+                "difficulty_notes": "This is likely a simple cable tension correction.",
+                "tools_required": ["bike stand or safe way to lift rear wheel"],
+                "parts_required": [],
+                "repair_time": {"low_minutes": 10, "high_minutes": 30},
+                "shop_repair_cost": {
+                    "low_usd": 20,
+                    "high_usd": 60,
+                    "notes": "Estimate only; actual shop pricing varies.",
+                },
+            },
             "key_artifact_ids": ["art_owned_contract"],
             "user_skill_level": "beginner",
             "safety_flags": [],
@@ -132,6 +144,12 @@ def _assert_diagnostic_report_envelope(report: dict[str, Any]) -> None:
     assert payload["primary_diagnosis"]
     assert "alternate_hypotheses" in payload
     assert payload["evidence_summary"]
+    assert payload["repair_estimate"]["difficulty"] in {"easy", "medium", "hard"}
+    assert payload["repair_estimate"]["tools_required"] == [
+        "bike stand or safe way to lift rear wheel",
+    ]
+    assert payload["repair_estimate"]["repair_time"]["low_minutes"] == 10
+    assert payload["repair_estimate"]["shop_repair_cost"]["high_usd"] == 60
     assert "key_artifact_ids" in payload
     assert payload["user_skill_level"] in {
         "unknown",

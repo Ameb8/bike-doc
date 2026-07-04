@@ -165,6 +165,18 @@ def _report_payload(**overrides: Any) -> dict[str, Any]:
         },
         "alternate_hypotheses": [],
         "evidence_summary": "The symptom pattern points to rear indexing.",
+        "repair_estimate": {
+            "difficulty": "easy",
+            "difficulty_notes": "Cable tension adjustment is beginner-friendly.",
+            "tools_required": ["bike stand or safe way to lift rear wheel"],
+            "parts_required": [],
+            "repair_time": {"low_minutes": 10, "high_minutes": 30},
+            "shop_repair_cost": {
+                "low_usd": 20,
+                "high_usd": 60,
+                "notes": "Estimate only; actual shop pricing varies.",
+            },
+        },
         "key_artifact_ids": [],
         "user_skill_level": "beginner",
         "safety_flags": [],
@@ -188,6 +200,34 @@ async def test_build_tool_catalog_returns_exact_v1_function_tools() -> None:
 
     assert all(isinstance(tool, FunctionTool) for tool in tools)
     assert tuple(tool.name for tool in tools) == V1_DIAGNOSTIC_TOOL_NAMES
+
+
+async def test_save_diagnostic_report_declares_nested_report_schema() -> None:
+    tool = _tool_by_name(
+        build_tool_catalog(_dependencies(_CatalogService())),
+        "save_diagnostic_report",
+    )
+
+    declaration = tool._get_declaration()
+    schema = declaration.parameters_json_schema
+
+    assert schema["properties"]["report"] == {
+        "$ref": "#/$defs/DiagnosticReportToolPayload",
+    }
+    report_schema = schema["$defs"]["DiagnosticReportToolPayload"]
+    assert report_schema["additionalProperties"] is False
+    assert report_schema["required"] == [
+        "schema_version",
+        "primary_diagnosis",
+        "evidence_summary",
+        "repair_estimate",
+        "key_artifact_ids",
+        "user_skill_level",
+        "safety_flags",
+    ]
+    assert report_schema["properties"]["primary_diagnosis"] == {
+        "$ref": "#/$defs/Diagnosis",
+    }
 
 
 async def test_tool_catalog_requires_server_owned_context_from_adk_state() -> None:

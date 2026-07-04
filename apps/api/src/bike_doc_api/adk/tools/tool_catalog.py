@@ -9,6 +9,7 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
+from bike_doc_api.adk.report_schemas.diagnostic import DiagnosticReportToolPayload
 from bike_doc_api.adk.tools.artifacts import (
     ArtifactServiceProtocol,
     ListDiagnosticArtifactsTool,
@@ -168,7 +169,7 @@ def build_tool_catalog(
         )
 
     async def save_diagnostic_report(
-        report: dict[str, Any],
+        report: DiagnosticReportToolPayload,
         summary: str,
         tool_context: ToolContext | None = None,
     ) -> dict[str, Any]:
@@ -180,7 +181,7 @@ def build_tool_catalog(
         return await report_tool.run(
             {
                 "repair_session_id": context.repair_session_id,
-                "report": report,
+                "report": _report_payload_data(report),
                 "summary": summary,
             },
             context,
@@ -221,3 +222,18 @@ def _context_error() -> dict[str, Any]:
         "validation_error",
         "Tool app context is missing or invalid.",
     )
+
+
+def _report_payload_data(report: DiagnosticReportToolPayload | Any) -> dict[str, Any]:
+    """Return report data from ADK's typed or dict runtime value."""
+
+    if isinstance(report, DiagnosticReportToolPayload):
+        return report.model_dump(mode="json")
+    if isinstance(report, dict):
+        return report
+    model_dump = getattr(report, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump(mode="json")
+        if isinstance(dumped, dict):
+            return dumped
+    return {"_invalid_report": report}

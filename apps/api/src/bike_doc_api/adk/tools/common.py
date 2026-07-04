@@ -69,9 +69,15 @@ def current_tool_user(context: DiagnosticToolContext) -> ToolCurrentUser:
 class ToolDomainError(Exception):
     """Expected domain failure that maps directly to a tool error code."""
 
-    def __init__(self, code: ToolErrorCode, message: str) -> None:
+    def __init__(
+        self,
+        code: ToolErrorCode,
+        message: str,
+        details: Mapping[str, Any] | None = None,
+    ) -> None:
         self.code = code
         self.message = message
+        self.details = details
         super().__init__(message)
 
 
@@ -98,10 +104,11 @@ class ArtifactToolNotFoundError(ToolDomainError):
 class ReportValidationToolError(ToolDomainError):
     """Generated diagnostic report cannot be mapped to the public schema."""
 
-    def __init__(self) -> None:
+    def __init__(self, details: Mapping[str, Any] | None = None) -> None:
         super().__init__(
             "report_validation_failed",
             "Diagnostic report validation failed.",
+            details,
         )
 
 
@@ -111,10 +118,44 @@ def tool_success(data: Mapping[str, Any]) -> dict[str, Any]:
     return {"ok": True, "data": dict(data)}
 
 
-def tool_error(code: ToolErrorCode, message: str) -> dict[str, Any]:
+def tool_error(
+    code: ToolErrorCode,
+    message: str,
+    details: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return the common failed tool envelope."""
 
-    return {"ok": False, "error": {"code": code, "message": message}}
+    error: dict[str, Any] = {"code": code, "message": message}
+    if details is not None:
+        error["details"] = dict(details)
+    return {"ok": False, "error": error}
+
+
+def validation_error_details(
+    exc: ValidationError,
+    *,
+    prefix: str | None = None,
+) -> dict[str, Any]:
+    """Return sanitized Pydantic validation details suitable for tool feedback."""
+
+    fields: list[dict[str, str]] = []
+    for error in exc.errors(
+        include_context=False,
+        include_input=False,
+        include_url=False,
+    ):
+        location = error.get("loc", ())
+        path_parts = [str(part) for part in location if str(part)]
+        if prefix:
+            path_parts.insert(0, prefix)
+        fields.append(
+            {
+                "path": ".".join(path_parts) if path_parts else prefix or "",
+                "message": str(error.get("msg", "Invalid value.")),
+                "type": str(error.get("type", "value_error")),
+            },
+        )
+    return {"fields": fields}
 
 
 @overload
@@ -165,12 +206,14 @@ async def normalize_tool_errors(
 
     try:
         return await call()
-    except ValidationError:
+    except ValidationError as exc:
         return tool_error(
-            validation_error_code, _default_message(validation_error_code)
+            validation_error_code,
+            _default_message(validation_error_code),
+            validation_error_details(exc),
         )
     except ToolDomainError as exc:
-        return tool_error(exc.code, exc.message)
+        return tool_error(exc.code, exc.message, exc.details)
     except NotFoundError:
         return tool_error(not_found_code, _default_message(not_found_code))
     except SessionStateConflictError:
@@ -182,9 +225,11 @@ async def normalize_tool_errors(
             "safety_policy_violation",
             _default_message("safety_policy_violation"),
         )
-    except ValidationAppError:
+    except ValidationAppError as exc:
         return tool_error(
-            validation_error_code, _default_message(validation_error_code)
+            validation_error_code,
+            _default_message(validation_error_code),
+            exc.details,
         )
     except ServerError:
         return tool_error("internal_error", _default_message("internal_error"))

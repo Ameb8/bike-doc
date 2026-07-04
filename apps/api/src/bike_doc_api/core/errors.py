@@ -60,11 +60,16 @@ class NotFoundError(AppError):
 class ValidationAppError(AppError):
     """A public request or cursor failed validation."""
 
-    def __init__(self, message: str = "Request validation failed.") -> None:
+    def __init__(
+        self,
+        message: str = "Request validation failed.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(
             status_code=422,
             code="validation_error",
             message=message,
+            details=details,
         )
 
 
