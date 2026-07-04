@@ -1,0 +1,44 @@
+README.md
+  s_6513c259a73ea0::t_1610a6085f4ddb 559-776
+  s_a94342bf2b859f::t_9ff509efd055bc 5
+  h_11a994996f9bb9 1-4,6-8,338-341,450,547
+  s_8da5f7420eda11::t_3192e604726e73 9-337
+  s_a94342bf2b859f::t_eb968de1126dfd 342-449,451-546,548-558
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3caa39b009496df8fed1fc6dc94fbc4afd5ea5e3",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_6513c259a73ea0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2e81-e843-7bc2-9b68-3fb622b9907b",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_8da5f7420eda11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2e94-32a2-7fb0-a942-ba12e252ef1e",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_a94342bf2b859f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2e76-528a-7f40-b8db-913b6aac4a6d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
