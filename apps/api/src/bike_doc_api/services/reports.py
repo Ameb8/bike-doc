@@ -42,6 +42,7 @@ from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
     PhaseReportEnvelope,
     PhaseReportList,
+    PlanReportV1,
     SafetyFlag,
     phase_report_envelope_from_model,
 )
@@ -365,7 +366,6 @@ class ReportService:
 
         reports = await self._reports.list_for_session(
             repair_session.id,
-            report_type=PhaseReportType.DIAGNOSTIC.value,
             limit=limit + 1,
             cursor_report=cursor_report,
         )
@@ -531,6 +531,27 @@ def _validate_diagnostic_envelope(envelope: PhaseReportEnvelope) -> None:
         raise ValidationAppError()
 
 
+def _validate_plan_envelope(envelope: PhaseReportEnvelope) -> None:
+    """Apply plan report invariants before public exposure."""
+
+    if envelope.type is not PhaseReportType.PLAN:
+        raise ValidationAppError()
+    if envelope.schema_version != "plan_report.v1":
+        raise ValidationAppError()
+    if envelope.phase is not RepairSessionPhase.PLANNING:
+        raise ValidationAppError()
+    if not envelope.summary.strip():
+        raise ValidationAppError()
+    if not isinstance(envelope.payload, PlanReportV1):
+        raise ValidationAppError()
+    if envelope.payload.schema_version != "plan_report.v1":
+        raise ValidationAppError()
+    if [flag.model_dump(mode="json") for flag in envelope.payload.safety_concerns] != [
+        flag.model_dump(mode="json") for flag in envelope.safety_flags
+    ]:
+        raise ValidationAppError()
+
+
 def _payload_data(payload: DiagnosticReportV1 | dict[str, Any]) -> dict[str, Any]:
     """Return mutable diagnostic report payload data."""
 
@@ -557,13 +578,18 @@ def _public_envelope_or_server_error(
 
     try:
         public = phase_report_envelope_from_model(report)
-        _validate_diagnostic_envelope(public)
-        SafetyService().validate_report_safety_flags(
-            payload_flags=public.payload.safety_flags
-            if isinstance(public.payload, DiagnosticReportV1)
-            else [],
-            envelope_flags=public.safety_flags,
-        )
+        if public.type is PhaseReportType.DIAGNOSTIC:
+            _validate_diagnostic_envelope(public)
+            SafetyService().validate_report_safety_flags(
+                payload_flags=public.payload.safety_flags
+                if isinstance(public.payload, DiagnosticReportV1)
+                else [],
+                envelope_flags=public.safety_flags,
+            )
+        elif public.type is PhaseReportType.PLAN:
+            _validate_plan_envelope(public)
+        else:
+            raise ValidationAppError()
     except (PydanticValidationError, ValueError, AppError) as exc:
         raise ServerError() from exc
     return public

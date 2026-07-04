@@ -43,9 +43,18 @@ from bike_doc_api.schemas.repair_session import (
 )
 from bike_doc_api.schemas.report import (
     AlternateHypothesis,
+    CostEstimate,
+    CostEstimateSource,
+    CostItemType,
     Diagnosis,
     DiagnosticReportV1,
     PhaseReportEnvelope,
+    PlanCostEstimate,
+    PlanReportV1,
+    PriceEstimateStatus,
+    PriceListing,
+    PriceLookupRequirement,
+    PriceLookupResult,
     RepairEstimate,
     RepairTimeEstimate,
     SafetyFlag,

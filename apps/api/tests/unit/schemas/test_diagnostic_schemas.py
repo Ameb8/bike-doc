@@ -20,6 +20,7 @@ from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
     PhaseReportEnvelope,
+    PlanReportV1,
     SafetyFlag,
     phase_report_envelope_from_model,
 )
@@ -67,6 +68,97 @@ def make_diagnostic_payload() -> dict[str, object]:
     }
 
 
+def make_plan_payload() -> dict[str, object]:
+    """Return a schema-valid plan report payload with cost estimates."""
+
+    return {
+        "schema_version": "plan_report.v1",
+        "diagnosis_summary": "The chain is likely worn.",
+        "parts_needed": [
+            {
+                "item": "Shimano HG54 10-speed chain",
+                "specification": "10-speed",
+                "quantity": 1,
+                "required": True,
+                "estimated_price": {
+                    "currency": "USD",
+                    "min_amount": 27.99,
+                    "max_amount": 27.99,
+                    "confidence": "high",
+                    "source": "search_provider",
+                },
+                "price_lookup": _price_lookup_result("part"),
+            },
+        ],
+        "tools_needed": [],
+        "diy_estimate": {
+            "currency": "USD",
+            "min_amount": 27.99,
+            "max_amount": 27.99,
+            "confidence": "high",
+            "source": "search_provider",
+        },
+        "shop_estimate": {
+            "currency": "USD",
+            "min_amount": 40,
+            "max_amount": 80,
+            "confidence": "medium",
+            "source": "labor_reference_table",
+        },
+        "cost_estimate": {
+            "parts_total": {
+                "currency": "USD",
+                "min_amount": 27.99,
+                "max_amount": 27.99,
+                "confidence": "high",
+                "source": "search_provider",
+            },
+            "tools_total": {
+                "currency": "USD",
+                "min_amount": 0,
+                "max_amount": 0,
+                "confidence": "high",
+                "source": "search_provider",
+            },
+            "diy_total": {
+                "currency": "USD",
+                "min_amount": 27.99,
+                "max_amount": 27.99,
+                "confidence": "high",
+                "source": "search_provider",
+            },
+            "items": [_price_lookup_result("part")],
+        },
+        "recommendation": "diy_reasonable",
+        "recommendation_basis": "A chain replacement is reasonable at home.",
+        "requires_user_decision": True,
+        "safety_concerns": [],
+    }
+
+
+def _price_lookup_result(item_type: str) -> dict[str, object]:
+    """Return a schema-valid price lookup result."""
+
+    return {
+        "item_type": item_type,
+        "requirement_name": "Shimano HG54 10-speed chain",
+        "quantity": 1,
+        "status": "priced_listing_found",
+        "estimate_confidence": "high",
+        "looked_up_at": NOW.isoformat(),
+        "primary_listing": {
+            "title": "Shimano HG54 10-Speed Chain",
+            "retailer": "Example Retailer",
+            "observed_price": 27.99,
+            "currency": "USD",
+            "url": "https://example.com/chain",
+            "observed_at": NOW.isoformat(),
+            "match_confidence": "high",
+            "match_rationale": "Listing title matches model and speed.",
+        },
+    }
+
+
 def test_diagnostic_report_envelope_validates_payload() -> None:
     envelope = PhaseReportEnvelope(
         id="rpt_123",
@@ -83,6 +175,49 @@ def test_diagnostic_report_envelope_validates_payload() -> None:
 
     assert isinstance(envelope.payload, DiagnosticReportV1)
     assert envelope.payload.schema_version == "diagnostic_report.v1"
+
+
+def test_plan_report_envelope_validates_cost_estimate_payload() -> None:
+    envelope = PhaseReportEnvelope(
+        id="rpt_plan",
+        repair_session_id="rs_123",
+        type="plan",
+        schema_version="plan_report.v1",
+        phase="planning",
+        summary="Replace the worn chain.",
+        safety_flags=[],
+        source_artifact_ids=[],
+        created_at=NOW,
+        payload=make_plan_payload(),
+    )
+
+    assert isinstance(envelope.payload, PlanReportV1)
+    assert envelope.payload.cost_estimate is not None
+    assert envelope.payload.cost_estimate.items[0].primary_listing is not None
+
+
+def test_plan_report_envelope_requires_matching_safety_concerns() -> None:
+    with pytest.raises(ValidationError):
+        PhaseReportEnvelope(
+            id="rpt_plan",
+            repair_session_id="rs_123",
+            type="plan",
+            schema_version="plan_report.v1",
+            phase="planning",
+            summary="Replace the worn chain.",
+            safety_flags=[
+                {
+                    "code": "uncertain_torque_spec",
+                    "severity": "warning",
+                    "phase": "planning",
+                    "message": "Torque value still needs verification.",
+                    "blocks_repair_instructions": False,
+                },
+            ],
+            source_artifact_ids=[],
+            created_at=NOW,
+            payload=make_plan_payload(),
+        )
 
 
 def test_blocking_safety_flags_require_instruction_block() -> None:
