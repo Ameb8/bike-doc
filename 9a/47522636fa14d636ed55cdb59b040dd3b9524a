@@ -1,0 +1,72 @@
+apps/android/app/src/main/res/values/strings.xml
+  s_c9cc06cb4fae46::t_0f1bfe30689062 91-100
+apps/api/tests/conftest.py
+  s_c9cc06cb4fae46::t_bc241125c75a4e 114-116
+apps/android/app/src/main/java/com/bikedoc/android/sessions/report/DiagnosticReportScreen.kt
+  s_c9cc06cb4fae46::t_1ab220a4799b56 33,150,235-304
+docs/specs/openapi.yaml
+  s_c9cc06cb4fae46::t_b514c36c82596c 1455,1472-1473,1488-1539
+docs/specs/apps/api-diagnostic.md
+  s_c9cc06cb4fae46::t_139a6a7b41b76c 398-412,459-473
+apps/api/tests/unit/adk/tools/test_reports_tool.py
+  s_c9cc06cb4fae46::t_4fdef2109e95d0 90
+  s_35ac494f509518::t_299857de4aa031 145-168
+  s_c9cc06cb4fae46::t_b8a3d999e4fab9 88-89,91-99
+apps/api/tests/unit/schemas/test_diagnostic_schemas.py
+  s_c9cc06cb4fae46::t_25159e456c31f4 51-52,54-62
+  s_c9cc06cb4fae46::t_356f5f88246b0b 53
+apps/android/app/src/main/java/com/bikedoc/android/api/models/ReportModels.kt
+  s_c9cc06cb4fae46::t_1e18c5981c7898 43-44,73-102
+apps/android/app/src/main/java/com/bikedoc/android/api/ReportRepository.kt
+  s_c9cc06cb4fae46::t_9d85e770e29396 33-35
+  s_c9cc06cb4fae46::t_4ef27e55458f9e 6-7,9,77,100-122,136,155-173
+  s_c9cc06cb4fae46::t_81ff34a26d0521 31-32,36,62
+docs/specs/apps/diagnostic-report-v1.md
+  s_c9cc06cb4fae46::t_d4460248872edf 53,77-102,264-278,312-326,367-381
+apps/api/src/bike_doc_api/schemas/report.py
+  s_c9cc06cb4fae46::t_52a7b664aa844c 62-87,95
+apps/api/tests/unit/repositories/test_diagnostic_persistence.py
+  s_c9cc06cb4fae46::t_d6ab50b90ecb60 173-184
+apps/api/tests/unit/services/test_report_service.py
+  s_c9cc06cb4fae46::t_a0b4d8cfec7a90 244-245,247-255
+  s_c9cc06cb4fae46::t_c52c2e25e4ad91 246
+docs/specs/apps/adk-diagnostic-tools.md
+  s_c9cc06cb4fae46::t_f8d5d87c510e55 506-520
+apps/api/tests/unit/adk/test_runner.py
+  s_c9cc06cb4fae46::t_c8c91ebaefc1fb 148-159
+apps/api/src/bike_doc_api/adk/prompts/diagnostic.md
+  s_c9cc06cb4fae46::t_90054effba61e5 86-92
+apps/api/src/bike_doc_api/adk/report_schemas/diagnostic.py
+  s_c9cc06cb4fae46::t_dd53da84026bae 10-15,25
+apps/api/src/bike_doc_api/schemas/__init__.py
+  s_c9cc06cb4fae46::t_ad98b7e9c2b9d9 49-50,52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "9a47522636fa14d636ed55cdb59b040dd3b9524a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_35ac494f509518": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2c85-7852-71e0-b918-88a4092f4665",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_c9cc06cb4fae46": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2e0a-b1e8-7b73-a147-ae04d94a1f25",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
