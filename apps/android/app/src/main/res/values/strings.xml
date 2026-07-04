@@ -88,6 +88,16 @@
     <string name="diagnostic_report_retry">Retry</string>
     <string name="diagnostic_report_safety_title">Safety notes</string>
     <string name="diagnostic_report_primary_title">Primary diagnosis</string>
+    <string name="diagnostic_report_repair_estimate_title">Repair estimate</string>
+    <string name="diagnostic_report_difficulty_label">Difficulty</string>
+    <string name="diagnostic_report_repair_time_label">Repair time</string>
+    <string name="diagnostic_report_repair_time_value">%1$d-%2$d min</string>
+    <string name="diagnostic_report_shop_cost_label">Shop cost</string>
+    <string name="diagnostic_report_shop_cost_value">$%1$d-$%2$d</string>
+    <string name="diagnostic_report_tools_required_label">Tools required</string>
+    <string name="diagnostic_report_parts_required_label">Parts required</string>
+    <string name="diagnostic_report_none_predicted">None predicted</string>
+    <string name="diagnostic_report_list_item">• %1$s</string>
     <string name="diagnostic_report_evidence_title">Evidence summary</string>
     <string name="diagnostic_report_alternates_title">Other possibilities</string>
     <string name="diagnostic_report_details_title">Details</string>

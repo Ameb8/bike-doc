@@ -83,6 +83,13 @@ fields:
   alternates
 - `evidence_summary`: concise user-readable evidence, including photo evidence
   and artifact IDs when relevant
+- `repair_estimate`: V1 LLM prediction with:
+  - `difficulty`: one of `easy`, `medium`, or `hard`
+  - `difficulty_notes`: short explanation of the difficulty rating
+  - `tools_required`: tools needed for an at-home repair, or `[]`
+  - `parts_required`: parts likely needed for an at-home repair, or `[]`
+  - `repair_time`: `low_minutes` and `high_minutes`
+  - `shop_repair_cost`: `low_usd`, `high_usd`, and optional `notes`
 - `key_artifact_ids`: diagnostic artifact IDs that materially informed the
   diagnosis, or `[]`
 - `user_skill_level`: one of `unknown`, `beginner`, `intermediate`, `advanced`

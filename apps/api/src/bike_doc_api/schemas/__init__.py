@@ -46,7 +46,10 @@ from bike_doc_api.schemas.report import (
     Diagnosis,
     DiagnosticReportV1,
     PhaseReportEnvelope,
+    RepairEstimate,
+    RepairTimeEstimate,
     SafetyFlag,
+    ShopRepairCostEstimate,
     phase_report_envelope_from_model,
 )
 from bike_doc_api.schemas.turn import (

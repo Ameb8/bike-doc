@@ -50,6 +50,7 @@ Required top-level fields:
 | `primary_diagnosis` | `Diagnosis` | Required. Main diagnostic conclusion. |
 | `alternate_hypotheses` | array of `AlternateHypothesis` | Required. Use `[]` when there are no alternates. |
 | `evidence_summary` | string | Required. User-readable evidence summary. |
+| `repair_estimate` | `RepairEstimate` | Required. LLM-predicted V1 repair difficulty, tools, parts, time, and shop cost. |
 | `key_artifact_ids` | array of string | Required. Use `[]` when no artifacts materially informed the diagnosis. |
 | `user_skill_level` | `UserSkillLevel` | Required. One of `unknown`, `beginner`, `intermediate`, `advanced`. |
 | `safety_flags` | array of `SafetyFlag` | Required. Use `[]` when there are no safety concerns. |
@@ -72,6 +73,32 @@ Required top-level fields:
 | `issue` | string | Required. Concise alternate explanation. |
 | `confidence` | `Confidence` | Required. See allowed values below. |
 | `ruled_out_by` | string or null | Optional and nullable. When present, describes evidence that reduces or eliminates the hypothesis. |
+
+`RepairEstimate` fields:
+
+| Field | Type | Rules |
+|---|---|---|
+| `difficulty` | string | Required. One of `easy`, `medium`, or `hard`. |
+| `difficulty_notes` | string | Required. Short user-readable explanation for the difficulty rating. |
+| `tools_required` | array of string | Required. Tools likely needed for an at-home repair. Use `[]` when none are likely needed. |
+| `parts_required` | array of string | Required. Parts likely needed for an at-home repair. Use `[]` when none are likely needed. |
+| `repair_time` | `RepairTimeEstimate` | Required. Estimated at-home repair time range in minutes. |
+| `shop_repair_cost` | `ShopRepairCostEstimate` | Required. Estimated shop repair cost range in USD. |
+
+`RepairTimeEstimate` fields:
+
+| Field | Type | Rules |
+|---|---|---|
+| `low_minutes` | integer | Required. Lower bound of the estimated repair duration. |
+| `high_minutes` | integer | Required. Upper bound of the estimated repair duration. |
+
+`ShopRepairCostEstimate` fields:
+
+| Field | Type | Rules |
+|---|---|---|
+| `low_usd` | integer | Required. Lower bound of the estimated shop charge. |
+| `high_usd` | integer | Required. Upper bound of the estimated shop charge. |
+| `notes` | string or null | Optional note that the cost is an estimate and can vary by shop or region. |
 
 The OpenAPI schema does not define additional diagnostic report fields. Public
 serialization must emit only fields declared by `DiagnosticReportV1` and its
@@ -234,6 +261,21 @@ as a server-side data integrity error, not as a client validation error.
     }
   ],
   "evidence_summary": "The user reports slow upshifts after recent cable replacement, and the drivetrain photo shows no obvious damage.",
+  "repair_estimate": {
+    "difficulty": "easy",
+    "difficulty_notes": "Barrel-adjuster indexing is a common at-home adjustment with low safety risk.",
+    "tools_required": ["bike stand or safe way to lift rear wheel"],
+    "parts_required": [],
+    "repair_time": {
+      "low_minutes": 10,
+      "high_minutes": 30
+    },
+    "shop_repair_cost": {
+      "low_usd": 20,
+      "high_usd": 60,
+      "notes": "Estimate only; actual shop pricing varies."
+    }
+  },
   "key_artifact_ids": ["art_123"],
   "user_skill_level": "intermediate",
   "safety_flags": [],
@@ -267,6 +309,21 @@ as a server-side data integrity error, not as a client validation error.
     }
   ],
   "evidence_summary": "The user reports skipping only while pedaling hard. The available photo does not clearly show chain wear, cassette tooth profile, or hanger alignment.",
+  "repair_estimate": {
+    "difficulty": "medium",
+    "difficulty_notes": "The likely repairs require measurement and adjustment, and the exact cause is still uncertain.",
+    "tools_required": ["chain checker", "bike stand or safe way to lift rear wheel", "hex keys"],
+    "parts_required": ["chain or cassette if wear is confirmed"],
+    "repair_time": {
+      "low_minutes": 30,
+      "high_minutes": 120
+    },
+    "shop_repair_cost": {
+      "low_usd": 60,
+      "high_usd": 180,
+      "notes": "Estimate only; final cost depends on whether drivetrain parts are replaced."
+    }
+  },
   "key_artifact_ids": ["art_456"],
   "user_skill_level": "beginner",
   "safety_flags": [
@@ -307,6 +364,21 @@ instead of creating a report.
     }
   ],
   "evidence_summary": "The user reports near-total loss of braking, and the photo appears to show fluid residue near the front caliper.",
+  "repair_estimate": {
+    "difficulty": "hard",
+    "difficulty_notes": "Hydraulic brake failure can require bleed, hose, caliper, or pad work and should be handled carefully.",
+    "tools_required": ["brake bleed kit", "torque wrench", "clean nitrile gloves"],
+    "parts_required": ["brake pads", "mineral oil or DOT fluid matching the brake system", "hose or caliper if damaged"],
+    "repair_time": {
+      "low_minutes": 60,
+      "high_minutes": 180
+    },
+    "shop_repair_cost": {
+      "low_usd": 100,
+      "high_usd": 300,
+      "notes": "Estimate only; do not ride until the brake is inspected."
+    }
+  },
   "key_artifact_ids": ["art_789"],
   "user_skill_level": "beginner",
   "safety_flags": [

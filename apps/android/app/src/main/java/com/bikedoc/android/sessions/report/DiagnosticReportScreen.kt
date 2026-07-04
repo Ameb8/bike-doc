@@ -30,6 +30,7 @@ import com.bikedoc.android.R
 import com.bikedoc.android.api.AlternateHypothesis
 import com.bikedoc.android.api.Diagnosis
 import com.bikedoc.android.api.DiagnosticReport
+import com.bikedoc.android.api.RepairEstimate
 import com.bikedoc.android.api.models.SafetyFlag
 
 @Composable
@@ -146,6 +147,7 @@ private fun DiagnosticReportLoadedState(
             SafetySection(flags = report.safetyFlags)
         }
         PrimaryDiagnosisSection(diagnosis = report.primaryDiagnosis)
+        RepairEstimateSection(estimate = report.repairEstimate)
         ReportSection(title = stringResource(R.string.diagnostic_report_evidence_title)) {
             Text(
                 text = report.evidenceSummary,
@@ -224,6 +226,82 @@ private fun PrimaryDiagnosisSection(diagnosis: Diagnosis) {
                 DetailRow(
                     label = stringResource(R.string.diagnostic_report_diy_detail_label),
                     value = diagnosis.diySuitability.toDisplayLabel(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun RepairEstimateSection(estimate: RepairEstimate) {
+    ReportSection(title = stringResource(R.string.diagnostic_report_repair_estimate_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                DetailRow(
+                    label = stringResource(R.string.diagnostic_report_difficulty_label),
+                    value = estimate.difficulty.toDisplayLabel(),
+                )
+                DetailRow(
+                    label = stringResource(R.string.diagnostic_report_repair_time_label),
+                    value =
+                        stringResource(
+                            R.string.diagnostic_report_repair_time_value,
+                            estimate.repairTime.lowMinutes,
+                            estimate.repairTime.highMinutes,
+                        ),
+                )
+                DetailRow(
+                    label = stringResource(R.string.diagnostic_report_shop_cost_label),
+                    value =
+                        stringResource(
+                            R.string.diagnostic_report_shop_cost_value,
+                            estimate.shopRepairCost.lowUsd,
+                            estimate.shopRepairCost.highUsd,
+                        ),
+                )
+            }
+            Text(
+                text = estimate.difficultyNotes,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            estimate.shopRepairCost.notes?.takeIf(String::isNotBlank)?.let { notes ->
+                Text(
+                    text = notes,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            EstimateList(
+                title = stringResource(R.string.diagnostic_report_tools_required_label),
+                items = estimate.toolsRequired,
+            )
+            EstimateList(
+                title = stringResource(R.string.diagnostic_report_parts_required_label),
+                items = estimate.partsRequired,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EstimateList(
+    title: String,
+    items: List<String>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        if (items.isEmpty()) {
+            Text(
+                text = stringResource(R.string.diagnostic_report_none_predicted),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            items.forEach { item ->
+                Text(
+                    text = stringResource(R.string.diagnostic_report_list_item, item),
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
         }

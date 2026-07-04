@@ -1452,6 +1452,7 @@ components:
         - primary_diagnosis
         - alternate_hypotheses
         - evidence_summary
+        - repair_estimate
         - key_artifact_ids
         - user_skill_level
         - safety_flags
@@ -1468,6 +1469,8 @@ components:
             $ref: "#/components/schemas/AlternateHypothesis"
         evidence_summary:
           type: string
+        repair_estimate:
+          $ref: "#/components/schemas/RepairEstimate"
         key_artifact_ids:
           type: array
           items:
@@ -1481,6 +1484,59 @@ components:
         diagnostic_session_id:
           type: string
           description: Internal archive/session id, not an ADK concept for the app.
+
+    RepairEstimate:
+      type: object
+      required:
+        - difficulty
+        - difficulty_notes
+        - tools_required
+        - parts_required
+        - repair_time
+        - shop_repair_cost
+      properties:
+        difficulty:
+          type: string
+          enum: [easy, medium, hard]
+        difficulty_notes:
+          type: string
+        tools_required:
+          type: array
+          items:
+            type: string
+        parts_required:
+          type: array
+          items:
+            type: string
+        repair_time:
+          $ref: "#/components/schemas/RepairTimeEstimate"
+        shop_repair_cost:
+          $ref: "#/components/schemas/ShopRepairCostEstimate"
+
+    RepairTimeEstimate:
+      type: object
+      required:
+        - low_minutes
+        - high_minutes
+      properties:
+        low_minutes:
+          type: integer
+        high_minutes:
+          type: integer
+
+    ShopRepairCostEstimate:
+      type: object
+      required:
+        - low_usd
+        - high_usd
+      properties:
+        low_usd:
+          type: integer
+        high_usd:
+          type: integer
+        notes:
+          type: string
+          nullable: true
 
     Diagnosis:
       type: object

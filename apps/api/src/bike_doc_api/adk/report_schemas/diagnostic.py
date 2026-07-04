@@ -7,7 +7,12 @@ from typing import Literal
 from pydantic import Field
 
 from bike_doc_api.schemas.common import APIBaseModel, UserSkillLevel
-from bike_doc_api.schemas.report import AlternateHypothesis, Diagnosis, SafetyFlag
+from bike_doc_api.schemas.report import (
+    AlternateHypothesis,
+    Diagnosis,
+    RepairEstimate,
+    SafetyFlag,
+)
 
 
 class DiagnosticReportToolPayload(APIBaseModel):
@@ -17,6 +22,7 @@ class DiagnosticReportToolPayload(APIBaseModel):
     primary_diagnosis: Diagnosis
     alternate_hypotheses: list[AlternateHypothesis] = Field(default_factory=list)
     evidence_summary: str
+    repair_estimate: RepairEstimate
     key_artifact_ids: list[str]
     user_skill_level: UserSkillLevel
     safety_flags: list[SafetyFlag]

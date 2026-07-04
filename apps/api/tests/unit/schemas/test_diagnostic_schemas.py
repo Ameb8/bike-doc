@@ -48,6 +48,18 @@ def make_diagnostic_payload() -> dict[str, object]:
             },
         ],
         "evidence_summary": "The user reports slow upshifts after cable work.",
+        "repair_estimate": {
+            "difficulty": "easy",
+            "difficulty_notes": "Basic barrel-adjuster tuning is common at home.",
+            "tools_required": ["bike stand or safe way to lift rear wheel"],
+            "parts_required": [],
+            "repair_time": {"low_minutes": 10, "high_minutes": 25},
+            "shop_repair_cost": {
+                "low_usd": 20,
+                "high_usd": 50,
+                "notes": "Most shops would treat this as a minor adjustment.",
+            },
+        },
         "key_artifact_ids": ["art_123"],
         "user_skill_level": "intermediate",
         "safety_flags": [],

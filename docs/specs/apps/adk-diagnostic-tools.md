@@ -503,6 +503,21 @@ Input schema:
       }
     ],
     "evidence_summary": "User reports chain skipping under load in middle gears. Diagnostic photo shows the rear derailleur appears slightly out of plane.",
+    "repair_estimate": {
+      "difficulty": "medium",
+      "difficulty_notes": "Hanger alignment diagnosis and correction can require specialized alignment tools.",
+      "tools_required": ["derailleur hanger alignment gauge", "hex keys"],
+      "parts_required": ["replacement derailleur hanger if bent or cracked"],
+      "repair_time": {
+        "low_minutes": 30,
+        "high_minutes": 90
+      },
+      "shop_repair_cost": {
+        "low_usd": 60,
+        "high_usd": 150,
+        "notes": "Estimate only; actual shop pricing varies."
+      }
+    },
     "key_artifact_ids": ["art_123"],
     "user_skill_level": "beginner",
     "safety_flags": []

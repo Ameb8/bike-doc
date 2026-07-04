@@ -170,6 +170,18 @@ async def test_repositories_create_get_and_list_full_diagnostic_graph(
                 },
                 "alternate_hypotheses": [],
                 "evidence_summary": "User reports skipping.",
+                "repair_estimate": {
+                    "difficulty": "easy",
+                    "difficulty_notes": "A basic indexing adjustment is likely.",
+                    "tools_required": ["bike stand or safe way to lift rear wheel"],
+                    "parts_required": [],
+                    "repair_time": {"low_minutes": 10, "high_minutes": 30},
+                    "shop_repair_cost": {
+                        "low_usd": 20,
+                        "high_usd": 60,
+                        "notes": "Estimate only; actual shop pricing varies.",
+                    },
+                },
                 "key_artifact_ids": [artifact.id],
                 "user_skill_level": "unknown",
                 "safety_flags": [],

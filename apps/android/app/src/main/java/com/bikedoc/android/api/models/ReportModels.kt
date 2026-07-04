@@ -40,6 +40,8 @@ data class DiagnosticReportPayload(
     val alternateHypotheses: List<AlternateHypothesisPayload> = emptyList(),
     @SerialName("evidence_summary")
     val evidenceSummary: String,
+    @SerialName("repair_estimate")
+    val repairEstimate: RepairEstimatePayload,
     @SerialName("key_artifact_ids")
     val keyArtifactIds: List<String> = emptyList(),
     @SerialName("user_skill_level")
@@ -66,6 +68,38 @@ data class AlternateHypothesisPayload(
     val confidence: String,
     @SerialName("ruled_out_by")
     val ruledOutBy: String? = null,
+)
+
+@Serializable
+data class RepairEstimatePayload(
+    val difficulty: String,
+    @SerialName("difficulty_notes")
+    val difficultyNotes: String,
+    @SerialName("tools_required")
+    val toolsRequired: List<String> = emptyList(),
+    @SerialName("parts_required")
+    val partsRequired: List<String> = emptyList(),
+    @SerialName("repair_time")
+    val repairTime: RepairTimeEstimatePayload,
+    @SerialName("shop_repair_cost")
+    val shopRepairCost: ShopRepairCostEstimatePayload,
+)
+
+@Serializable
+data class RepairTimeEstimatePayload(
+    @SerialName("low_minutes")
+    val lowMinutes: Int,
+    @SerialName("high_minutes")
+    val highMinutes: Int,
+)
+
+@Serializable
+data class ShopRepairCostEstimatePayload(
+    @SerialName("low_usd")
+    val lowUsd: Int,
+    @SerialName("high_usd")
+    val highUsd: Int,
+    val notes: String? = null,
 )
 
 @Serializable

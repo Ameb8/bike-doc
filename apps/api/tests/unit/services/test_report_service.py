@@ -241,6 +241,18 @@ def _payload(**overrides: Any) -> dict[str, Any]:
         },
         "alternate_hypotheses": [],
         "evidence_summary": "The symptom pattern points to rear indexing.",
+        "repair_estimate": {
+            "difficulty": "easy",
+            "difficulty_notes": "Cable tension adjustment is beginner-friendly.",
+            "tools_required": ["bike stand or safe way to lift rear wheel"],
+            "parts_required": [],
+            "repair_time": {"low_minutes": 10, "high_minutes": 30},
+            "shop_repair_cost": {
+                "low_usd": 20,
+                "high_usd": 60,
+                "notes": "Estimate only; actual shop pricing varies.",
+            },
+        },
         "key_artifact_ids": [OWNED_ARTIFACT_ID],
         "user_skill_level": "beginner",
         "safety_flags": [],

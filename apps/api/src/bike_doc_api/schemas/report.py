@@ -59,6 +59,32 @@ class AlternateHypothesis(APIBaseModel):
     ruled_out_by: str | None = None
 
 
+class RepairTimeEstimate(APIBaseModel):
+    """Predicted at-home repair duration."""
+
+    low_minutes: int
+    high_minutes: int
+
+
+class ShopRepairCostEstimate(APIBaseModel):
+    """Predicted shop repair cost."""
+
+    low_usd: int
+    high_usd: int
+    notes: str | None = None
+
+
+class RepairEstimate(APIBaseModel):
+    """LLM-predicted repair estimate for the diagnostic report."""
+
+    difficulty: Literal["easy", "medium", "hard"]
+    difficulty_notes: str
+    tools_required: list[str]
+    parts_required: list[str]
+    repair_time: RepairTimeEstimate
+    shop_repair_cost: ShopRepairCostEstimate
+
+
 class DiagnosticReportV1(APIBaseModel):
     """Diagnostic report payload."""
 
@@ -66,6 +92,7 @@ class DiagnosticReportV1(APIBaseModel):
     primary_diagnosis: Diagnosis
     alternate_hypotheses: list[AlternateHypothesis]
     evidence_summary: str
+    repair_estimate: RepairEstimate
     key_artifact_ids: list[str]
     user_skill_level: UserSkillLevel
     safety_flags: list[SafetyFlag]

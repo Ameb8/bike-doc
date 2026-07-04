@@ -85,6 +85,18 @@ def _report_payload(**overrides: Any) -> dict[str, Any]:
         },
         "alternate_hypotheses": [],
         "evidence_summary": "The symptom pattern points to rear indexing.",
+        "repair_estimate": {
+            "difficulty": "easy",
+            "difficulty_notes": "Cable tension adjustment is beginner-friendly.",
+            "tools_required": ["bike stand or safe way to lift rear wheel"],
+            "parts_required": [],
+            "repair_time": {"low_minutes": 10, "high_minutes": 30},
+            "shop_repair_cost": {
+                "low_usd": 20,
+                "high_usd": 60,
+                "notes": "Estimate only; actual shop pricing varies.",
+            },
+        },
         "key_artifact_ids": ["art_1"],
         "user_skill_level": "beginner",
         "safety_flags": [],
@@ -127,6 +139,30 @@ async def test_save_diagnostic_report_rejects_agent_selected_session_id() -> Non
 
     assert result["ok"] is False
     assert result["error"]["code"] == "report_validation_failed"
+    assert service.calls == []
+
+
+async def test_save_diagnostic_report_returns_field_validation_details() -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(primary_diagnosis="stiff chain link"),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert result["error"]["details"]["fields"] == [
+        {
+            "path": "report.primary_diagnosis",
+            "message": "Input should be a valid dictionary or instance of Diagnosis",
+            "type": "model_type",
+        },
+    ]
     assert service.calls == []
 
 
