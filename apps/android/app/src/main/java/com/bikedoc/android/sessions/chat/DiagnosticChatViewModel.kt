@@ -47,15 +47,28 @@ data class DiagnosticChatUiState(
     val latestReportId: String? = null,
     val error: String? = null,
 ) {
+    val canAcceptUserInput: Boolean
+        get() =
+            !phaseTransitioned &&
+                (inputRequest?.type != "none") &&
+                (inputRequest != null || session?.status in FREEFORM_INPUT_STATUSES)
+
     val canSubmitCurrentInput: Boolean
         get() {
             val hasContent = draftText.isNotBlank() || selectedArtifactIds.isNotEmpty()
             val minimumArtifacts = inputRequest?.minArtifacts ?: if (inputRequest.isPhotoRequest()) 1 else 0
             return hasContent &&
                 selectedArtifactIds.size >= minimumArtifacts &&
+                canAcceptUserInput &&
                 !isTurnInFlight &&
                 !isStreaming
         }
+
+    companion object {
+        const val CREATED = "created"
+        const val AWAITING_USER = "awaiting_user"
+        private val FREEFORM_INPUT_STATUSES = setOf(CREATED, AWAITING_USER)
+    }
 }
 
 data class DiagnosticPhotoAttachment(
@@ -414,15 +427,16 @@ class DiagnosticChatViewModel
             text: String,
             artifactIds: List<String>,
         ): Boolean {
-            if (text.isBlank() && artifactIds.isEmpty()) {
-                return false
-            }
-            val inputRequest = _uiState.value.inputRequest
+            val state = _uiState.value
+            val hasContent = text.isNotBlank() || artifactIds.isNotEmpty()
+            val inputRequest = state.inputRequest
             val minimumArtifacts =
                 inputRequest?.minArtifacts ?: if (inputRequest.isPhotoRequest()) 1 else 0
-            return artifactIds.size >= minimumArtifacts &&
-                !_uiState.value.isTurnInFlight &&
-                !_uiState.value.isStreaming
+            return hasContent &&
+                state.canAcceptUserInput &&
+                artifactIds.size >= minimumArtifacts &&
+                !state.isTurnInFlight &&
+                !state.isStreaming
         }
 
         private fun buildOptimisticMessage(
@@ -492,7 +506,14 @@ class DiagnosticChatViewModel
                     inputRequest = acceptedTurn.session.currentInputRequest,
                     isTurnInFlight = true,
                 )
-            startEventReplay(after = acceptedTurn.startEventId)
+            ensureEventReplay(after = acceptedTurn.startEventId)
+        }
+
+        private fun ensureEventReplay(after: String?) {
+            if (eventJob?.isActive == true) {
+                return
+            }
+            startEventReplay(after = after)
         }
 
         private fun handleRejectedTurn(

@@ -92,7 +92,7 @@ class DiagnosticChatViewModelTest {
 
     @Test
     @Suppress("LongMethod")
-    fun `sending text turn appends optimistic message posts turn and reconnects stream from accepted event`() =
+    fun `sending text turn appends optimistic message posts turn and keeps already open stream`() =
         runTest {
             val session =
                 repairSession(
@@ -165,10 +165,47 @@ class DiagnosticChatViewModelTest {
             assertEquals(
                 listOf(
                     EventConnection(session.id, "0"),
-                    EventConnection(session.id, "4"),
                 ),
                 eventSource.connections,
             )
+        }
+
+    @Test
+    fun `created session without input request accepts first freeform text turn`() =
+        runTest {
+            val session = repairSession(status = "created", currentInputRequest = null)
+            val acceptedSession = repairSession(status = "running", currentInputRequest = null)
+            val repository =
+                FakeSessionRepository(
+                    getRepairSessionResult = ApiResult.Success(session),
+                    createTurnResult =
+                        ApiResult.Success(
+                            turnAccepted(
+                                turnId = "turn-first",
+                                session = acceptedSession,
+                            ),
+                        ),
+                )
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = repository,
+                    eventSource = FakeSseEventSource(),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+
+            assertTrue(viewModel.uiState.value.canAcceptUserInput)
+
+            viewModel.onDraftTextChanged("The rear brake rubs after reinstalling the wheel.")
+            assertTrue(viewModel.uiState.value.canSubmitCurrentInput)
+            viewModel.submitTextTurn()
+
+            assertEquals(1, repository.createdTurns.size)
+            assertEquals(
+                "The rear brake rubs after reinstalling the wheel.",
+                repository.createdTurns.single().body.message.text,
+            )
+            assertEquals(null, repository.createdTurns.single().body.respondsToInputRequestId)
         }
 
     @Test
@@ -517,6 +554,44 @@ class DiagnosticChatViewModelTest {
 
             assertEquals(photoRequest, viewModel.uiState.value.inputRequest)
             assertEquals(photoRequest, viewModel.uiState.value.session?.currentInputRequest)
+        }
+
+    @Test
+    fun `running session without input request does not accept freeform turns after error`() =
+        runTest {
+            val repository =
+                FakeSessionRepository(
+                    getRepairSessionResult =
+                        ApiResult.Success(
+                            repairSession(
+                                status = "running",
+                                currentInputRequest = null,
+                            ),
+                        ),
+                )
+            val eventSource = FakeSseEventSource()
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = repository,
+                    eventSource = eventSource,
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = "session-1",
+                )
+
+            eventSource.events.emit(
+                SseEvent.Error(
+                    id = "2",
+                    code = "validation_error",
+                    message = "Tool input validation failed.",
+                    retryable = false,
+                ),
+            )
+            viewModel.onDraftTextChanged("Try again with more detail.")
+            viewModel.submitTextTurn()
+
+            assertFalse(viewModel.uiState.value.canAcceptUserInput)
+            assertEquals("Tool input validation failed.", viewModel.uiState.value.error)
+            assertEquals(emptyList<TurnRequest>(), repository.createdTurns)
         }
 }
 

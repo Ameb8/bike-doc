@@ -270,6 +270,7 @@ private fun DiagnosticInputArea(
         state.isLoadingSession || state.session == null -> Unit
         state.phaseTransitioned -> DiagnosticCompleteBanner()
         inputRequest?.type == "none" -> Unit
+        !state.canAcceptUserInput -> Unit
         else ->
             ActiveInputArea(
                 state = state,
