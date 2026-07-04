@@ -27,6 +27,14 @@
     <string name="bike_list_delete_confirm_title">Remove %1$s?</string>
     <string name="bike_list_delete_confirm_action">Remove</string>
     <string name="bike_list_delete_cancel_action">Cancel</string>
+    <string name="session_chooser_title">Previous diagnostic sessions</string>
+    <string name="session_chooser_resume_latest_action">Resume Latest Active Session</string>
+    <string name="session_chooser_start_new_action">Start New Diagnostic Session</string>
+    <string name="session_chooser_start_new_in_progress">Starting new diagnostic session...</string>
+    <string name="session_chooser_previous_sessions_title">Older sessions</string>
+    <string name="session_chooser_resumable_badge">Resumable</string>
+    <string name="session_chooser_start_new_confirmation_title">Start a new diagnostic session?</string>
+    <string name="session_chooser_start_new_confirmation_message">You can still return to your earlier session later.</string>
     <string name="bike_edit_title_add">Add Bike</string>
     <string name="bike_edit_title_edit">Edit Bike</string>
     <string name="bike_edit_back">Back</string>
@@ -61,5 +69,18 @@
     <string name="bike_edit_option_mechanical_disc">Mechanical disc</string>
     <string name="bike_edit_option_hydraulic_disc">Hydraulic disc</string>
     <string name="bike_edit_option_coaster">Coaster</string>
+    <string name="diagnostic_chat_title">Diagnosing</string>
+    <string name="diagnostic_chat_subtitle">Diagnostic session</string>
+    <string name="diagnostic_chat_reply_label">Reply</string>
+    <string name="diagnostic_chat_send">Send</string>
+    <string name="diagnostic_chat_camera">Camera</string>
+    <string name="diagnostic_chat_gallery">Gallery</string>
+    <string name="diagnostic_chat_uploading">Uploading...</string>
+    <string name="diagnostic_chat_ready">Ready</string>
+    <string name="diagnostic_chat_upload_failed">Upload failed</string>
+    <string name="diagnostic_chat_confirm">Confirm</string>
+    <string name="diagnostic_chat_retry">Retry</string>
+    <string name="diagnostic_chat_failed">Not sent</string>
+    <string name="diagnostic_chat_complete_banner">Diagnosis complete — your results are ready.</string>
     <string name="not_implemented">This screen will be implemented in a later MVP slice.</string>
 </resources>

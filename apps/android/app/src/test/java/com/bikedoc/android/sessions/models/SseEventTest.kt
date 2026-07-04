@@ -25,6 +25,67 @@ class SseEventTest {
     }
 
     @Test
+    fun parsesAssistantDeltaFromRepairSessionEventEnvelope() {
+        val event =
+            SseEvent.parse(
+                type = "assistant.delta",
+                id = "1",
+                data =
+                    """
+                    {
+                      "id": "1",
+                      "session_id": "session-1",
+                      "turn_id": "turn-1",
+                      "type": "assistant.delta",
+                      "sequence": 1,
+                      "created_at": "2026-07-02T00:00:00Z",
+                      "data": {"text":"Check the rear derailleur."}
+                    }
+                    """.trimIndent(),
+                json = json,
+            )
+
+        assertTrue(event is SseEvent.AssistantDelta)
+        val delta = event as SseEvent.AssistantDelta
+        assertEquals("1", delta.id)
+        assertEquals("Check the rear derailleur.", delta.text)
+    }
+
+    @Test
+    fun parsesInputRequestedEnvelopeWithBackendChoiceValues() {
+        val event =
+            SseEvent.parse(
+                type = "input.requested",
+                id = "2",
+                data =
+                    """
+                    {
+                      "id": "2",
+                      "session_id": "session-1",
+                      "turn_id": "turn-1",
+                      "type": "input.requested",
+                      "sequence": 2,
+                      "created_at": "2026-07-02T00:00:01Z",
+                      "data": {
+                        "input_request": {
+                          "id": "request-1",
+                          "type": "decision",
+                          "prompt": "Continue?",
+                          "choices": [{"value": "yes", "label": "Yes"}]
+                        }
+                      }
+                    }
+                    """.trimIndent(),
+                json = json,
+            )
+
+        assertTrue(event is SseEvent.InputRequested)
+        val inputRequested = event as SseEvent.InputRequested
+        assertEquals("yes", inputRequested.inputRequest.choices.single().id)
+        assertEquals("Yes", inputRequested.inputRequest.choices.single().label)
+    }
+
+    @Test
     fun preservesUnknownEventTypesForViewModelToIgnore() {
         val event =
             SseEvent.parse(

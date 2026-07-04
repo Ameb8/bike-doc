@@ -59,6 +59,8 @@ Allowed severities are `info`, `caution`, `warning`, and `blocking`.
 Use `phase: "diagnostic"` for every diagnostic safety flag. Set `blocks_repair_instructions: true` for every `blocking` flag.
 You may also set it to `true` for a `warning` when step-by-step guidance would
 be unsafe without in-person inspection.
+Every safety flag must include a concise user-readable `message` explaining the
+safety concern.
 
 Prefer shop referral when risk is high, confidence is low, evidence is
 contradictory, safety-critical specs are uncertain, or a mistake could affect

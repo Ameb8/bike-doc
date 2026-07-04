@@ -19,16 +19,23 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+interface SseEventSource {
+    fun connect(
+        sessionId: String,
+        after: String? = null,
+    ): Flow<SseEvent>
+}
+
 @Singleton
-class SseEventSource
+class OkHttpSseEventSource
     @Inject
     constructor(
         private val okHttpClient: OkHttpClient,
         private val json: Json,
-    ) {
-        fun connect(
+    ) : SseEventSource {
+        override fun connect(
             sessionId: String,
-            after: String? = null,
+            after: String?,
         ): Flow<SseEvent> =
             callbackFlow {
                 val source =

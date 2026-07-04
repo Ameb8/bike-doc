@@ -8,6 +8,8 @@ data class ChatMessage(
     val text: String,
     val artifactIds: List<String> = emptyList(),
     val isStreaming: Boolean = false,
+    val deliveryState: DeliveryState = DeliveryState.Sent,
+    val respondsToInputRequestId: String? = null,
     val createdAt: Instant,
 )
 
@@ -15,4 +17,10 @@ enum class Role {
     User,
     Assistant,
     System,
+}
+
+enum class DeliveryState {
+    Sending,
+    Sent,
+    Failed,
 }

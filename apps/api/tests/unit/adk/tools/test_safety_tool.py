@@ -79,6 +79,20 @@ async def test_raise_safety_flag_returns_state_flags_and_event() -> None:
     assert service.calls[0]["current_user"].id == "usr_tool"
 
 
+async def test_raise_safety_flag_accepts_missing_message_with_default() -> None:
+    service = _SafetyService()
+    safety_flag = _flag()
+    del safety_flag["message"]
+
+    result = await RaiseSafetyFlagTool(service).run(
+        {"repair_session_id": "rs_tool", "safety_flag": safety_flag},
+        _context(),
+    )
+
+    assert result["ok"] is True
+    assert service.calls[0]["safety_flag"]["message"]
+
+
 async def test_raise_safety_flag_rejects_context_mismatch() -> None:
     service = _SafetyService()
 

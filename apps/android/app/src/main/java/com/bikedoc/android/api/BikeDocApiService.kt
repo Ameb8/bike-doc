@@ -1,5 +1,6 @@
 package com.bikedoc.android.api
 
+import com.bikedoc.android.api.models.ArtifactUploadResponse
 import com.bikedoc.android.api.models.Bike
 import com.bikedoc.android.api.models.BikeCreate
 import com.bikedoc.android.api.models.BikeListResponse
@@ -12,11 +13,15 @@ import com.bikedoc.android.api.models.RepairSessionListResponse
 import com.bikedoc.android.api.models.TurnAccepted
 import com.bikedoc.android.api.models.TurnCreate
 import com.bikedoc.android.api.models.UserProfile
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -73,6 +78,15 @@ interface BikeDocApiService {
         @Path("sessionId") sessionId: String,
         @Body body: TurnCreate,
     ): TurnAccepted
+
+    @Multipart
+    @POST("v1/artifacts")
+    suspend fun uploadArtifact(
+        @Part file: MultipartBody.Part,
+        @Part("purpose") purpose: RequestBody,
+        @Part("repair_session_id") repairSessionId: RequestBody,
+        @Part("client_artifact_id") clientArtifactId: RequestBody? = null,
+    ): ArtifactUploadResponse
 
     @GET("v1/repair-sessions/{sessionId}/reports")
     suspend fun getReports(
