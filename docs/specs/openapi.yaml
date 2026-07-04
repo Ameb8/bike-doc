@@ -1578,6 +1578,7 @@ components:
         - tools_needed
         - diy_estimate
         - shop_estimate
+        - cost_estimate
         - recommendation
         - recommendation_basis
         - requires_user_decision
@@ -1600,6 +1601,8 @@ components:
           $ref: "#/components/schemas/CostEstimate"
         shop_estimate:
           $ref: "#/components/schemas/CostEstimate"
+        cost_estimate:
+          $ref: "#/components/schemas/PlanCostEstimate"
         user_time_estimate:
           nullable: true
           allOf:
@@ -1642,6 +1645,10 @@ components:
         price_lookup_result_id:
           type: string
           nullable: true
+        price_lookup:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PriceLookupResult"
 
     ToolNeeded:
       type: object
@@ -1682,6 +1689,114 @@ components:
         notes:
           type: string
           nullable: true
+        price_lookup:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PriceLookupResult"
+
+    PlanCostEstimate:
+      type: object
+      required: [parts_total, tools_total, diy_total, items]
+      properties:
+        parts_total:
+          $ref: "#/components/schemas/CostEstimate"
+        tools_total:
+          $ref: "#/components/schemas/CostEstimate"
+        diy_total:
+          $ref: "#/components/schemas/CostEstimate"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PriceLookupResult"
+
+    PriceLookupResult:
+      type: object
+      required:
+        - item_type
+        - requirement_name
+        - quantity
+        - status
+        - estimate_confidence
+        - looked_up_at
+      properties:
+        item_type:
+          type: string
+          enum: [tool, part]
+        requirement_name:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+            - priced_listing_found
+            - range_estimate_only
+            - cached_estimate_used
+            - price_unavailable
+            - needs_more_detail
+        estimate_confidence:
+          $ref: "#/components/schemas/Confidence"
+        looked_up_at:
+          type: string
+          format: date-time
+        estimated_price:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/CostEstimate"
+        primary_listing:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PriceListing"
+        alternate_listings:
+          type: array
+          maxItems: 2
+          items:
+            $ref: "#/components/schemas/PriceListing"
+        compatibility_uncertain:
+          type: boolean
+          default: false
+        search_match_ambiguous:
+          type: boolean
+          default: false
+        generic_substitute_used:
+          type: boolean
+          default: false
+        exact_match_not_confirmed:
+          type: boolean
+          default: false
+
+    PriceListing:
+      type: object
+      required:
+        - title
+        - retailer
+        - observed_price
+        - currency
+        - url
+        - observed_at
+        - match_confidence
+        - match_rationale
+      properties:
+        title:
+          type: string
+        retailer:
+          type: string
+        observed_price:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          default: USD
+        url:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+        match_confidence:
+          $ref: "#/components/schemas/Confidence"
+        match_rationale:
+          type: string
 
     CostEstimate:
       type: object
