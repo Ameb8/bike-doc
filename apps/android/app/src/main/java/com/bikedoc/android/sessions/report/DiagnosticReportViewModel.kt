@@ -4,7 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bikedoc.android.api.ApiResult
-import com.bikedoc.android.api.DiagnosticReport
+import com.bikedoc.android.api.RepairReport
 import com.bikedoc.android.api.ReportRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class DiagnosticReportUiState(
-    val report: DiagnosticReport? = null,
+    val report: RepairReport? = null,
     val isLoading: Boolean = true,
     val error: String? = null,
 )
