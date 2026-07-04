@@ -1,0 +1,39 @@
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatScreen.kt
+  s_afafe78004cc4e::t_78281ffcfc4016 273
+apps/android/app/src/main/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModel.kt
+  s_afafe78004cc4e::t_8da5c3063cdaa8 430-432,435-439
+  s_0f2cb7e91cd1fa::t_37c30fd25bf88e 54,68,70
+  s_afafe78004cc4e::t_8d414ea7f2fc32 50-53,55,62,66-67,69,71,509-516
+apps/android/app/src/test/java/com/bikedoc/android/sessions/chat/DiagnosticChatViewModelTest.kt
+  s_afafe78004cc4e::t_157b65bc97125e 95,558-594
+  s_0f2cb7e91cd1fa::t_4b7e9a796bb176 174-210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "b241f2517db0d99c20c53dbdfb7dc6ea19c817ca",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_0f2cb7e91cd1fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2c44-0ae9-7662-9f54-b56dc9d4d8df",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_afafe78004cc4e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2c20-05e1-7aa0-849a-232906ed373f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
