@@ -16,6 +16,15 @@ from bike_doc_api.models.repair_session import (
 )
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
+from bike_doc_api.schemas.common import Confidence
+from bike_doc_api.schemas.report import (
+    CostEstimate,
+    CostEstimateSource,
+    PlanCostEstimate,
+    PriceEstimateStatus,
+    PriceLookupRequirement,
+    PriceLookupResult,
+)
 from bike_doc_api.services.reports import ReportService
 from bike_doc_api.services.safety import SafetyService
 
@@ -171,12 +180,59 @@ class _SpySafetyService(SafetyService):
         return super().apply_report_safety_flags(**kwargs)
 
 
+class _CostEstimateService:
+    """Cost estimate service double that records diagnostic requirements."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[PriceLookupRequirement]] = []
+
+    async def estimate_plan_cost(
+        self,
+        requirements: list[PriceLookupRequirement],
+    ) -> PlanCostEstimate:
+        self.calls.append(requirements)
+        return PlanCostEstimate(
+            parts_total=_cost_estimate(12.0),
+            tools_total=_cost_estimate(20.0),
+            diy_total=_cost_estimate(32.0),
+            items=[
+                PriceLookupResult(
+                    item_type=requirement.item_type,
+                    requirement_name=requirement.display_name,
+                    quantity=requirement.quantity,
+                    status=PriceEstimateStatus.PRICE_UNAVAILABLE,
+                    estimate_confidence=Confidence.LOW,
+                    looked_up_at=datetime(2026, 6, 21, 17, 0, tzinfo=UTC),
+                )
+                for requirement in requirements
+            ],
+        )
+
+
 def _service(
     store: _ReportStore,
     *,
     safety: SafetyService | None = None,
+    cost_estimate_service: _CostEstimateService | None = None,
 ) -> ReportService:
-    return ReportService(store, store, store, store, store, safety=safety)
+    return ReportService(
+        store,
+        store,
+        store,
+        store,
+        store,
+        safety=safety,
+        cost_estimate_service=cost_estimate_service,
+    )
+
+
+def _cost_estimate(amount: float) -> CostEstimate:
+    return CostEstimate(
+        min_amount=amount,
+        max_amount=amount,
+        confidence=Confidence.MEDIUM,
+        source=CostEstimateSource.SEARCH_PROVIDER,
+    )
 
 
 def _user(user_id: str = "usr_report") -> User:
@@ -296,6 +352,35 @@ async def test_service_persists_valid_diagnostic_report_without_adk() -> None:
     assert store.session.latest_event_sequence == 1
 
 
+async def test_service_enriches_diagnostic_report_with_cost_estimate() -> None:
+    store = _ReportStore()
+    cost_service = _CostEstimateService()
+
+    report = await _persist(
+        _service(store, cost_estimate_service=cost_service),
+        payload=_payload(
+            repair_estimate={
+                "difficulty": "easy",
+                "difficulty_notes": "Cable tension adjustment is beginner-friendly.",
+                "tools_required": ["hex wrench", "hex wrench"],
+                "parts_required": ["shift cable"],
+                "repair_time": {"low_minutes": 10, "high_minutes": 30},
+                "shop_repair_cost": {
+                    "low_usd": 20,
+                    "high_usd": 60,
+                    "notes": "Estimate only; actual shop pricing varies.",
+                },
+            },
+        ),
+    )
+
+    assert report.payload.cost_estimate is not None
+    assert store.reports[0].payload["cost_estimate"] is not None
+    assert [[item.display_name for item in call] for call in cost_service.calls] == [
+        ["shift cable", "hex wrench"],
+    ]
+
+
 async def test_list_and_get_reports_return_public_envelopes() -> None:
     store = _ReportStore()
     service = _service(store)
@@ -314,6 +399,28 @@ async def test_list_and_get_reports_return_public_envelopes() -> None:
     assert [report.id for report in listed.items] == [created.id]
     assert fetched.id == created.id
     assert "adk" not in fetched.model_dump_json().lower()
+
+
+async def test_get_report_enriches_legacy_diagnostic_report_cost_estimate() -> None:
+    store = _ReportStore()
+    created = await _persist(_service(store))
+    assert store.reports[0].payload.get("cost_estimate") is None
+    cost_service = _CostEstimateService()
+
+    fetched = await _service(
+        store,
+        cost_estimate_service=cost_service,
+    ).get_report(
+        current_user=_user(),
+        repair_session_id=OWNED_SESSION_ID,
+        report_id=created.id,
+    )
+
+    assert fetched.payload.cost_estimate is not None
+    assert store.reports[0].payload.get("cost_estimate") is None
+    assert [[item.display_name for item in call] for call in cost_service.calls] == [
+        ["bike stand or safe way to lift rear wheel"],
+    ]
 
 
 async def test_unknown_or_not_owned_session_returns_not_found() -> None:

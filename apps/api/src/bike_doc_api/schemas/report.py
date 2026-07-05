@@ -1,5 +1,7 @@
 """Report API schemas and mappers."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
@@ -132,6 +134,7 @@ class DiagnosticReportV1(APIBaseModel):
     user_skill_level: UserSkillLevel
     safety_flags: list[SafetyFlag]
     diagnostic_session_id: str
+    cost_estimate: PlanCostEstimate | None = None
 
 
 class CostItemType(StrEnum):

@@ -55,6 +55,7 @@ Required top-level fields:
 | `user_skill_level` | `UserSkillLevel` | Required. One of `unknown`, `beginner`, `intermediate`, `advanced`. |
 | `safety_flags` | array of `SafetyFlag` | Required. Use `[]` when there are no safety concerns. |
 | `diagnostic_session_id` | string | Required. Opaque internal archive/session reference. See below. |
+| `cost_estimate` | `PlanCostEstimate` or null | Optional. Server-enriched live listing evidence and totals for `repair_estimate.tools_required` and `repair_estimate.parts_required` when lookup is configured. |
 
 `Diagnosis` fields:
 
@@ -100,9 +101,9 @@ Required top-level fields:
 | `high_usd` | integer | Required. Upper bound of the estimated shop charge. |
 | `notes` | string or null | Optional note that the cost is an estimate and can vary by shop or region. |
 
-The OpenAPI schema does not define additional diagnostic report fields. Public
-serialization must emit only fields declared by `DiagnosticReportV1` and its
-nested schemas.
+The OpenAPI schema does not define additional diagnostic report fields beyond
+the optional server-owned `cost_estimate`. Public serialization must emit only
+fields declared by `DiagnosticReportV1` and its nested schemas.
 
 ## Confidence Values
 

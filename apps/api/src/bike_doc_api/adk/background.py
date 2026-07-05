@@ -31,7 +31,12 @@ from bike_doc_api.adk.tools.reports import (
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
 from bike_doc_api.adk.tools.tool_catalog import DiagnosticAgentToolDependencies
-from bike_doc_api.api.deps import get_adk_session_service, get_storage_provider
+from bike_doc_api.api.deps import (
+    get_adk_session_service,
+    get_cost_estimate_service,
+    get_price_lookup_provider,
+    get_storage_provider,
+)
 from bike_doc_api.core.config import (
     Settings,
     get_settings,
@@ -57,7 +62,7 @@ from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.artifacts import ArtifactService
 from bike_doc_api.services.events import EventService
 from bike_doc_api.services.repair_sessions import RepairSessionService
-from bike_doc_api.services.reports import ReportService
+from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportService
 from bike_doc_api.services.safety import DiagnosticSafetyService
 from bike_doc_api.services.turns import TurnService
 
@@ -179,6 +184,7 @@ def _build_background_orchestrator(
         PhaseReportRepository(session),
         events,
         artifacts,
+        cost_estimate_service=_build_cost_estimate_service(settings),
         commit=session.commit,
         rollback=session.rollback,
     )
@@ -238,6 +244,18 @@ def _build_background_orchestrator(
         commit=session.commit,
         rollback=session.rollback,
     )
+
+
+def _build_cost_estimate_service(
+    settings: Settings,
+) -> CostEstimateServiceProtocol | None:
+    """Build optional price lookup dependencies without blocking diagnostics."""
+
+    try:
+        return get_cost_estimate_service(get_price_lookup_provider(settings))
+    except Exception:
+        logger.info("diagnostic_background_cost_estimate_unavailable", exc_info=True)
+        return None
 
 
 async def _handle_background_setup_failure(

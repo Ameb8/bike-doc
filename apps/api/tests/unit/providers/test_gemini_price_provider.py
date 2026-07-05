@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import patch
 
 from google.genai import types
 
@@ -53,6 +54,47 @@ class _GenerateContent:
     ) -> _Response:
         self.calls.append({"model": model, "contents": contents, "config": config})
         return self.response
+
+
+class _FakeClient:
+    """Minimal fake genai client with the async models surface."""
+
+    def __init__(self) -> None:
+        self.aio = _FakeAio()
+
+
+class _FakeAio:
+    """Minimal fake genai aio namespace."""
+
+    def __init__(self) -> None:
+        self.models = _FakeModels()
+
+
+class _FakeModels:
+    """Minimal fake genai models namespace."""
+
+    async def generate_content(
+        self,
+        *,
+        model: str,
+        contents: str,
+        config: types.GenerateContentConfig,
+    ) -> _Response:
+        return _Response()
+
+
+def test_factory_keeps_genai_client_alive() -> None:
+    client = _FakeClient()
+
+    with patch("bike_doc_api.providers.price.gemini.genai.Client", return_value=client):
+        provider = GeminiGroundedPriceProvider.from_google_ai(
+            model="gemini-test",
+            temperature=0.1,
+            max_output_tokens=512,
+            timeout_seconds=5,
+        )
+
+    assert provider._client is client
 
 
 async def test_gemini_provider_normalizes_parsed_listing_response() -> None:

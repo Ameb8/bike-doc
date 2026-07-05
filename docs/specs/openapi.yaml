@@ -1484,6 +1484,15 @@ components:
         diagnostic_session_id:
           type: string
           description: Internal archive/session id, not an ADK concept for the app.
+        cost_estimate:
+          nullable: true
+          description: >
+            Optional live price lookup evidence and totals for diagnostic
+            tools_required and parts_required. Present when lookup is configured
+            and at least one required item can be priced or explicitly marked
+            unavailable.
+          allOf:
+            - $ref: "#/components/schemas/PlanCostEstimate"
 
     RepairEstimate:
       type: object

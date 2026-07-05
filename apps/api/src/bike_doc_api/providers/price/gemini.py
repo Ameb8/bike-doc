@@ -99,6 +99,7 @@ class GeminiGroundedPriceProvider:
         max_output_tokens: int,
         timeout_seconds: float,
         generate_content: _GeminiGenerateContent,
+        client: genai.Client | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._model = model
@@ -106,6 +107,7 @@ class GeminiGroundedPriceProvider:
         self._max_output_tokens = max_output_tokens
         self._timeout_seconds = timeout_seconds
         self._generate_content = generate_content
+        self._client = client
         self._clock = clock or _utc_now
 
     @classmethod
@@ -126,6 +128,7 @@ class GeminiGroundedPriceProvider:
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
+            client=client,
         )
 
     @classmethod
@@ -146,6 +149,7 @@ class GeminiGroundedPriceProvider:
             max_output_tokens=max_output_tokens,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
+            client=client,
         )
 
     async def lookup_requirement(
