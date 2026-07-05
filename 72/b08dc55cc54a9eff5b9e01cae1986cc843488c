@@ -1,0 +1,59 @@
+apps/api/tests/unit/test_config.py
+  s_391a6ed1ede545::t_95c0f13e3c8a9a 12,45-50,78-83,278-283,353-408,426-431
+apps/api/src/bike_doc_api/api/deps.py
+  s_391a6ed1ede545::t_ebb6544ded9624 17,22-26,34,71-99
+apps/api/src/bike_doc_api/adk/agents/planning.py
+  s_391a6ed1ede545::t_4918020cd7a44d 28
+  s_391a6ed1ede545::t_788e3d1e89dea2 1-27,29-118
+apps/api/tests/unit/adk/test_dependency_wiring.py
+  s_391a6ed1ede545::t_207e70577e5f0a 10,13,17-19,21,78-97,99-149,151-188
+  s_391a6ed1ede545::t_4918020cd7a44d 98,150
+apps/api/tests/unit/services/test_cost_estimate_service.py
+  s_391a6ed1ede545::t_7ee7b80243296b 5,163-173,175-186,190-200,202-207,211-213
+  s_391a6ed1ede545::t_f140720297971d 187-189,208-210
+  s_391a6ed1ede545::t_aedadc43189845 21,174,201
+apps/api/tests/unit/adk/test_planning_agent.py
+  s_391a6ed1ede545::t_5e6defd7c485f6 1-20,22-27,33-97
+  s_391a6ed1ede545::t_24f8b17fdb7a9b 21,28-32
+apps/api/src/bike_doc_api/providers/price/gemini.py
+  s_391a6ed1ede545::t_ec8f48fa336276 7,44,46,158-171,184,189-193,363-389
+  s_391a6ed1ede545::t_4918020cd7a44d 14,119,139
+  s_391a6ed1ede545::t_65cbad40780d6d 1-6,8-13,15-43,45,47-118,120-138,140-157,172-183,185-188,194-333,337-362
+  s_391a6ed1ede545::t_47c3717860edfb 334-336
+apps/api/src/bike_doc_api/adk/prompts/planning.md
+  s_391a6ed1ede545::t_1f410a84dd87c7 1,3-36
+apps/api/src/bike_doc_api/services/cost_estimates.py
+  s_391a6ed1ede545::t_38eb90aa009d7b 5,23-24,55-61,68,74-107,116-124,126-151,155-163
+apps/api/src/bike_doc_api/core/config.py
+  s_391a6ed1ede545::t_d2825e1aeae857 51-56,184-219,269-296
+apps/api/tests/unit/providers/test_gemini_price_provider.py
+  s_391a6ed1ede545::t_f6965a0c9c954f 24,26,191
+  s_391a6ed1ede545::t_cb079603eae7c3 1-5,7-23,25,27-164
+  s_391a6ed1ede545::t_5c22f1a05f8629 217-219
+  s_391a6ed1ede545::t_f2f44c582a7e5c 6,165-190,192-216,220-223
+apps/api/src/bike_doc_api/providers/price/__init__.py
+  s_391a6ed1ede545::t_292ad0ad9e20bb 2-11
+.env.example
+  s_391a6ed1ede545::t_864b268c4b01f2 61-72,74-75,80-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "72b08dc55cc54a9eff5b9e01cae1986cc843488c",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_391a6ed1ede545": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f2f58-2176-7e03-8694-8d22a3b584f5",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
