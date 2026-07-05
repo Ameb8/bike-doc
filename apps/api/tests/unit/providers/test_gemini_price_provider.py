@@ -212,6 +212,237 @@ async def test_gemini_provider_parses_text_range_response() -> None:
     assert result.exact_match_not_confirmed is True
 
 
+async def test_gemini_provider_accepts_listings_alias() -> None:
+    looked_up_at = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
+    generate_content = _GenerateContent(
+        _Response(
+            parsed={
+                "status": "priced_listing_found",
+                "estimate_confidence": "medium",
+                "listings": [
+                    {
+                        "title": "Park Tool TL-4.2 Tire Lever Set",
+                        "retailer": "Example Retailer",
+                        "observed_price": 6.99,
+                        "currency": "USD",
+                        "url": "https://example.com/tire-lever",
+                        "match_confidence": "medium",
+                        "match_rationale": "Common tire lever listing.",
+                    },
+                    {
+                        "title": "Pedro's Tire Levers",
+                        "retailer": "Another Retailer",
+                        "observed_price": 5.99,
+                        "currency": "USD",
+                        "url": "https://example.com/pedros",
+                        "match_confidence": "medium",
+                        "match_rationale": "Comparable alternate listing.",
+                    },
+                ],
+            },
+        ),
+    )
+
+    result = await GeminiGroundedPriceProvider(
+        model="gemini-test",
+        temperature=0.1,
+        max_output_tokens=512,
+        timeout_seconds=5,
+        generate_content=generate_content,
+        clock=lambda: looked_up_at,
+    ).lookup_requirement(
+        PriceLookupRequirement.model_validate(
+            {
+                "item_type": "tool",
+                "display_name": "Tire levers",
+                "quantity": 1,
+                "generic_equivalent_acceptable": True,
+                "search_query": "bike tire levers",
+            },
+        ),
+    )
+
+    assert result.status == PriceEstimateStatus.PRICED_LISTING_FOUND
+    assert result.primary_listing is not None
+    assert result.primary_listing.title == "Park Tool TL-4.2 Tire Lever Set"
+    assert len(result.alternate_listings) == 1
+    assert result.alternate_listings[0].title == "Pedro's Tire Levers"
+
+
+async def test_gemini_provider_accepts_single_value_estimate_drift() -> None:
+    looked_up_at = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
+    generate_content = _GenerateContent(
+        _Response(
+            parsed={
+                "status": "range_estimate_only",
+                "estimate_confidence": "low",
+                "estimated_price": {
+                    "currency": "USD",
+                    "value": 7.0,
+                },
+            },
+        ),
+    )
+
+    result = await GeminiGroundedPriceProvider(
+        model="gemini-test",
+        temperature=0.1,
+        max_output_tokens=512,
+        timeout_seconds=5,
+        generate_content=generate_content,
+        clock=lambda: looked_up_at,
+    ).lookup_requirement(
+        PriceLookupRequirement.model_validate(
+            {
+                "item_type": "tool",
+                "display_name": "Tire levers",
+                "quantity": 1,
+                "generic_equivalent_acceptable": True,
+                "search_query": "bike tire levers",
+            },
+        ),
+    )
+
+    assert result.status == PriceEstimateStatus.RANGE_ESTIMATE_ONLY
+    assert result.estimated_price == CostEstimate(
+        currency="USD",
+        min_amount=7.0,
+        max_amount=7.0,
+        confidence=Confidence.LOW,
+        source=CostEstimateSource.SEARCH_PROVIDER,
+    )
+
+
+async def test_gemini_provider_accepts_listing_price_field_drift() -> None:
+    looked_up_at = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
+    generate_content = _GenerateContent(
+        _Response(
+            parsed={
+                "status": "priced_listing_found",
+                "estimate_confidence": "medium",
+                "estimated_price": {
+                    "currency": "USD",
+                    "value": 30.0,
+                },
+                "primary_listing": {
+                    "title": "Schwinn Bike Tube 26-inch",
+                    "retailer": "Example Retailer",
+                    "value": 9.96,
+                    "currency": "USD",
+                    "url": "https://example.com/tube",
+                },
+                "alternate_listings": [
+                    {
+                        "title": "Bell Universal Bike Tube",
+                        "retailer": "Another Retailer",
+                        "price": 8.99,
+                        "currency": "USD",
+                        "url": "https://example.com/bell-tube",
+                    },
+                    {
+                        "title": "Continental Bike Tube",
+                        "retailer": "Third Retailer",
+                        "amount": 11.99,
+                        "currency": "USD",
+                        "url": "https://example.com/continental-tube",
+                    },
+                    {
+                        "title": "Extra listing should be ignored",
+                        "retailer": "Fourth Retailer",
+                        "amount": 12.99,
+                        "currency": "USD",
+                        "url": "https://example.com/extra-tube",
+                    },
+                ],
+                "alternate_listings_max": 2,
+            },
+        ),
+    )
+
+    result = await GeminiGroundedPriceProvider(
+        model="gemini-test",
+        temperature=0.1,
+        max_output_tokens=512,
+        timeout_seconds=5,
+        generate_content=generate_content,
+        clock=lambda: looked_up_at,
+    ).lookup_requirement(
+        PriceLookupRequirement.model_validate(
+            {
+                "item_type": "part",
+                "display_name": "26-inch bike tube",
+                "quantity": 1,
+                "generic_equivalent_acceptable": True,
+                "search_query": "26 inch bike tube",
+            },
+        ),
+    )
+
+    assert result.status == PriceEstimateStatus.PRICED_LISTING_FOUND
+    assert result.primary_listing is not None
+    assert result.primary_listing.observed_price == 9.96
+    assert result.primary_listing.match_confidence == Confidence.MEDIUM
+    assert result.primary_listing.match_rationale
+    assert len(result.alternate_listings) == 2
+    assert result.alternate_listings[0].observed_price == 8.99
+    assert result.estimated_price == CostEstimate(
+        currency="USD",
+        min_amount=30.0,
+        max_amount=30.0,
+        confidence=Confidence.MEDIUM,
+        source=CostEstimateSource.SEARCH_PROVIDER,
+    )
+
+
+async def test_gemini_provider_parses_first_json_object_when_text_has_suffix() -> None:
+    looked_up_at = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
+    generate_content = _GenerateContent(
+        _Response(
+            text=(
+                json.dumps(
+                    {
+                        "status": "priced_listing_found",
+                        "estimate_confidence": "medium",
+                        "primary_listing": {
+                            "title": "Blackburn Grid 1 Floor Pump",
+                            "retailer": "Example Retailer",
+                            "observed_price": 24.99,
+                            "currency": "USD",
+                            "url": "https://example.com/pump",
+                            "match_confidence": "medium",
+                            "match_rationale": "Representative floor pump listing.",
+                        },
+                    },
+                )
+                + "\nGrounding metadata omitted."
+            ),
+        ),
+    )
+
+    result = await GeminiGroundedPriceProvider(
+        model="gemini-test",
+        temperature=0.1,
+        max_output_tokens=512,
+        timeout_seconds=5,
+        generate_content=generate_content,
+        clock=lambda: looked_up_at,
+    ).lookup_requirement(
+        PriceLookupRequirement.model_validate(
+            {
+                "item_type": "tool",
+                "display_name": "Floor pump",
+                "quantity": 1,
+                "generic_equivalent_acceptable": True,
+                "search_query": "bike floor pump",
+            },
+        ),
+    )
+
+    assert result.status == PriceEstimateStatus.PRICED_LISTING_FOUND
+    assert result.primary_listing is not None
+    assert result.primary_listing.observed_price == 24.99
+
+
 async def test_gemini_provider_logs_search_lifecycle(
     caplog: Any,
 ) -> None:

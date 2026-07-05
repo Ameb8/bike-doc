@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from bike_doc_api.schemas.common import Confidence
 from bike_doc_api.schemas.report import (
     CostEstimate,
+    CostEstimateSource,
     CostItemType,
     PriceEstimateStatus,
     PriceListing,
@@ -228,6 +229,17 @@ def _build_lookup_prompt(
                 "statuses": [status.value for status in PriceEstimateStatus],
                 "alternate_listings_max": 2,
                 "required_fields": ["status", "estimate_confidence"],
+                "top_level_fields": [
+                    "status",
+                    "estimate_confidence",
+                    "estimated_price",
+                    "primary_listing",
+                    "alternate_listings",
+                    "compatibility_uncertain",
+                    "search_match_ambiguous",
+                    "generic_substitute_used",
+                    "exact_match_not_confirmed",
+                ],
                 "listing_fields": [
                     "title",
                     "retailer",
@@ -256,7 +268,9 @@ def _parse_response(response: Any) -> GeminiPriceLookupResponse:
     if isinstance(parsed, GeminiPriceLookupResponse):
         return parsed
     if isinstance(parsed, dict):
-        return GeminiPriceLookupResponse.model_validate(parsed)
+        return GeminiPriceLookupResponse.model_validate(
+            _normalize_response_data(parsed)
+        )
 
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
@@ -266,18 +280,19 @@ def _parse_response(response: Any) -> GeminiPriceLookupResponse:
         data = json.loads(json_text)
     except json.JSONDecodeError as exc:
         raise ValueError("Gemini price lookup returned invalid JSON.") from exc
-    return GeminiPriceLookupResponse.model_validate(data)
+    return GeminiPriceLookupResponse.model_validate(_normalize_response_data(data))
 
 
 def _extract_json_object(text: str) -> str:
     """Extract the first JSON object from a grounded text response."""
 
     stripped = text.strip()
-    if stripped.startswith("{"):
-        return stripped
-
     decoder = json.JSONDecoder()
-    for index, character in enumerate(stripped):
+    start_index = stripped.find("{")
+    if start_index < 0:
+        raise ValueError("Gemini price lookup returned no JSON payload.")
+
+    for index, character in enumerate(stripped[start_index:], start=start_index):
         if character != "{":
             continue
         try:
@@ -286,6 +301,88 @@ def _extract_json_object(text: str) -> str:
             continue
         return stripped[index : index + end]
     raise ValueError("Gemini price lookup returned no JSON payload.")
+
+
+def _normalize_response_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Accept minor model field drift before strict validation."""
+
+    normalized = dict(data)
+    normalized.pop("alternate_listings_max", None)
+
+    listings = normalized.pop("listings", None)
+    if isinstance(listings, list) and "primary_listing" not in normalized:
+        normalized["primary_listing"] = listings[0] if listings else None
+        normalized["alternate_listings"] = listings[1:3]
+
+    estimate_confidence = normalized.get("estimate_confidence")
+    estimated_price = normalized.get("estimated_price")
+    if isinstance(estimated_price, dict):
+        normalized["estimated_price"] = _normalize_estimated_price(
+            estimated_price,
+            estimate_confidence=estimate_confidence,
+        )
+
+    primary_listing = normalized.get("primary_listing")
+    if isinstance(primary_listing, dict):
+        normalized["primary_listing"] = _normalize_listing(
+            primary_listing,
+            estimate_confidence=estimate_confidence,
+        )
+
+    alternate_listings = normalized.get("alternate_listings")
+    if isinstance(alternate_listings, list):
+        normalized["alternate_listings"] = [
+            _normalize_listing(listing, estimate_confidence=estimate_confidence)
+            if isinstance(listing, dict)
+            else listing
+            for listing in alternate_listings[:2]
+        ]
+    return normalized
+
+
+def _normalize_estimated_price(
+    estimated_price: dict[str, Any],
+    *,
+    estimate_confidence: object,
+) -> dict[str, Any]:
+    """Normalize Gemini's common single-value estimate drift."""
+
+    normalized = dict(estimated_price)
+    value = normalized.pop("value", None)
+    if _is_number(value):
+        normalized.setdefault("min_amount", float(value))
+        normalized.setdefault("max_amount", float(value))
+    normalized.setdefault("confidence", estimate_confidence or Confidence.LOW.value)
+    normalized.setdefault("source", CostEstimateSource.SEARCH_PROVIDER.value)
+    return normalized
+
+
+def _normalize_listing(
+    listing: dict[str, Any],
+    *,
+    estimate_confidence: object,
+) -> dict[str, Any]:
+    """Normalize Gemini's common listing field-name drift."""
+
+    normalized = dict(listing)
+    for key in ("observedPrice", "price", "value", "amount"):
+        value = normalized.pop(key, None)
+        if "observed_price" not in normalized and _is_number(value):
+            normalized["observed_price"] = float(value)
+    normalized.setdefault(
+        "match_confidence", estimate_confidence or Confidence.LOW.value
+    )
+    normalized.setdefault(
+        "match_rationale",
+        "Search result title and retailer were used as listing evidence.",
+    )
+    return normalized
+
+
+def _is_number(value: object) -> bool:
+    """Return whether value is a JSON number, excluding booleans."""
+
+    return isinstance(value, int | float) and not isinstance(value, bool)
 
 
 def _result_from_response(
