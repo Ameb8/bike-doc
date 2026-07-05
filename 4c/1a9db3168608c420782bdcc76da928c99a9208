@@ -1,0 +1,29 @@
+apps/android/app/src/main/java/com/bikedoc/android/sessions/report/DiagnosticReportScreen.kt
+  s_2f987a6ffd0b39::t_fbe154c1b064df 41,211
+  s_2f987a6ffd0b39::t_24bfd7e029cd6d 175-178,210,212-229
+apps/android/app/src/main/java/com/bikedoc/android/api/models/ReportModels.kt
+  s_2f987a6ffd0b39::t_97d1ad722971cd 53-54
+apps/android/app/src/main/java/com/bikedoc/android/api/ReportRepository.kt
+  s_2f987a6ffd0b39::t_0f4f5f4833c351 115,285
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "4c1a9db3168608c420782bdcc76da928c99a9208",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2f987a6ffd0b39": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f302f-99c0-70e2-99e0-1c2f867d70bf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
