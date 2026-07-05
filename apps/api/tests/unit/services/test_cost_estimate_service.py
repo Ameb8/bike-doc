@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,6 +17,8 @@ from bike_doc_api.schemas.report import (
     PriceLookupResult,
 )
 from bike_doc_api.services.cost_estimates import CostEstimateService
+
+LOGGER_NAME = "bike_doc_api.services.cost_estimates"
 
 
 class _PriceProvider:
@@ -155,6 +158,59 @@ async def test_provider_result_identity_is_aligned_to_requirement() -> None:
     assert item.requirement_name == "700x38c tube, presta valve"
     assert item.exact_match_not_confirmed is True
     assert item.compatibility_uncertain is True
+
+
+async def test_estimate_plan_cost_logs_lookup_flow(caplog: Any) -> None:
+    provider = _PriceProvider(
+        {
+            "Shimano HG54 10-speed chain": _listing_result(
+                "part",
+                "Shimano HG54 10-speed chain",
+                27.99,
+                Confidence.HIGH,
+            ),
+        },
+    )
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+
+    await CostEstimateService(provider).estimate_plan_cost(
+        [_requirement("part", "Shimano HG54 10-speed chain")],
+    )
+
+    events = [record.msg for record in caplog.records]
+    assert "plan_cost_estimate_started" in events
+    assert "plan_cost_item_lookup_started" in events
+    assert "plan_cost_item_lookup_completed" in events
+    assert "plan_cost_estimate_completed" in events
+
+    completed = next(
+        record
+        for record in caplog.records
+        if record.msg == "plan_cost_item_lookup_completed"
+    )
+    assert completed.requirement_name == "Shimano HG54 10-speed chain"
+    assert completed.status == "priced_listing_found"
+
+
+async def test_estimate_plan_cost_logs_degraded_lookup(caplog: Any) -> None:
+    provider = _PriceProvider(
+        {
+            "Cassette lockring tool": RuntimeError("provider unavailable"),
+        },
+    )
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+
+    await CostEstimateService(provider).estimate_plan_cost(
+        [_requirement("tool", "Cassette lockring tool")],
+    )
+
+    degraded = next(
+        record
+        for record in caplog.records
+        if record.msg == "plan_cost_item_lookup_degraded"
+    )
+    assert degraded.requirement_name == "Cassette lockring tool"
+    assert degraded.search_query == "Cassette lockring tool"
 
 
 def _requirement(item_type: str, name: str, **overrides: Any) -> PriceLookupRequirement:

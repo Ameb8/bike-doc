@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -18,6 +19,8 @@ from bike_doc_api.schemas.report import (
     PriceLookupRequirement,
     PriceLookupResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,18 +52,59 @@ class CostEstimateService:
         if not normalized:
             raise ValidationAppError()
 
+        logger.info(
+            "plan_cost_estimate_started",
+            extra={
+                "requirement_count": len(normalized),
+                "requirement_names": [item.display_name for item in normalized],
+            },
+        )
         results: list[PriceLookupResult] = []
         for requirement in normalized:
             results.append(await self._lookup_with_degradation(requirement))
 
         parts_total = _roll_up(results, CostItemType.PART)
         tools_total = _roll_up(results, CostItemType.TOOL)
-        return PlanCostEstimate(
+        estimate = PlanCostEstimate(
             parts_total=_cost_estimate_from_rollup(parts_total, "parts"),
             tools_total=_cost_estimate_from_rollup(tools_total, "tools"),
             diy_total=_merge_rollups(parts_total, tools_total),
             items=results,
         )
+        logger.info(
+            "plan_cost_estimate_completed",
+            extra={
+                "item_count": len(results),
+                "priced_item_count": sum(
+                    1
+                    for item in results
+                    if item.status is PriceEstimateStatus.PRICED_LISTING_FOUND
+                ),
+                "range_item_count": sum(
+                    1
+                    for item in results
+                    if item.status is PriceEstimateStatus.RANGE_ESTIMATE_ONLY
+                ),
+                "unavailable_item_count": sum(
+                    1
+                    for item in results
+                    if item.status is PriceEstimateStatus.PRICE_UNAVAILABLE
+                ),
+                "needs_more_detail_count": sum(
+                    1
+                    for item in results
+                    if item.status is PriceEstimateStatus.NEEDS_MORE_DETAIL
+                ),
+                "parts_total_min_amount": estimate.parts_total.min_amount,
+                "parts_total_max_amount": estimate.parts_total.max_amount,
+                "tools_total_min_amount": estimate.tools_total.min_amount,
+                "tools_total_max_amount": estimate.tools_total.max_amount,
+                "diy_total_min_amount": estimate.diy_total.min_amount,
+                "diy_total_max_amount": estimate.diy_total.max_amount,
+                "diy_total_confidence": estimate.diy_total.confidence.value,
+            },
+        )
+        return estimate
 
     async def _lookup_with_degradation(
         self,
@@ -69,11 +113,54 @@ class CostEstimateService:
         """Lookup one item and turn provider failures into explicit uncertainty."""
 
         try:
+            logger.info(
+                "plan_cost_item_lookup_started",
+                extra={
+                    "item_type": requirement.item_type.value,
+                    "requirement_name": requirement.display_name,
+                    "quantity": requirement.quantity,
+                    "search_query": requirement.search_query,
+                },
+            )
             result = await self._provider.lookup_requirement(requirement)
-            return _align_result_with_requirement(result, requirement)
+            aligned_result = _align_result_with_requirement(result, requirement)
+            logger.info(
+                "plan_cost_item_lookup_completed",
+                extra={
+                    "item_type": aligned_result.item_type.value,
+                    "requirement_name": aligned_result.requirement_name,
+                    "status": aligned_result.status.value,
+                    "estimate_confidence": aligned_result.estimate_confidence.value,
+                    "primary_listing_price": (
+                        aligned_result.primary_listing.observed_price
+                        if aligned_result.primary_listing is not None
+                        else None
+                    ),
+                    "estimated_min_amount": (
+                        aligned_result.estimated_price.min_amount
+                        if aligned_result.estimated_price is not None
+                        else None
+                    ),
+                    "estimated_max_amount": (
+                        aligned_result.estimated_price.max_amount
+                        if aligned_result.estimated_price is not None
+                        else None
+                    ),
+                },
+            )
+            return aligned_result
         except ValidationAppError:
             raise
         except Exception:
+            logger.info(
+                "plan_cost_item_lookup_degraded",
+                extra={
+                    "item_type": requirement.item_type.value,
+                    "requirement_name": requirement.display_name,
+                    "search_query": requirement.search_query,
+                },
+                exc_info=True,
+            )
             return _unavailable_result(requirement)
 
 

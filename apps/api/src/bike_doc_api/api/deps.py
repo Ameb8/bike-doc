@@ -14,10 +14,16 @@ from bike_doc_api.core.config import (
     Settings,
     get_settings,
     validate_diagnostic_runtime_configuration,
+    validate_price_lookup_runtime_configuration,
 )
 from bike_doc_api.core.security import validate_bearer_authorization
 from bike_doc_api.db.session import get_session_for_database_url
 from bike_doc_api.models.user import User
+from bike_doc_api.providers.price import (
+    GeminiGroundedPriceProvider,
+    PriceLookupProvider,
+    UnavailablePriceProvider,
+)
 from bike_doc_api.providers.storage import (
     GCSStorageProvider,
     LocalStorageProvider,
@@ -25,6 +31,7 @@ from bike_doc_api.providers.storage import (
 )
 from bike_doc_api.repositories.users import UserRepository
 from bike_doc_api.services.auth import AuthService
+from bike_doc_api.services.cost_estimates import CostEstimateService
 
 
 async def get_db_session(
@@ -59,6 +66,37 @@ def get_storage_provider(
         return LocalStorageProvider(settings.artifact_local_storage_root)
     assert settings.artifact_gcs_bucket is not None
     return GCSStorageProvider(bucket_name=settings.artifact_gcs_bucket)
+
+
+def get_price_lookup_provider(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> PriceLookupProvider:
+    """Build the configured planning price lookup provider."""
+
+    validate_price_lookup_runtime_configuration(settings)
+    if settings.price_lookup_provider == "unavailable":
+        return UnavailablePriceProvider()
+    if settings.price_lookup_llm_provider == "vertex_ai":
+        return GeminiGroundedPriceProvider.from_vertex_ai(
+            model=settings.price_lookup_model,
+            temperature=settings.price_lookup_temperature,
+            max_output_tokens=settings.price_lookup_max_output_tokens,
+            timeout_seconds=settings.price_lookup_timeout_seconds,
+        )
+    return GeminiGroundedPriceProvider.from_google_ai(
+        model=settings.price_lookup_model,
+        temperature=settings.price_lookup_temperature,
+        max_output_tokens=settings.price_lookup_max_output_tokens,
+        timeout_seconds=settings.price_lookup_timeout_seconds,
+    )
+
+
+def get_cost_estimate_service(
+    provider: Annotated[PriceLookupProvider, Depends(get_price_lookup_provider)],
+) -> CostEstimateService:
+    """Build the planning cost estimate service."""
+
+    return CostEstimateService(provider)
 
 
 @lru_cache
