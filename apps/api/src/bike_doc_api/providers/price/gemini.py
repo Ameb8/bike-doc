@@ -26,7 +26,8 @@ from bike_doc_api.schemas.report import (
 _SYSTEM_INSTRUCTION = """
 You are Bike Doc's live listing lookup normalizer.
 Use Google Search grounding for one bike repair tool or part requirement.
-Return only structured JSON matching the requested schema.
+Return only a JSON object matching the requested contract. Do not wrap the JSON
+in Markdown or explanatory text.
 
 Rules:
 - Search for current retailer listings or current observed market prices.
@@ -208,8 +209,6 @@ def _generate_config(
         system_instruction=_SYSTEM_INSTRUCTION,
         temperature=temperature,
         max_output_tokens=max_output_tokens,
-        response_mime_type="application/json",
-        response_schema=GeminiPriceLookupResponse,
         tools=[types.Tool(google_search=types.GoogleSearch())],
     )
 
@@ -228,6 +227,18 @@ def _build_lookup_prompt(
             "output_contract": {
                 "statuses": [status.value for status in PriceEstimateStatus],
                 "alternate_listings_max": 2,
+                "required_fields": ["status", "estimate_confidence"],
+                "listing_fields": [
+                    "title",
+                    "retailer",
+                    "observed_price",
+                    "currency",
+                    "url",
+                    "observed_at",
+                    "match_confidence",
+                    "match_rationale",
+                ],
+                "confidence_values": [confidence.value for confidence in Confidence],
                 "fallback_policy": (
                     "Use range_estimate_only, needs_more_detail, or "
                     "price_unavailable when listing evidence is weak."
@@ -250,11 +261,31 @@ def _parse_response(response: Any) -> GeminiPriceLookupResponse:
     text = getattr(response, "text", None)
     if not isinstance(text, str) or not text.strip():
         raise ValueError("Gemini price lookup returned no JSON payload.")
+    json_text = _extract_json_object(text)
     try:
-        data = json.loads(text)
+        data = json.loads(json_text)
     except json.JSONDecodeError as exc:
         raise ValueError("Gemini price lookup returned invalid JSON.") from exc
     return GeminiPriceLookupResponse.model_validate(data)
+
+
+def _extract_json_object(text: str) -> str:
+    """Extract the first JSON object from a grounded text response."""
+
+    stripped = text.strip()
+    if stripped.startswith("{"):
+        return stripped
+
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(stripped):
+        if character != "{":
+            continue
+        try:
+            _, end = decoder.raw_decode(stripped[index:])
+        except json.JSONDecodeError:
+            continue
+        return stripped[index : index + end]
+    raise ValueError("Gemini price lookup returned no JSON payload.")
 
 
 def _result_from_response(

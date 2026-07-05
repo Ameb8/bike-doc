@@ -147,28 +147,34 @@ async def test_gemini_provider_normalizes_parsed_listing_response() -> None:
     assert generate_content.calls[0]["model"] == "gemini-test"
     assert "Shimano HG54 10-speed chain" in generate_content.calls[0]["contents"]
     assert generate_content.calls[0]["config"].tools
+    assert generate_content.calls[0]["config"].response_mime_type is None
+    assert generate_content.calls[0]["config"].response_schema is None
 
 
 async def test_gemini_provider_parses_text_range_response() -> None:
     looked_up_at = datetime(2026, 7, 4, 12, 0, tzinfo=UTC)
     generate_content = _GenerateContent(
         _Response(
-            text=json.dumps(
-                {
-                    "status": "range_estimate_only",
-                    "estimate_confidence": "low",
-                    "estimated_price": {
-                        "currency": "USD",
-                        "min_amount": 12,
-                        "max_amount": 24,
-                        "confidence": "low",
-                        "source": "search_provider",
-                        "notes": "Current listings vary by compound and fit.",
+            text=(
+                "```json\n"
+                + json.dumps(
+                    {
+                        "status": "range_estimate_only",
+                        "estimate_confidence": "low",
+                        "estimated_price": {
+                            "currency": "USD",
+                            "min_amount": 12,
+                            "max_amount": 24,
+                            "confidence": "low",
+                            "source": "search_provider",
+                            "notes": "Current listings vary by compound and fit.",
+                        },
+                        "compatibility_uncertain": True,
+                        "search_match_ambiguous": True,
+                        "exact_match_not_confirmed": True,
                     },
-                    "compatibility_uncertain": True,
-                    "search_match_ambiguous": True,
-                    "exact_match_not_confirmed": True,
-                },
+                )
+                + "\n```"
             ),
         ),
     )
