@@ -38,6 +38,7 @@ import com.bikedoc.android.api.CostEstimate
 import com.bikedoc.android.api.Diagnosis
 import com.bikedoc.android.api.DiagnosticReport
 import com.bikedoc.android.api.PartNeeded
+import com.bikedoc.android.api.PlanCostEstimate
 import com.bikedoc.android.api.PlanReport
 import com.bikedoc.android.api.PriceListing
 import com.bikedoc.android.api.PriceLookupResult
@@ -171,6 +172,10 @@ private fun DiagnosticReportLoadedState(
 private fun DiagnosticReportSections(report: DiagnosticReport) {
     PrimaryDiagnosisSection(diagnosis = report.primaryDiagnosis)
     RepairEstimateSection(estimate = report.repairEstimate)
+    report.costEstimate?.let { costEstimate ->
+        DiagnosticCostSummarySection(costEstimate = costEstimate)
+        PriceLookupSection(items = costEstimate.items)
+    }
     ReportSection(title = stringResource(R.string.diagnostic_report_evidence_title)) {
         Text(
             text = report.evidenceSummary,
@@ -198,6 +203,30 @@ private fun DiagnosticReportSections(report: DiagnosticReport) {
                     value = report.keyArtifactIds.size.toString(),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticCostSummarySection(costEstimate: PlanCostEstimate) {
+    ReportSection(title = stringResource(R.string.diagnostic_report_cost_summary_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_parts_total_label),
+                value = costEstimate.partsTotal.toDisplayPrice(),
+            )
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_tools_total_label),
+                value = costEstimate.toolsTotal.toDisplayPrice(),
+            )
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_diy_total_label),
+                value = costEstimate.diyTotal.toDisplayPrice(),
+            )
+            Text(
+                text = stringResource(R.string.diagnostic_report_pricing_disclaimer),
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }

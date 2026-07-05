@@ -112,6 +112,7 @@ class DefaultReportRepository
                 userSkillLevel = userSkillLevel,
                 safetyFlags = safetyFlags,
                 keyArtifactIds = keyArtifactIds,
+                costEstimate = costEstimate?.toPlanCostEstimate(),
             )
         }
 
@@ -281,6 +282,7 @@ data class DiagnosticReport(
     val userSkillLevel: String,
     override val safetyFlags: List<SafetyFlag>,
     val keyArtifactIds: List<String>,
+    val costEstimate: PlanCostEstimate?,
 ) : RepairReport
 
 data class PlanReport(

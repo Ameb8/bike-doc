@@ -50,6 +50,8 @@ data class DiagnosticReportPayload(
     val safetyFlags: List<SafetyFlag> = emptyList(),
     @SerialName("diagnostic_session_id")
     val diagnosticSessionId: String,
+    @SerialName("cost_estimate")
+    val costEstimate: PlanCostEstimatePayload? = null,
 )
 
 @Serializable
