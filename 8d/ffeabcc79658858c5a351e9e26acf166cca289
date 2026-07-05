@@ -1,0 +1,38 @@
+apps/api/src/bike_doc_api/providers/price/gemini.py
+  s_3df7d418957d6a::t_e9a20d7bc9409d 19,310-311,316-371,375-378,380-385
+  s_3df7d418957d6a::t_1885b30661afdf 372-374
+  s_e374d238389bde::t_c0ef4f7bf7517e 232-242
+  s_e374d238389bde::t_5cef15c6bb2b64 271-273,283,291-295,306-309,312-315,379
+apps/api/tests/unit/providers/test_gemini_price_provider.py
+  s_3df7d418957d6a::t_cbde9f1058a414 272-396
+  s_e374d238389bde::t_f1973a87fcb963 215-271,397-443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8dffeabcc79658858c5a351e9e26acf166cca289",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_3df7d418957d6a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3351-5085-7242-9b4a-370f1d70e18a",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_e374d238389bde": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f3344-4cd5-7613-ac0b-cfe3621957b5",
+        "model": "gpt-5.4"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
