@@ -1,0 +1,47 @@
+apps/api/src/bike_doc_api/services/reports.py
+  s_2f987a6ffd0b39::t_6fe2390b96fc87 5,59,500-513
+  s_2f987a6ffd0b39::t_0256346e7cfdd1 307-321
+  s_2f987a6ffd0b39::t_4144152b25851f 34,44,48,50,158-167,180,190,487-499,514-517,651-693
+  s_2f987a6ffd0b39::t_eb60ff26642256 433-446
+apps/api/tests/unit/providers/test_gemini_price_provider.py
+  s_2f987a6ffd0b39::t_ca692e1d7180b6 9,59-97
+apps/api/src/bike_doc_api/providers/price/gemini.py
+  s_2f987a6ffd0b39::t_4b90490e7846ce 102,110,131,152
+apps/api/src/bike_doc_api/api/v1/reports.py
+  s_2f987a6ffd0b39::t_9b28824a257678 3,9-15,28,33,38,48,54-63
+apps/api/src/bike_doc_api/adk/background.py
+  s_2f987a6ffd0b39::t_edb357a95fa04c 249-251
+  s_2f987a6ffd0b39::t_009a46060dd843 34-39,187,252-258
+  s_2f987a6ffd0b39::t_5af5d6a044acf9 65
+apps/api/src/bike_doc_api/schemas/report.py
+  s_2f987a6ffd0b39::t_c48606b61ef367 137
+  s_2f987a6ffd0b39::t_ce4b96825f7568 3-4
+apps/api/tests/unit/services/test_report_service.py
+  s_2f987a6ffd0b39::t_63de9a49cff9d7 19-27,183-211,216,218-235
+  s_2f987a6ffd0b39::t_8ba5ac940405f5 355-383,404-423
+docs/specs/apps/diagnostic-report-v1.md
+  s_2f987a6ffd0b39::t_2ed8c87f304256 58,104-106
+docs/specs/openapi.yaml
+  s_2f987a6ffd0b39::t_56ea2cd5db4c90 1487-1495
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "5a646c79ab7473062de9f46636cf9e770f994889",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2f987a6ffd0b39": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f302f-99c0-70e2-99e0-1c2f867d70bf",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
