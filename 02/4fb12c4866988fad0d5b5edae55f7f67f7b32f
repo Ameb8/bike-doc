@@ -1,0 +1,27 @@
+apps/api/tests/unit/providers/test_gemini_price_provider.py
+  s_df7c2b6aa09d8e::t_de5e3c9c61f80c 150-151
+  s_df7c2b6aa09d8e::t_695fddae70d295 158-174,176-177
+apps/api/src/bike_doc_api/providers/price/gemini.py
+  s_df7c2b6aa09d8e::t_fbd44eed8fc705 29-30,230-241,264,266,272-288
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "024fb12c4866988fad0d5b5edae55f7f67f7b32f",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_df7c2b6aa09d8e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f314f-721f-7d83-a25e-748b613ab7a2",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
