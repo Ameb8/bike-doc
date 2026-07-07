@@ -49,6 +49,21 @@ class DiagnosticToolContext(BaseModel):
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
 
 
+class PlanningToolContext(BaseModel):
+    """Server-owned context provided by orchestration to planning tools."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    user_id: str
+    user_skill_level: str = "unknown"
+    repair_session_id: str
+    active_phase: RepairSessionPhase = RepairSessionPhase.PLANNING
+    planning_session_id: str
+    diagnostic_report_id: str
+    turn_id: str | None = None
+    bike_profile: Mapping[str, Any] | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ToolCurrentUser:
     """Minimal authenticated user object passed to service boundaries."""
@@ -57,7 +72,9 @@ class ToolCurrentUser:
     skill_level: str = "unknown"
 
 
-def current_tool_user(context: DiagnosticToolContext) -> ToolCurrentUser:
+def current_tool_user(
+    context: DiagnosticToolContext | PlanningToolContext,
+) -> ToolCurrentUser:
     """Return a minimal authenticated user object for service calls."""
 
     return ToolCurrentUser(
@@ -193,6 +210,19 @@ def validate_tool_context(
     if repair_session_id != context.repair_session_id:
         raise ValidationAppError("repair_session_id does not match tool context.")
     if context.active_phase is not RepairSessionPhase.DIAGNOSTIC:
+        raise SessionStateConflictError()
+
+
+def validate_planning_tool_context(
+    *,
+    repair_session_id: str,
+    context: PlanningToolContext,
+) -> None:
+    """Validate server-owned planning context before calling services."""
+
+    if repair_session_id != context.repair_session_id:
+        raise ValidationAppError("repair_session_id does not match tool context.")
+    if context.active_phase is not RepairSessionPhase.PLANNING:
         raise SessionStateConflictError()
 
 

@@ -50,6 +50,147 @@ data class DiagnosticReportPayload(
     val safetyFlags: List<SafetyFlag> = emptyList(),
     @SerialName("diagnostic_session_id")
     val diagnosticSessionId: String,
+    @SerialName("cost_estimate")
+    val costEstimate: PlanCostEstimatePayload? = null,
+)
+
+@Serializable
+data class PlanReportPayload(
+    @SerialName("schema_version")
+    val schemaVersion: String,
+    @SerialName("diagnosis_summary")
+    val diagnosisSummary: String,
+    @SerialName("parts_needed")
+    val partsNeeded: List<PartNeededPayload> = emptyList(),
+    @SerialName("tools_needed")
+    val toolsNeeded: List<ToolNeededPayload> = emptyList(),
+    @SerialName("diy_estimate")
+    val diyEstimate: CostEstimatePayload,
+    @SerialName("shop_estimate")
+    val shopEstimate: CostEstimatePayload,
+    @SerialName("cost_estimate")
+    val costEstimate: PlanCostEstimatePayload,
+    @SerialName("user_time_estimate")
+    val userTimeEstimate: TimeEstimatePayload? = null,
+    @SerialName("shop_time_estimate")
+    val shopTimeEstimate: TimeEstimatePayload? = null,
+    val recommendation: String,
+    @SerialName("recommendation_basis")
+    val recommendationBasis: String,
+    @SerialName("requires_user_decision")
+    val requiresUserDecision: Boolean,
+    @SerialName("safety_concerns")
+    val safetyConcerns: List<SafetyFlag> = emptyList(),
+)
+
+@Serializable
+data class PartNeededPayload(
+    val item: String,
+    val specification: String? = null,
+    val quantity: Int,
+    val required: Boolean,
+    @SerialName("estimated_price")
+    val estimatedPrice: CostEstimatePayload? = null,
+    @SerialName("price_lookup_result_id")
+    val priceLookupResultId: String? = null,
+    @SerialName("price_lookup")
+    val priceLookup: PriceLookupResultPayload? = null,
+)
+
+@Serializable
+data class ToolNeededPayload(
+    val item: String,
+    @SerialName("catalog_tool_id")
+    val catalogToolId: String? = null,
+    @SerialName("catalog_match_confidence")
+    val catalogMatchConfidence: String? = null,
+    val source: String,
+    val category: String,
+    val action: String,
+    val quantity: Int = 1,
+    val unit: String? = null,
+    @SerialName("estimated_price")
+    val estimatedPrice: CostEstimatePayload? = null,
+    val notes: String? = null,
+    @SerialName("price_lookup")
+    val priceLookup: PriceLookupResultPayload? = null,
+)
+
+@Serializable
+data class PlanCostEstimatePayload(
+    @SerialName("parts_total")
+    val partsTotal: CostEstimatePayload,
+    @SerialName("tools_total")
+    val toolsTotal: CostEstimatePayload,
+    @SerialName("diy_total")
+    val diyTotal: CostEstimatePayload,
+    val items: List<PriceLookupResultPayload> = emptyList(),
+)
+
+@Serializable
+data class PriceLookupResultPayload(
+    @SerialName("item_type")
+    val itemType: String,
+    @SerialName("requirement_name")
+    val requirementName: String,
+    val quantity: Int,
+    val status: String,
+    @SerialName("estimate_confidence")
+    val estimateConfidence: String,
+    @SerialName("looked_up_at")
+    val lookedUpAt: String,
+    @SerialName("estimated_price")
+    val estimatedPrice: CostEstimatePayload? = null,
+    @SerialName("primary_listing")
+    val primaryListing: PriceListingPayload? = null,
+    @SerialName("alternate_listings")
+    val alternateListings: List<PriceListingPayload> = emptyList(),
+    @SerialName("compatibility_uncertain")
+    val compatibilityUncertain: Boolean = false,
+    @SerialName("search_match_ambiguous")
+    val searchMatchAmbiguous: Boolean = false,
+    @SerialName("generic_substitute_used")
+    val genericSubstituteUsed: Boolean = false,
+    @SerialName("exact_match_not_confirmed")
+    val exactMatchNotConfirmed: Boolean = false,
+)
+
+@Serializable
+data class PriceListingPayload(
+    val title: String,
+    val retailer: String,
+    @SerialName("observed_price")
+    val observedPrice: Double,
+    val currency: String = "USD",
+    val url: String,
+    @SerialName("observed_at")
+    val observedAt: String,
+    @SerialName("match_confidence")
+    val matchConfidence: String,
+    @SerialName("match_rationale")
+    val matchRationale: String,
+)
+
+@Serializable
+data class CostEstimatePayload(
+    val currency: String = "USD",
+    @SerialName("min_amount")
+    val minAmount: Double? = null,
+    @SerialName("max_amount")
+    val maxAmount: Double? = null,
+    val confidence: String,
+    val source: String,
+    val notes: String? = null,
+)
+
+@Serializable
+data class TimeEstimatePayload(
+    @SerialName("min_minutes")
+    val minMinutes: Int? = null,
+    @SerialName("max_minutes")
+    val maxMinutes: Int? = null,
+    val confidence: String,
+    val notes: String? = null,
 )
 
 @Serializable

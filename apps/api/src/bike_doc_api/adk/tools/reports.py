@@ -20,7 +20,11 @@ from bike_doc_api.adk.tools.common import (
     validation_error_details,
 )
 from bike_doc_api.core.errors import ValidationAppError
-from bike_doc_api.schemas.report import PhaseReportEnvelope, SafetyFlag
+from bike_doc_api.schemas.report import (
+    DiagnosticReportV1,
+    PhaseReportEnvelope,
+    SafetyFlag,
+)
 
 
 class SaveDiagnosticReportInput(BaseModel):
@@ -118,10 +122,12 @@ class SaveDiagnosticReportTool:
                 turn_id=context.turn_id,
             )
             report = result.report
-            if not isinstance(report.payload, dict):
+            if isinstance(report.payload, DiagnosticReportV1):
                 diagnostic_session_id = report.payload.diagnostic_session_id
-            else:
+            elif isinstance(report.payload, dict):
                 diagnostic_session_id = str(report.payload["diagnostic_session_id"])
+            else:
+                raise ReportValidationToolError()
             data: dict[str, Any] = {
                 "report_id": report.id,
                 "schema_version": report.schema_version,

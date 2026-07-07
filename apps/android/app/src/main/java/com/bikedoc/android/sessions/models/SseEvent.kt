@@ -44,6 +44,8 @@ sealed class SseEvent {
     data class PhaseReportCreated(
         override val id: String?,
         val reportId: String,
+        val reportType: String,
+        val schemaVersion: String,
         val payload: JsonElement,
     ) : SseEvent()
 
@@ -132,7 +134,13 @@ sealed class SseEvent {
                 },
                 "phase.report.created" to { eventId, payload, json ->
                     val decodedPayload = json.decodeFromString<PhaseReportCreatedPayload>(payload)
-                    PhaseReportCreated(eventId, decodedPayload.reportId, json.parseToJsonElement(payload))
+                    PhaseReportCreated(
+                        id = eventId,
+                        reportId = decodedPayload.reportId,
+                        reportType = decodedPayload.reportType,
+                        schemaVersion = decodedPayload.schemaVersion,
+                        payload = json.parseToJsonElement(payload),
+                    )
                 },
                 "phase.transitioned" to { eventId, payload, json ->
                     json.decodeFromString<PhaseTransitionedPayload>(payload).toEvent(eventId)
@@ -210,6 +218,10 @@ private data class ArtifactReferencedPayload(
 private data class PhaseReportCreatedPayload(
     @SerialName("report_id")
     val reportId: String,
+    @SerialName("report_type")
+    val reportType: String = "",
+    @SerialName("schema_version")
+    val schemaVersion: String = "",
 )
 
 @Serializable

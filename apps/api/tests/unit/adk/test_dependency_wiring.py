@@ -7,12 +7,18 @@ import pytest
 import bike_doc_api.api.deps as deps
 from bike_doc_api.api.deps import (
     get_adk_session_service,
+    get_cost_estimate_service,
     get_diagnostic_adk_session_client,
     get_diagnostic_runner,
+    get_price_lookup_provider,
     get_storage_provider,
 )
 from bike_doc_api.core.config import Settings
+from bike_doc_api.providers.price import (
+    UnavailablePriceProvider,
+)
 from bike_doc_api.providers.storage import LocalStorageProvider
+from bike_doc_api.services.cost_estimates import CostEstimateService
 
 
 def test_adk_session_service_provider_is_process_lifetime() -> None:
@@ -69,3 +75,114 @@ def test_storage_provider_dependency_returns_gcs_provider() -> None:
 
     assert isinstance(provider, _FakeGCSStorageProvider)
     assert captured == {"bucket_name": "bike-doc-artifacts"}
+
+
+def test_price_lookup_provider_dependency_defaults_to_unavailable() -> None:
+    provider = get_price_lookup_provider(Settings(environment="test"))
+
+    assert isinstance(provider, UnavailablePriceProvider)
+
+
+def test_price_lookup_provider_dependency_returns_gemini_provider() -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeGeminiGroundedPriceProvider:
+        @classmethod
+        def from_google_ai(
+            cls,
+            *,
+            model: str,
+            temperature: float,
+            max_output_tokens: int,
+            timeout_seconds: float,
+        ) -> _FakeGeminiGroundedPriceProvider:
+            captured.update(
+                {
+                    "model": model,
+                    "temperature": temperature,
+                    "max_output_tokens": max_output_tokens,
+                    "timeout_seconds": timeout_seconds,
+                },
+            )
+            return cls()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        deps,
+        "GeminiGroundedPriceProvider",
+        _FakeGeminiGroundedPriceProvider,
+    )
+    try:
+        provider = get_price_lookup_provider(
+            Settings(
+                environment="test",
+                price_lookup_provider="gemini_grounded",
+                price_lookup_model="gemini-price-test",
+                price_lookup_temperature=0.3,
+                price_lookup_max_output_tokens=777,
+                price_lookup_timeout_seconds=9.5,
+            ),
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert isinstance(provider, _FakeGeminiGroundedPriceProvider)
+    assert captured == {
+        "model": "gemini-price-test",
+        "temperature": 0.3,
+        "max_output_tokens": 777,
+        "timeout_seconds": 9.5,
+    }
+
+
+def test_price_lookup_provider_dependency_can_use_vertex() -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeGeminiGroundedPriceProvider:
+        @classmethod
+        def from_vertex_ai(
+            cls,
+            *,
+            model: str,
+            temperature: float,
+            max_output_tokens: int,
+            timeout_seconds: float,
+        ) -> _FakeGeminiGroundedPriceProvider:
+            captured.update(
+                {
+                    "model": model,
+                    "temperature": temperature,
+                    "max_output_tokens": max_output_tokens,
+                    "timeout_seconds": timeout_seconds,
+                },
+            )
+            return cls()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        deps,
+        "GeminiGroundedPriceProvider",
+        _FakeGeminiGroundedPriceProvider,
+    )
+    try:
+        provider = get_price_lookup_provider(
+            Settings(
+                environment="test",
+                price_lookup_provider="gemini_grounded",
+                price_lookup_llm_provider="vertex_ai",
+                price_lookup_model="gemini-price-test",
+            ),
+        )
+    finally:
+        monkeypatch.undo()
+
+    assert isinstance(provider, _FakeGeminiGroundedPriceProvider)
+    assert captured["model"] == "gemini-price-test"
+
+
+def test_cost_estimate_service_dependency_wraps_price_provider() -> None:
+    provider = UnavailablePriceProvider()
+
+    service = get_cost_estimate_service(provider)
+
+    assert isinstance(service, CostEstimateService)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,6 +31,7 @@ from bike_doc_api.models.user import User
 from bike_doc_api.schemas.common import (
     ArtifactPurpose,
     ArtifactStatus,
+    Confidence,
     PhaseReportType,
     RepairSessionPhase,
     RepairSessionStatus,
@@ -39,9 +41,13 @@ from bike_doc_api.schemas.event import (
     validate_repair_session_event_data,
 )
 from bike_doc_api.schemas.report import (
+    CostItemType,
     DiagnosticReportV1,
     PhaseReportEnvelope,
     PhaseReportList,
+    PlanCostEstimate,
+    PlanReportV1,
+    PriceLookupRequirement,
     SafetyFlag,
     phase_report_envelope_from_model,
 )
@@ -50,6 +56,7 @@ from bike_doc_api.services.safety import SafetyService
 DEFAULT_REPORT_LIMIT = 50
 MAX_REPORT_LIMIT = 100
 DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v1"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +155,16 @@ class ArtifactRepositoryProtocol(Protocol):
         """Return an artifact owned by a user."""
 
 
+class CostEstimateServiceProtocol(Protocol):
+    """Cost-estimate operations required for diagnostic report enrichment."""
+
+    async def estimate_plan_cost(
+        self,
+        requirements: list[PriceLookupRequirement],
+    ) -> PlanCostEstimate:
+        """Return item-level pricing and rollups for report requirements."""
+
+
 class ReportService:
     """Application-owned report persistence and read behavior."""
 
@@ -160,6 +177,7 @@ class ReportService:
         artifacts: ArtifactRepositoryProtocol,
         *,
         safety: SafetyService | None = None,
+        cost_estimate_service: CostEstimateServiceProtocol | None = None,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -169,6 +187,7 @@ class ReportService:
         self._events = events
         self._artifacts = artifacts
         self._safety = safety or SafetyService()
+        self._cost_estimate_service = cost_estimate_service
         self._commit = commit
         self._rollback = rollback
 
@@ -285,6 +304,21 @@ class ReportService:
                 repair_session_id=repair_session.id,
                 diagnostic_session_id=validated.diagnostic_session_id,
             )
+            if validated.cost_estimate is None:
+                validated = await self._with_diagnostic_cost_estimate(validated)
+                envelope = PhaseReportEnvelope(
+                    id=envelope.id,
+                    repair_session_id=envelope.repair_session_id,
+                    type=envelope.type,
+                    schema_version=envelope.schema_version,
+                    phase=envelope.phase,
+                    summary=envelope.summary,
+                    safety_flags=envelope.safety_flags,
+                    source_artifact_ids=envelope.source_artifact_ids,
+                    created_at=envelope.created_at,
+                    payload=validated,
+                )
+                _validate_diagnostic_envelope(envelope)
 
             report = await self._reports.add(
                 PhaseReportModel(
@@ -365,7 +399,6 @@ class ReportService:
 
         reports = await self._reports.list_for_session(
             repair_session.id,
-            report_type=PhaseReportType.DIAGNOSTIC.value,
             limit=limit + 1,
             cursor_report=cursor_report,
         )
@@ -397,7 +430,20 @@ class ReportService:
         )
         if report is None:
             raise NotFoundError()
-        return _public_envelope_or_server_error(report)
+        public = _public_envelope_or_server_error(report)
+        if (
+            public.type is PhaseReportType.DIAGNOSTIC
+            and isinstance(public.payload, DiagnosticReportV1)
+            and public.payload.cost_estimate is None
+        ):
+            enriched_payload = await self._with_diagnostic_cost_estimate(
+                public.payload,
+            )
+            if enriched_payload.cost_estimate is not None:
+                public_data = public.model_dump(mode="python")
+                public_data["payload"] = enriched_payload
+                return PhaseReportEnvelope.model_validate(public_data)
+        return public
 
     async def _validate_artifacts(
         self,
@@ -437,6 +483,37 @@ class ReportService:
         ):
             raise ValidationAppError()
         return phase_session
+
+    async def _with_diagnostic_cost_estimate(
+        self,
+        report: DiagnosticReportV1,
+    ) -> DiagnosticReportV1:
+        """Attach live pricing evidence to diagnostic reports when available."""
+
+        if self._cost_estimate_service is None:
+            return report
+
+        requirements = _price_requirements_from_diagnostic_report(report)
+        if not requirements:
+            return report
+
+        try:
+            estimate = await self._cost_estimate_service.estimate_plan_cost(
+                requirements,
+            )
+        except Exception:
+            logger.info(
+                "diagnostic_report_cost_estimate_degraded",
+                extra={
+                    "diagnostic_session_id": report.diagnostic_session_id,
+                    "requirement_count": len(requirements),
+                },
+                exc_info=True,
+            )
+            return report
+        report_data = report.model_dump(mode="python")
+        report_data["cost_estimate"] = estimate
+        return DiagnosticReportV1.model_validate(report_data)
 
     async def _apply_report_session_updates(
         self,
@@ -531,6 +608,27 @@ def _validate_diagnostic_envelope(envelope: PhaseReportEnvelope) -> None:
         raise ValidationAppError()
 
 
+def _validate_plan_envelope(envelope: PhaseReportEnvelope) -> None:
+    """Apply plan report invariants before public exposure."""
+
+    if envelope.type is not PhaseReportType.PLAN:
+        raise ValidationAppError()
+    if envelope.schema_version != "plan_report.v1":
+        raise ValidationAppError()
+    if envelope.phase is not RepairSessionPhase.PLANNING:
+        raise ValidationAppError()
+    if not envelope.summary.strip():
+        raise ValidationAppError()
+    if not isinstance(envelope.payload, PlanReportV1):
+        raise ValidationAppError()
+    if envelope.payload.schema_version != "plan_report.v1":
+        raise ValidationAppError()
+    if [flag.model_dump(mode="json") for flag in envelope.payload.safety_concerns] != [
+        flag.model_dump(mode="json") for flag in envelope.safety_flags
+    ]:
+        raise ValidationAppError()
+
+
 def _payload_data(payload: DiagnosticReportV1 | dict[str, Any]) -> dict[str, Any]:
     """Return mutable diagnostic report payload data."""
 
@@ -550,6 +648,51 @@ def _payload_safety_flags(payload: dict[str, Any]) -> list[SafetyFlag | dict[str
     return safety_flags
 
 
+def _price_requirements_from_diagnostic_report(
+    report: DiagnosticReportV1,
+) -> list[PriceLookupRequirement]:
+    """Build simple price lookup requirements from diagnostic required items."""
+
+    requirements: list[PriceLookupRequirement] = []
+    for item in _unique_non_blank(report.repair_estimate.parts_required):
+        requirements.append(
+            _diagnostic_price_requirement(CostItemType.PART, item),
+        )
+    for item in _unique_non_blank(report.repair_estimate.tools_required):
+        requirements.append(
+            _diagnostic_price_requirement(CostItemType.TOOL, item),
+        )
+    return requirements
+
+
+def _diagnostic_price_requirement(
+    item_type: CostItemType,
+    item: str,
+) -> PriceLookupRequirement:
+    """Create a conservative lookup request from a freeform required item."""
+
+    return PriceLookupRequirement(
+        item_type=item_type,
+        display_name=item,
+        quantity=1,
+        generic_equivalent_acceptable=item_type is CostItemType.TOOL,
+        exact_match_required=item_type is CostItemType.PART,
+        planning_confidence=Confidence.MEDIUM,
+        search_query=item,
+    )
+
+
+def _unique_non_blank(items: list[str]) -> list[str]:
+    """Deduplicate freeform report items while preserving order."""
+
+    unique: dict[str, str] = {}
+    for item in items:
+        normalized = " ".join(item.split())
+        if normalized:
+            unique.setdefault(normalized.casefold(), normalized)
+    return list(unique.values())
+
+
 def _public_envelope_or_server_error(
     report: PhaseReportModel,
 ) -> PhaseReportEnvelope:
@@ -557,13 +700,18 @@ def _public_envelope_or_server_error(
 
     try:
         public = phase_report_envelope_from_model(report)
-        _validate_diagnostic_envelope(public)
-        SafetyService().validate_report_safety_flags(
-            payload_flags=public.payload.safety_flags
-            if isinstance(public.payload, DiagnosticReportV1)
-            else [],
-            envelope_flags=public.safety_flags,
-        )
+        if public.type is PhaseReportType.DIAGNOSTIC:
+            _validate_diagnostic_envelope(public)
+            SafetyService().validate_report_safety_flags(
+                payload_flags=public.payload.safety_flags
+                if isinstance(public.payload, DiagnosticReportV1)
+                else [],
+                envelope_flags=public.safety_flags,
+            )
+        elif public.type is PhaseReportType.PLAN:
+            _validate_plan_envelope(public)
+        else:
+            raise ValidationAppError()
     except (PydanticValidationError, ValueError, AppError) as exc:
         raise ServerError() from exc
     return public

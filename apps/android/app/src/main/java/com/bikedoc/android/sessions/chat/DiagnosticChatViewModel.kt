@@ -233,15 +233,15 @@ class DiagnosticChatViewModel
 
         private fun applyLoadedSession(session: RepairSession) {
             lastEventId = session.latestEventId
-            val diagnosticReportId = session.latestReports.diagnosticReportId
+            val latestReportId = session.latestDisplayReportId()
             _uiState.value =
                 _uiState.value.copy(
                     session = session,
-                    latestReportId = diagnosticReportId,
-                    phaseTransitioned = diagnosticReportId != null,
+                    latestReportId = latestReportId,
+                    phaseTransitioned = latestReportId != null && session.phase != PLANNING,
                     inputRequest =
                         if (
-                            diagnosticReportId == null &&
+                            latestReportId == null &&
                             (session.status == AWAITING_USER || session.status == AWAITING_DECISION)
                         ) {
                             session.currentInputRequest
@@ -349,7 +349,21 @@ class DiagnosticChatViewModel
         }
 
         private fun applyPhaseReportCreated(event: SseEvent.PhaseReportCreated) {
-            _uiState.value = _uiState.value.copy(latestReportId = event.reportId)
+            val isPlanReport = event.reportType == PLAN_REPORT_TYPE || event.schemaVersion == PLAN_SCHEMA_VERSION
+            _uiState.value =
+                _uiState.value.copy(
+                    latestReportId =
+                        if (isPlanReport || _uiState.value.latestReportId == null) {
+                            event.reportId
+                        } else {
+                            _uiState.value.latestReportId
+                        },
+                    phaseTransitioned = _uiState.value.phaseTransitioned || isPlanReport,
+                    inputRequest = if (isPlanReport) null else _uiState.value.inputRequest,
+                )
+            if (isPlanReport) {
+                eventJob?.cancel()
+            }
         }
 
         private fun applyTurnCompleted(event: SseEvent.TurnCompleted) {
@@ -362,6 +376,14 @@ class DiagnosticChatViewModel
                     isTurnInFlight = false,
                     session = event.session.copy(currentInputRequest = completedInputRequest),
                     inputRequest = completedInputRequest,
+                    latestReportId = event.session.latestDisplayReportId() ?: _uiState.value.latestReportId,
+                    phaseTransitioned =
+                        _uiState.value.phaseTransitioned ||
+                            event.session.latestReports.planReportId != null ||
+                            (
+                                event.session.latestDisplayReportId() != null &&
+                                    event.session.phase != PLANNING
+                            ),
                 )
         }
 
@@ -376,6 +398,20 @@ class DiagnosticChatViewModel
         }
 
         private fun applyPhaseTransitioned(event: SseEvent.PhaseTransitioned) {
+            val shouldWaitForPlanReport =
+                event.toPhase == PLANNING &&
+                    _uiState.value.session?.latestReports?.planReportId == null
+            if (shouldWaitForPlanReport) {
+                _uiState.value =
+                    _uiState.value.copy(
+                        isTurnInFlight = false,
+                        isStreaming = false,
+                        streamingBubbleText = "",
+                        inputRequest = null,
+                        session = _uiState.value.session?.copy(phase = event.toPhase, status = event.status),
+                    )
+                return
+            }
             appendMessage(
                 ChatMessage(
                     id = event.id ?: "phase-transitioned-${_uiState.value.messages.size + 1}",
@@ -634,6 +670,9 @@ class DiagnosticChatViewModel
             private const val AWAITING_USER = "awaiting_user"
             private const val AWAITING_DECISION = "awaiting_decision"
             private const val RUNNING = "running"
+            private const val PLANNING = "planning"
+            private const val PLAN_REPORT_TYPE = "plan"
+            private const val PLAN_SCHEMA_VERSION = "plan_report.v1"
             private const val REPLAY_FROM_BEGINNING = "0"
             private const val INITIAL_RECONNECT_DELAY_MS = 1_000L
             private const val MAX_RECONNECT_DELAY_MS = 30_000L
@@ -659,6 +698,10 @@ private fun DiagnosticChatUiState.activeInputRequestId(): String? {
 }
 
 private fun RepairSession.isAwaitingUserInput(): Boolean = status == "awaiting_user" || status == "awaiting_decision"
+
+private fun RepairSession.latestDisplayReportId(): String? {
+    return latestReports.planReportId ?: latestReports.diagnosticReportId
+}
 
 private fun InputRequest?.isPhotoRequest(): Boolean =
     this?.type.equals("photo", ignoreCase = true) ||

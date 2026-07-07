@@ -1,11 +1,18 @@
 """Phase report read route boundary."""
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bike_doc_api.api.deps import get_current_user, get_db_session
+from bike_doc_api.api.deps import (
+    get_cost_estimate_service,
+    get_current_user,
+    get_db_session,
+    get_price_lookup_provider,
+)
+from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
@@ -18,14 +25,17 @@ from bike_doc_api.schemas.report import PhaseReportEnvelope, PhaseReportList
 from bike_doc_api.services.reports import (
     DEFAULT_REPORT_LIMIT,
     MAX_REPORT_LIMIT,
+    CostEstimateServiceProtocol,
     ReportService,
 )
 
 router = APIRouter(tags=["Reports"])
+logger = logging.getLogger(__name__)
 
 
 def get_report_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ReportService:
     """Build the report service for this request."""
 
@@ -35,9 +45,22 @@ def get_report_service(
         PhaseReportRepository(session),
         RepairSessionEventRepository(session),
         ArtifactRepository(session),
+        cost_estimate_service=_optional_cost_estimate_service(settings),
         commit=session.commit,
         rollback=session.rollback,
     )
+
+
+def _optional_cost_estimate_service(
+    settings: Settings,
+) -> CostEstimateServiceProtocol | None:
+    """Return cost lookup wiring when configured without blocking report reads."""
+
+    try:
+        return get_cost_estimate_service(get_price_lookup_provider(settings))
+    except Exception:
+        logger.info("report_cost_estimate_dependency_unavailable", exc_info=True)
+        return None
 
 
 @router.get(

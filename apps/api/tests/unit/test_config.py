@@ -9,6 +9,7 @@ from bike_doc_api.core.config import (
     Settings,
     validate_artifact_storage_runtime_configuration,
     validate_diagnostic_runtime_configuration,
+    validate_price_lookup_runtime_configuration,
 )
 
 
@@ -41,6 +42,12 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE", "0.7")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS", "1024")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS", "12.5")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_PROVIDER", "gemini_grounded")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_LLM_PROVIDER", "vertex_ai")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_MODEL", "gemini-price-test")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_TEMPERATURE", "0.3")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_MAX_OUTPUT_TOKENS", "777")
+    monkeypatch.setenv("BIKE_DOC_API_PRICE_LOOKUP_TIMEOUT_SECONDS", "9.5")
     monkeypatch.setenv("BIKE_DOC_API_UNIMPLEMENTED_SETTING", "ignored")
 
     settings = Settings()
@@ -68,6 +75,12 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.diagnostic_agent_temperature == 0.7
     assert settings.diagnostic_agent_max_output_tokens == 1024
     assert settings.diagnostic_agent_timeout_seconds == 12.5
+    assert settings.price_lookup_provider == "gemini_grounded"
+    assert settings.price_lookup_llm_provider == "vertex_ai"
+    assert settings.price_lookup_model == "gemini-price-test"
+    assert settings.price_lookup_temperature == 0.3
+    assert settings.price_lookup_max_output_tokens == 777
+    assert settings.price_lookup_timeout_seconds == 9.5
 
 
 def test_empty_optional_log_settings_are_unset(
@@ -262,6 +275,12 @@ def test_gcs_artifact_runtime_validation_accepts_initializable_client(
         ("diagnostic_agent_temperature", 2.1),
         ("diagnostic_agent_max_output_tokens", 0),
         ("diagnostic_agent_timeout_seconds", 0),
+        ("price_lookup_provider", "local"),
+        ("price_lookup_llm_provider", "local"),
+        ("price_lookup_temperature", -0.1),
+        ("price_lookup_temperature", 2.1),
+        ("price_lookup_max_output_tokens", 0),
+        ("price_lookup_timeout_seconds", 0),
     ],
 )
 def test_invalid_diagnostic_runtime_settings_are_rejected(
@@ -331,6 +350,62 @@ def test_runtime_validation_is_bypassed_in_test_environment() -> None:
         Settings(environment="test", diagnostic_llm_provider="vertex_ai"),
         environ={},
     )
+    validate_price_lookup_runtime_configuration(
+        Settings(
+            environment="test",
+            price_lookup_provider="gemini_grounded",
+            price_lookup_llm_provider="vertex_ai",
+        ),
+        environ={},
+    )
+
+
+def test_price_lookup_runtime_validation_ignores_unavailable_provider() -> None:
+    validate_price_lookup_runtime_configuration(
+        Settings(environment="local", price_lookup_provider="unavailable"),
+        environ={},
+    )
+
+
+def test_google_ai_price_lookup_validation_requires_api_key() -> None:
+    settings = Settings(
+        environment="local",
+        price_lookup_provider="gemini_grounded",
+        price_lookup_llm_provider="google_ai",
+    )
+
+    with pytest.raises(ValueError, match="price lookup"):
+        validate_price_lookup_runtime_configuration(settings, environ={})
+
+
+def test_google_ai_price_lookup_validation_accepts_api_key() -> None:
+    settings = Settings(
+        environment="local",
+        price_lookup_provider="gemini_grounded",
+        price_lookup_llm_provider="google_ai",
+    )
+
+    validate_price_lookup_runtime_configuration(
+        settings,
+        environ={"GEMINI_API_KEY": "test-key"},
+    )
+
+
+def test_vertex_price_lookup_validation_requires_vertex_environment() -> None:
+    settings = Settings(
+        environment="local",
+        price_lookup_provider="gemini_grounded",
+        price_lookup_llm_provider="vertex_ai",
+    )
+
+    with pytest.raises(ValueError, match="GOOGLE_CLOUD_LOCATION"):
+        validate_price_lookup_runtime_configuration(
+            settings,
+            environ={
+                "GOOGLE_GENAI_USE_VERTEXAI": "true",
+                "GOOGLE_CLOUD_PROJECT": "bike-doc",
+            },
+        )
 
 
 def test_env_example_documents_diagnostic_runtime_settings() -> None:
@@ -348,6 +423,12 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS",
+        "BIKE_DOC_API_PRICE_LOOKUP_PROVIDER",
+        "BIKE_DOC_API_PRICE_LOOKUP_LLM_PROVIDER",
+        "BIKE_DOC_API_PRICE_LOOKUP_MODEL",
+        "BIKE_DOC_API_PRICE_LOOKUP_TEMPERATURE",
+        "BIKE_DOC_API_PRICE_LOOKUP_MAX_OUTPUT_TOKENS",
+        "BIKE_DOC_API_PRICE_LOOKUP_TIMEOUT_SECONDS",
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
         "GOOGLE_GENAI_USE_VERTEXAI",
