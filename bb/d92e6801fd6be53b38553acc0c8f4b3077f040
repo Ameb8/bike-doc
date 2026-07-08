@@ -1,0 +1,54 @@
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthScreen.kt
+  s_112cec7fb19673::t_495ecc2686abba 3,13,27,39,47,51-54,115,158-164,276-279
+  s_112cec7fb19673::t_6e2c41030a560d 63,98
+apps/android/app/build.gradle.kts
+  s_112cec7fb19673::t_83d4f939146c02 64-66
+apps/android/app/src/test/java/com/bikedoc/android/auth/AuthViewModelTest.kt
+  s_112cec7fb19673::t_738f26b57ba1e8 104-149,216,220,244-248,255-256
+apps/android/app/src/main/java/com/bikedoc/android/auth/FirebaseAuthProvider.kt
+  s_112cec7fb19673::t_69cbd589a8b0ec 61-65,88-92,146-156
+  s_112cec7fb19673::t_b9839e6a1a4120 3-12,20,66-67,93,95,102-104,106-145,179-190
+  s_112cec7fb19673::t_a08e3a1ec56d8b 96-101,105
+  s_112cec7fb19673::t_4c28109c6cbd6a 87,94
+apps/android/app/src/main/res/values/strings.xml
+  s_112cec7fb19673::t_029a601d250a01 13,22-25
+  s_112cec7fb19673::t_66030cdde906d5 4
+apps/android/app/src/test/java/com/bikedoc/android/api/AuthInterceptorTest.kt
+  s_112cec7fb19673::t_e90099696dae40 59-61
+  s_112cec7fb19673::t_0f2baf484681b5 62
+  s_112cec7fb19673::t_67ae52353922f6 6
+apps/android/app/src/test/java/com/bikedoc/android/navigation/AppNavViewModelTest.kt
+  s_112cec7fb19673::t_4c4654af6e8f64 6
+  s_112cec7fb19673::t_be8a90ebbf2a08 40-42
+apps/android/gradle/libs.versions.toml
+  s_112cec7fb19673::t_de901917b2b4ef 10-11,34-36
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthViewModel.kt
+  s_112cec7fb19673::t_21ace599eff183 136-138
+  s_112cec7fb19673::t_dc9e674b499cc0 46-49,104-106,150-181,230-237
+apps/android/app/src/test/java/com/bikedoc/android/home/HomeViewModelTest.kt
+  s_112cec7fb19673::t_b969ef00be4ef3 9
+  s_112cec7fb19673::t_8773647037c636 82-84
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthProvider.kt
+  s_112cec7fb19673::t_988e1c8787c117 13-16,23-24,30-31,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "bbd92e6801fd6be53b38553acc0c8f4b3077f040",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_112cec7fb19673": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f40aa-3715-79f3-8d25-c33a94840aa4",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
