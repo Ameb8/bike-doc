@@ -148,6 +148,78 @@ class AuthViewModelTest {
         }
 
     @Test
+    fun `Google link required from sign in switches to sign in and exposes linking state`() =
+        runTest {
+            val pendingCredential = FakePendingAuthCredential
+            val authProvider =
+                FakeAuthProvider(
+                    googleSignInResult =
+                        AuthResult.LinkRequired(
+                            email = "rider@example.com",
+                            pendingCredential = pendingCredential,
+                        ),
+                )
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+
+            assertEquals(AuthMode.SignIn, viewModel.uiState.value.mode)
+            assertEquals("rider@example.com", viewModel.uiState.value.email)
+            assertEquals(true, viewModel.uiState.value.isLinkingGoogle)
+            assertEquals(AuthMessage.GoogleLinkRequired, viewModel.uiState.value.message)
+            assertEquals(null, viewModel.uiState.value.activeOperation)
+            assertTrue(authProvider.googleSignInCalled)
+        }
+
+    @Test
+    fun `Google link required from create account switches to sign in and prefills email`() =
+        runTest {
+            val authProvider =
+                FakeAuthProvider(
+                    googleSignInResult =
+                        AuthResult.LinkRequired(
+                            email = "rider@example.com",
+                            pendingCredential = FakePendingAuthCredential,
+                        ),
+                )
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.onModeSelected(AuthMode.CreateAccount)
+            viewModel.onEmailChanged("typed@example.com")
+            viewModel.onPasswordChanged("secret1")
+            viewModel.onConfirmPasswordChanged("secret1")
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+
+            assertEquals(AuthMode.SignIn, viewModel.uiState.value.mode)
+            assertEquals("rider@example.com", viewModel.uiState.value.email)
+            assertEquals("", viewModel.uiState.value.confirmPassword)
+            assertEquals(true, viewModel.uiState.value.isLinkingGoogle)
+            assertEquals(AuthMessage.GoogleLinkRequired, viewModel.uiState.value.message)
+        }
+
+    @Test
+    fun `Google link required without email keeps typed email in linking state`() =
+        runTest {
+            val authProvider =
+                FakeAuthProvider(
+                    googleSignInResult =
+                        AuthResult.LinkRequired(
+                            email = null,
+                            pendingCredential = FakePendingAuthCredential,
+                        ),
+                )
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.onEmailChanged("typed@example.com")
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+
+            assertEquals(AuthMode.SignIn, viewModel.uiState.value.mode)
+            assertEquals("typed@example.com", viewModel.uiState.value.email)
+            assertEquals(true, viewModel.uiState.value.isLinkingGoogle)
+            assertEquals(AuthMessage.GoogleLinkRequired, viewModel.uiState.value.message)
+        }
+
+    @Test
     fun `sign in maps auth failure to message reason`() =
         runTest {
             val authProvider =
@@ -254,4 +326,6 @@ class AuthViewModelTest {
     }
 
     private data object FakeGoogleSignInHost : GoogleSignInHost
+
+    private data object FakePendingAuthCredential : PendingAuthCredential
 }

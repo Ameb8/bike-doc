@@ -139,6 +139,41 @@ private fun AuthFormFields(
             onValueChange = onConfirmPasswordChanged,
         )
     }
+    if (state.isLinkingGoogle) {
+        Text(
+            text = googleLinkRequiredText(state),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    AuthSubmitButton(
+        state = state,
+        onSubmit = onSubmit,
+    )
+    OutlinedButton(
+        modifier = Modifier.fillMaxWidth(),
+        enabled = state.activeOperation == null,
+        onClick = onContinueWithGoogle,
+    ) {
+        Text(text = stringResource(R.string.auth_continue_with_google))
+    }
+    AuthMessageText(message = state.message)
+}
+
+@Composable
+private fun googleLinkRequiredText(state: AuthUiState): String =
+    state.linkingGoogleEmail
+        ?.takeUnless(String::isBlank)
+        ?.let { email ->
+            stringResource(R.string.auth_google_link_required_with_email, email)
+        }
+        ?: stringResource(R.string.auth_google_link_required)
+
+@Composable
+private fun AuthSubmitButton(
+    state: AuthUiState,
+    onSubmit: () -> Unit,
+) {
     Button(
         modifier = Modifier.padding(top = 8.dp),
         enabled = state.activeOperation == null,
@@ -155,14 +190,14 @@ private fun AuthFormFields(
                 ),
         )
     }
-    OutlinedButton(
-        modifier = Modifier.fillMaxWidth(),
-        enabled = state.activeOperation == null,
-        onClick = onContinueWithGoogle,
-    ) {
-        Text(text = stringResource(R.string.auth_continue_with_google))
-    }
-    state.message?.let {
+}
+
+@Composable
+private fun AuthMessageText(message: AuthMessage?) {
+    message?.let {
+        if (it == AuthMessage.GoogleLinkRequired) {
+            return@let
+        }
         Text(
             text = stringResource(it.stringRes()),
             style = MaterialTheme.typography.bodyMedium,
@@ -277,4 +312,5 @@ private fun AuthMessage.stringRes(): Int =
         AuthMessage.GoogleProviderUnavailable -> R.string.auth_error_google_provider_unavailable
         AuthMessage.MissingGoogleIdToken -> R.string.auth_error_missing_google_id_token
         AuthMessage.GoogleSignInFailed -> R.string.auth_error_google_sign_in_failed
+        AuthMessage.GoogleLinkRequired -> R.string.auth_google_link_required
     }

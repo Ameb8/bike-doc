@@ -19,6 +19,8 @@ data class AuthUiState(
     val password: String = "",
     val confirmPassword: String = "",
     val activeOperation: AuthOperation? = null,
+    val isLinkingGoogle: Boolean = false,
+    val linkingGoogleEmail: String? = null,
     val message: AuthMessage? = null,
     val validationMessages: Map<AuthField, AuthMessage> = emptyMap(),
 )
@@ -47,6 +49,7 @@ enum class AuthMessage {
     GoogleProviderUnavailable,
     MissingGoogleIdToken,
     GoogleSignInFailed,
+    GoogleLinkRequired,
 }
 
 @HiltViewModel
@@ -61,10 +64,17 @@ class AuthViewModel
         private val eventChannel = Channel<UiEvent>(Channel.BUFFERED)
         val events = eventChannel.receiveAsFlow()
 
+        private var pendingGoogleCredential: PendingAuthCredential? = null
+
         fun onModeSelected(mode: AuthMode) {
+            if (mode == AuthMode.CreateAccount) {
+                clearPendingGoogleLink()
+            }
             _uiState.value =
                 _uiState.value.copy(
                     mode = mode,
+                    isLinkingGoogle = isGoogleLinkingActive(),
+                    linkingGoogleEmail = pendingGoogleCredential?.let { _uiState.value.linkingGoogleEmail },
                     message = null,
                     validationMessages = emptyMap(),
                 )
@@ -143,6 +153,9 @@ class AuthViewModel
                                 message = mapError(_uiState.value.mode, result.reason),
                             )
                     }
+                    is AuthResult.LinkRequired -> {
+                        enterGoogleLinkingMode(result)
+                    }
                 }
             }
         }
@@ -157,8 +170,11 @@ class AuthViewModel
                 _uiState.value =
                     currentState.copy(
                         activeOperation = AuthOperation.Google,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
                         message = null,
                     )
+                clearPendingGoogleCredentialOnly()
 
                 when (val result = authProvider.continueWithGoogle(host)) {
                     AuthResult.Success -> {
@@ -175,11 +191,19 @@ class AuthViewModel
                                 message = mapGoogleError(result.reason),
                             )
                     }
+                    is AuthResult.LinkRequired -> {
+                        enterGoogleLinkingMode(result)
+                    }
                 }
             }
         }
 
         fun isSignedIn(): Boolean = authProvider.isSignedIn()
+
+        override fun onCleared() {
+            clearPendingGoogleCredentialOnly()
+            super.onCleared()
+        }
 
         private suspend fun submitCredentials(): AuthResult =
             if (_uiState.value.mode == AuthMode.SignIn) {
@@ -236,4 +260,34 @@ class AuthViewModel
                 AuthFailureReason.FirebaseSignInFailed -> AuthMessage.GoogleSignInFailed
                 else -> AuthMessage.GoogleSignInFailed
             }
+
+        private fun enterGoogleLinkingMode(result: AuthResult.LinkRequired) {
+            pendingGoogleCredential = result.pendingCredential
+            _uiState.value =
+                _uiState.value.copy(
+                    mode = AuthMode.SignIn,
+                    email = result.email ?: _uiState.value.email,
+                    confirmPassword = "",
+                    activeOperation = null,
+                    isLinkingGoogle = true,
+                    linkingGoogleEmail = result.email,
+                    message = AuthMessage.GoogleLinkRequired,
+                    validationMessages = emptyMap(),
+                )
+        }
+
+        private fun clearPendingGoogleLink() {
+            clearPendingGoogleCredentialOnly()
+            _uiState.value =
+                _uiState.value.copy(
+                    isLinkingGoogle = false,
+                    linkingGoogleEmail = null,
+                )
+        }
+
+        private fun clearPendingGoogleCredentialOnly() {
+            pendingGoogleCredential = null
+        }
+
+        private fun isGoogleLinkingActive(): Boolean = pendingGoogleCredential != null
     }

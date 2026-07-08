@@ -23,6 +23,8 @@
     <string name="auth_error_google_provider_unavailable">Google sign in is unavailable right now. Please try again.</string>
     <string name="auth_error_missing_google_id_token">Google did not return a usable sign-in token. Please try again.</string>
     <string name="auth_error_google_sign_in_failed">Google sign in failed. Please try again.</string>
+    <string name="auth_google_link_required">An account already exists for this email. Sign in with your password once to link Google to this Bike Doc account.</string>
+    <string name="auth_google_link_required_with_email">An account already exists for %1$s. Sign in with your password once to link Google to this Bike Doc account.</string>
     <string name="home_title">Bike Doc</string>
     <string name="home_menu">Menu</string>
     <string name="home_greeting">Hi, %1$s</string>

@@ -22,12 +22,19 @@ sealed interface AuthResult {
 
     data object Cancelled : AuthResult
 
+    data class LinkRequired(
+        val email: String?,
+        val pendingCredential: PendingAuthCredential,
+    ) : AuthResult
+
     data class Failure(
         val reason: AuthFailureReason,
     ) : AuthResult
 }
 
 interface GoogleSignInHost
+
+interface PendingAuthCredential
 
 interface AuthProvider {
     suspend fun getToken(forceRefresh: Boolean = false): String
