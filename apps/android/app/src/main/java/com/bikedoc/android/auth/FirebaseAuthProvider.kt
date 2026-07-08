@@ -1,5 +1,15 @@
 package com.bikedoc.android.auth
 
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
+import com.bikedoc.android.R
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
 import com.google.firebase.FirebaseException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
@@ -7,6 +17,7 @@ import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthInvalidUserException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseAuthWeakPasswordException
+import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -47,6 +58,13 @@ class FirebaseAuthProvider
                 AuthResult.Failure(exception.toAuthFailureReasonForCreateAccount())
             }
 
+        override suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult =
+            when (val result = requestGoogleIdTokenForHost(host)) {
+                GoogleIdTokenRequestResult.Cancelled -> AuthResult.Cancelled
+                is GoogleIdTokenRequestResult.Failure -> AuthResult.Failure(result.reason)
+                is GoogleIdTokenRequestResult.Success -> signInToFirebaseWithGoogle(result.idToken)
+            }
+
         override fun currentUserId(): String? = firebaseAuthOrNull()?.currentUser?.uid
 
         override fun isSignedIn(): Boolean = firebaseAuthOrNull()?.currentUser != null
@@ -64,6 +82,77 @@ class FirebaseAuthProvider
                 FirebaseAuth.getInstance()
             } catch (_: IllegalStateException) {
                 null
+            }
+
+        private suspend fun requestGoogleIdTokenForHost(host: GoogleSignInHost): GoogleIdTokenRequestResult =
+            (host as? AndroidGoogleSignInHost)
+                ?.let { requestGoogleIdToken(it) }
+                ?: GoogleIdTokenRequestResult.Failure(
+                    AuthFailureReason.GoogleProviderUnavailable,
+                )
+
+        private suspend fun requestGoogleIdToken(host: AndroidGoogleSignInHost): GoogleIdTokenRequestResult {
+            val context = host.context
+            val webClientId = context.getString(R.string.google_web_client_id)
+            if (webClientId.isBlank()) {
+                return GoogleIdTokenRequestResult.Failure(
+                    AuthFailureReason.GoogleProviderUnavailable,
+                )
+            }
+            val googleIdOption =
+                GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(webClientId)
+                    .build()
+            val request =
+                GetCredentialRequest.Builder()
+                    .addCredentialOption(googleIdOption)
+                    .build()
+
+            return try {
+                val response =
+                    CredentialManager
+                        .create(context)
+                        .getCredential(
+                            context = context,
+                            request = request,
+                        )
+                val credential = response.credential
+                if (
+                    credential is CustomCredential &&
+                    credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
+                ) {
+                    GoogleIdTokenCredential
+                        .createFrom(credential.data)
+                        .idToken
+                        .takeUnless(String::isBlank)
+                        ?.let(GoogleIdTokenRequestResult::Success)
+                        ?: GoogleIdTokenRequestResult.Failure(
+                            AuthFailureReason.MissingGoogleIdToken,
+                        )
+                } else {
+                    GoogleIdTokenRequestResult.Failure(AuthFailureReason.MissingGoogleIdToken)
+                }
+            } catch (_: GetCredentialCancellationException) {
+                GoogleIdTokenRequestResult.Cancelled
+            } catch (_: NoCredentialException) {
+                GoogleIdTokenRequestResult.Failure(AuthFailureReason.NoGoogleCredential)
+            } catch (_: GoogleIdTokenParsingException) {
+                GoogleIdTokenRequestResult.Failure(AuthFailureReason.MissingGoogleIdToken)
+            } catch (_: GetCredentialException) {
+                GoogleIdTokenRequestResult.Failure(AuthFailureReason.GoogleProviderUnavailable)
+            }
+        }
+
+        private suspend fun signInToFirebaseWithGoogle(idToken: String): AuthResult =
+            try {
+                val firebaseCredential = GoogleAuthProvider.getCredential(idToken, null)
+                FirebaseAuth.getInstance().signInWithCredential(firebaseCredential).await()
+                AuthResult.Success
+            } catch (_: FirebaseException) {
+                AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)
+            } catch (_: IllegalStateException) {
+                AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)
             }
 
         private fun Exception.toAuthFailureReasonForSignIn(): AuthFailureReason =
@@ -87,4 +176,16 @@ class FirebaseAuthProvider
             }
 
         private fun Exception.firebaseErrorCode(): String? = (this as? FirebaseAuthException)?.errorCode
+
+        private sealed interface GoogleIdTokenRequestResult {
+            data class Success(
+                val idToken: String,
+            ) : GoogleIdTokenRequestResult
+
+            data object Cancelled : GoogleIdTokenRequestResult
+
+            data class Failure(
+                val reason: AuthFailureReason,
+            ) : GoogleIdTokenRequestResult
+        }
     }

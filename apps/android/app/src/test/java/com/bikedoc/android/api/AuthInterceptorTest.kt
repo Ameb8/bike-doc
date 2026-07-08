@@ -3,6 +3,7 @@ package com.bikedoc.android.api
 import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
+import com.bikedoc.android.auth.GoogleSignInHost
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import okhttp3.Call
 import okhttp3.Connection
@@ -54,6 +55,10 @@ class AuthInterceptorTest {
             email: String,
             password: String,
         ): AuthResult = AuthResult.Failure(AuthFailureReason.Unknown)
+
+        override suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
 
         override fun currentUserId(): String? = "user-1"
 

@@ -6,6 +6,7 @@ import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
+import com.bikedoc.android.auth.GoogleSignInHost
 import com.bikedoc.android.navigation.AppRoute
 import com.bikedoc.android.navigation.UiEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -77,6 +78,10 @@ class HomeViewModelTest {
             email: String,
             password: String,
         ): AuthResult = AuthResult.Failure(AuthFailureReason.Unknown)
+
+        override suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
 
         override fun currentUserId(): String? = if (signedIn) "user-1" else null
 

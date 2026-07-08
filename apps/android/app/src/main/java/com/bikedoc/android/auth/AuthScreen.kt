@@ -1,5 +1,6 @@
 package com.bikedoc.android.auth
 
+import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -22,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -33,6 +36,7 @@ import com.bikedoc.android.R
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     AuthContent(
         state = uiState,
         onModeSelected = viewModel::onModeSelected,
@@ -40,8 +44,13 @@ fun AuthScreen(viewModel: AuthViewModel) {
         onPasswordChanged = viewModel::onPasswordChanged,
         onConfirmPasswordChanged = viewModel::onConfirmPasswordChanged,
         onSubmit = viewModel::submit,
+        onContinueWithGoogle = { viewModel.continueWithGoogle(AndroidGoogleSignInHost(context)) },
     )
 }
+
+data class AndroidGoogleSignInHost(
+    val context: Context,
+) : GoogleSignInHost
 
 @Composable
 private fun AuthContent(
@@ -51,6 +60,7 @@ private fun AuthContent(
     onPasswordChanged: (String) -> Unit,
     onConfirmPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
+    onContinueWithGoogle: () -> Unit,
 ) {
     val isPasswordVisible = remember { mutableStateOf(false) }
     val isConfirmPasswordVisible = remember { mutableStateOf(false) }
@@ -85,6 +95,7 @@ private fun AuthContent(
                     isConfirmPasswordVisible.value = !isConfirmPasswordVisible.value
                 },
                 onSubmit = onSubmit,
+                onContinueWithGoogle = onContinueWithGoogle,
             )
         }
     }
@@ -101,6 +112,7 @@ private fun AuthFormFields(
     onTogglePasswordVisibility: () -> Unit,
     onToggleConfirmPasswordVisibility: () -> Unit,
     onSubmit: () -> Unit,
+    onContinueWithGoogle: () -> Unit,
 ) {
     AuthEmailField(
         email = state.email,
@@ -142,6 +154,13 @@ private fun AuthFormFields(
                     },
                 ),
         )
+    }
+    OutlinedButton(
+        modifier = Modifier.fillMaxWidth(),
+        enabled = state.activeOperation == null,
+        onClick = onContinueWithGoogle,
+    ) {
+        Text(text = stringResource(R.string.auth_continue_with_google))
     }
     state.message?.let {
         Text(
@@ -254,4 +273,8 @@ private fun AuthMessage.stringRes(): Int =
         AuthMessage.SignInFailed -> R.string.auth_error_sign_in_failed
         AuthMessage.EmailAlreadyInUse -> R.string.auth_error_email_already_in_use
         AuthMessage.CreateAccountFailed -> R.string.auth_error_create_account_failed
+        AuthMessage.NoGoogleCredential -> R.string.auth_error_no_google_credential
+        AuthMessage.GoogleProviderUnavailable -> R.string.auth_error_google_provider_unavailable
+        AuthMessage.MissingGoogleIdToken -> R.string.auth_error_missing_google_id_token
+        AuthMessage.GoogleSignInFailed -> R.string.auth_error_google_sign_in_failed
     }

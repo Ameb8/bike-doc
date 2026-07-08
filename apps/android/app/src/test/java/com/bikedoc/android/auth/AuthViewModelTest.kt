@@ -101,6 +101,53 @@ class AuthViewModelTest {
         }
 
     @Test
+    fun `successful Google sign in navigates to home`() =
+        runTest {
+            val authProvider = FakeAuthProvider(googleSignInResult = AuthResult.Success)
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.events.test {
+                viewModel.continueWithGoogle(FakeGoogleSignInHost)
+
+                assertEquals(
+                    UiEvent.NavigateTo(AppRoute.Home.route),
+                    awaitItem(),
+                )
+                cancelAndIgnoreRemainingEvents()
+            }
+            assertTrue(authProvider.googleSignInCalled)
+        }
+
+    @Test
+    fun `Google picker cancellation is silent`() =
+        runTest {
+            val authProvider = FakeAuthProvider(googleSignInResult = AuthResult.Cancelled)
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+            runCurrent()
+
+            assertEquals(null, viewModel.uiState.value.activeOperation)
+            assertEquals(null, viewModel.uiState.value.message)
+            assertTrue(authProvider.googleSignInCalled)
+        }
+
+    @Test
+    fun `Google sign in maps provider failure to message reason`() =
+        runTest {
+            val authProvider =
+                FakeAuthProvider(
+                    googleSignInResult = AuthResult.Failure(AuthFailureReason.NoGoogleCredential),
+                )
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+
+            assertEquals(AuthMessage.NoGoogleCredential, viewModel.uiState.value.message)
+            assertTrue(authProvider.googleSignInCalled)
+        }
+
+    @Test
     fun `sign in maps auth failure to message reason`() =
         runTest {
             val authProvider =
@@ -166,9 +213,11 @@ class AuthViewModelTest {
     private class FakeAuthProvider(
         private val signInResult: Any = AuthResult.Success,
         private val createAccountResult: AuthResult = AuthResult.Success,
+        private val googleSignInResult: AuthResult = AuthResult.Success,
     ) : AuthProvider {
         var signInCalled = false
         var createAccountCalled = false
+        var googleSignInCalled = false
 
         override suspend fun getToken(forceRefresh: Boolean): String = "token"
 
@@ -192,10 +241,17 @@ class AuthViewModelTest {
             return createAccountResult
         }
 
+        override suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult {
+            googleSignInCalled = true
+            return googleSignInResult
+        }
+
         override fun currentUserId(): String? = null
 
         override fun isSignedIn(): Boolean = false
 
         override fun signOut() = Unit
     }
+
+    private data object FakeGoogleSignInHost : GoogleSignInHost
 }

@@ -43,6 +43,10 @@ enum class AuthMessage {
     SignInFailed,
     EmailAlreadyInUse,
     CreateAccountFailed,
+    NoGoogleCredential,
+    GoogleProviderUnavailable,
+    MissingGoogleIdToken,
+    GoogleSignInFailed,
 }
 
 @HiltViewModel
@@ -97,6 +101,9 @@ class AuthViewModel
         fun submit() {
             viewModelScope.launch {
                 val currentState = _uiState.value
+                if (currentState.activeOperation != null) {
+                    return@launch
+                }
                 val validationErrors =
                     if (currentState.mode == AuthMode.CreateAccount) {
                         validateCreateAccount(currentState)
@@ -126,11 +133,46 @@ class AuthViewModel
                         _uiState.value = _uiState.value.copy(activeOperation = null)
                         eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
                     }
+                    AuthResult.Cancelled -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
+                    }
                     is AuthResult.Failure -> {
                         _uiState.value =
                             _uiState.value.copy(
                                 activeOperation = null,
                                 message = mapError(_uiState.value.mode, result.reason),
+                            )
+                    }
+                }
+            }
+        }
+
+        fun continueWithGoogle(host: GoogleSignInHost) {
+            viewModelScope.launch {
+                val currentState = _uiState.value
+                if (currentState.activeOperation != null) {
+                    return@launch
+                }
+
+                _uiState.value =
+                    currentState.copy(
+                        activeOperation = AuthOperation.Google,
+                        message = null,
+                    )
+
+                when (val result = authProvider.continueWithGoogle(host)) {
+                    AuthResult.Success -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
+                        eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                    }
+                    AuthResult.Cancelled -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
+                    }
+                    is AuthResult.Failure -> {
+                        _uiState.value =
+                            _uiState.value.copy(
+                                activeOperation = null,
+                                message = mapGoogleError(result.reason),
                             )
                     }
                 }
@@ -184,5 +226,14 @@ class AuthViewModel
                         AuthFailureReason.InvalidEmail -> AuthMessage.InvalidEmail
                         else -> AuthMessage.CreateAccountFailed
                     }
+            }
+
+        private fun mapGoogleError(reason: AuthFailureReason): AuthMessage =
+            when (reason) {
+                AuthFailureReason.NoGoogleCredential -> AuthMessage.NoGoogleCredential
+                AuthFailureReason.GoogleProviderUnavailable -> AuthMessage.GoogleProviderUnavailable
+                AuthFailureReason.MissingGoogleIdToken -> AuthMessage.MissingGoogleIdToken
+                AuthFailureReason.FirebaseSignInFailed -> AuthMessage.GoogleSignInFailed
+                else -> AuthMessage.GoogleSignInFailed
             }
     }
