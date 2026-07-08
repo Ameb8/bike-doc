@@ -25,6 +25,8 @@
     <string name="auth_error_google_sign_in_failed">Google sign in failed. Please try again.</string>
     <string name="auth_google_link_required">An account already exists for this email. Sign in with your password once to link Google to this Bike Doc account.</string>
     <string name="auth_google_link_required_with_email">An account already exists for %1$s. Sign in with your password once to link Google to this Bike Doc account.</string>
+    <string name="auth_cancel_google_linking">Cancel Google linking</string>
+    <string name="auth_error_google_link_email_mismatch">The Google account email does not match the signed-in account. Try again with the matching account.</string>
     <string name="home_title">Bike Doc</string>
     <string name="home_menu">Menu</string>
     <string name="home_greeting">Hi, %1$s</string>

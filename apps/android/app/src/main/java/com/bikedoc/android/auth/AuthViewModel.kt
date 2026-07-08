@@ -50,6 +50,7 @@ enum class AuthMessage {
     MissingGoogleIdToken,
     GoogleSignInFailed,
     GoogleLinkRequired,
+    GoogleLinkEmailMismatch,
 }
 
 @HiltViewModel
@@ -65,6 +66,7 @@ class AuthViewModel
         val events = eventChannel.receiveAsFlow()
 
         private var pendingGoogleCredential: PendingAuthCredential? = null
+        private var pendingGoogleEmail: String? = null
 
         fun onModeSelected(mode: AuthMode) {
             if (mode == AuthMode.CreateAccount) {
@@ -140,8 +142,7 @@ class AuthViewModel
 
                 when (val result = submitCredentials()) {
                     AuthResult.Success -> {
-                        _uiState.value = _uiState.value.copy(activeOperation = null)
-                        eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                        handleSuccessfulEmailPasswordAuth()
                     }
                     AuthResult.Cancelled -> {
                         _uiState.value = _uiState.value.copy(activeOperation = null)
@@ -198,6 +199,17 @@ class AuthViewModel
             }
         }
 
+        fun cancelGoogleLinking() {
+            clearPendingGoogleLink()
+            _uiState.value =
+                _uiState.value.copy(
+                    mode = AuthMode.SignIn,
+                    activeOperation = null,
+                    message = null,
+                    validationMessages = emptyMap(),
+                )
+        }
+
         fun isSignedIn(): Boolean = authProvider.isSignedIn()
 
         override fun onCleared() {
@@ -217,6 +229,50 @@ class AuthViewModel
                     password = _uiState.value.password,
                 )
             }
+
+        private suspend fun handleSuccessfulEmailPasswordAuth() {
+            val credential = pendingGoogleCredential
+            if (credential == null) {
+                _uiState.value = _uiState.value.copy(activeOperation = null)
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                return
+            }
+
+            val googleEmail = pendingGoogleEmail
+            val signedInEmail = authProvider.currentUserEmail()
+            if (!emailsMatch(signedInEmail, googleEmail)) {
+                clearPendingGoogleCredentialOnly()
+                _uiState.value =
+                    _uiState.value.copy(
+                        activeOperation = null,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
+                        message = AuthMessage.GoogleLinkEmailMismatch,
+                    )
+                return
+            }
+
+            when (val result = authProvider.linkWithGoogle(credential)) {
+                AuthResult.Success -> {
+                    clearPendingGoogleLink()
+                    _uiState.value = _uiState.value.copy(activeOperation = null)
+                    eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                }
+                AuthResult.Cancelled -> {
+                    _uiState.value = _uiState.value.copy(activeOperation = null)
+                }
+                is AuthResult.Failure -> {
+                    _uiState.value =
+                        _uiState.value.copy(
+                            activeOperation = null,
+                            message = mapGoogleError(result.reason),
+                        )
+                }
+                is AuthResult.LinkRequired -> {
+                    enterGoogleLinkingMode(result)
+                }
+            }
+        }
 
         private fun validateCreateAccount(state: AuthUiState): Map<AuthField, AuthMessage> {
             val errors = mutableMapOf<AuthField, AuthMessage>()
@@ -263,6 +319,7 @@ class AuthViewModel
 
         private fun enterGoogleLinkingMode(result: AuthResult.LinkRequired) {
             pendingGoogleCredential = result.pendingCredential
+            pendingGoogleEmail = result.email
             _uiState.value =
                 _uiState.value.copy(
                     mode = AuthMode.SignIn,
@@ -287,7 +344,16 @@ class AuthViewModel
 
         private fun clearPendingGoogleCredentialOnly() {
             pendingGoogleCredential = null
+            pendingGoogleEmail = null
         }
 
         private fun isGoogleLinkingActive(): Boolean = pendingGoogleCredential != null
+
+        private fun emailsMatch(
+            signedInEmail: String?,
+            googleEmail: String?,
+        ): Boolean =
+            !signedInEmail.isNullOrBlank() &&
+                !googleEmail.isNullOrBlank() &&
+                signedInEmail.trim().equals(googleEmail.trim(), ignoreCase = true)
     }

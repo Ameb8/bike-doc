@@ -66,7 +66,29 @@ class FirebaseAuthProvider
                 is GoogleIdTokenRequestResult.Success -> signInToFirebaseWithGoogle(result.idToken)
             }
 
+        override suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult {
+            val credential =
+                (pendingCredential as? FirebasePendingAuthCredential)?.credential
+            val user =
+                firebaseAuthOrNull()?.currentUser
+            return if (credential == null || user == null) {
+                AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)
+            } else {
+                try {
+                    user.linkWithCredential(credential).await()
+                    user.getIdToken(true).await()
+                    AuthResult.Success
+                } catch (_: FirebaseException) {
+                    AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)
+                } catch (_: IllegalStateException) {
+                    AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)
+                }
+            }
+        }
+
         override fun currentUserId(): String? = firebaseAuthOrNull()?.currentUser?.uid
+
+        override fun currentUserEmail(): String? = firebaseAuthOrNull()?.currentUser?.email
 
         override fun isSignedIn(): Boolean = firebaseAuthOrNull()?.currentUser != null
 

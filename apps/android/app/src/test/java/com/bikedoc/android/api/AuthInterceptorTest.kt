@@ -4,6 +4,7 @@ import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
 import com.bikedoc.android.auth.GoogleSignInHost
+import com.bikedoc.android.auth.PendingAuthCredential
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import okhttp3.Call
 import okhttp3.Connection
@@ -60,7 +61,13 @@ class AuthInterceptorTest {
             return AuthResult.Failure(AuthFailureReason.Unknown)
         }
 
+        override suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
+
         override fun currentUserId(): String? = "user-1"
+
+        override fun currentUserEmail(): String? = null
 
         override fun isSignedIn(): Boolean = true
 

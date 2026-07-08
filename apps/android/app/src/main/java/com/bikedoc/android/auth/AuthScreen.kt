@@ -45,6 +45,7 @@ fun AuthScreen(viewModel: AuthViewModel) {
         onConfirmPasswordChanged = viewModel::onConfirmPasswordChanged,
         onSubmit = viewModel::submit,
         onContinueWithGoogle = { viewModel.continueWithGoogle(AndroidGoogleSignInHost(context)) },
+        onCancelGoogleLinking = viewModel::cancelGoogleLinking,
     )
 }
 
@@ -61,6 +62,7 @@ private fun AuthContent(
     onConfirmPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
     onContinueWithGoogle: () -> Unit,
+    onCancelGoogleLinking: () -> Unit,
 ) {
     val isPasswordVisible = remember { mutableStateOf(false) }
     val isConfirmPasswordVisible = remember { mutableStateOf(false) }
@@ -96,6 +98,7 @@ private fun AuthContent(
                 },
                 onSubmit = onSubmit,
                 onContinueWithGoogle = onContinueWithGoogle,
+                onCancelGoogleLinking = onCancelGoogleLinking,
             )
         }
     }
@@ -113,6 +116,7 @@ private fun AuthFormFields(
     onToggleConfirmPasswordVisibility: () -> Unit,
     onSubmit: () -> Unit,
     onContinueWithGoogle: () -> Unit,
+    onCancelGoogleLinking: () -> Unit,
 ) {
     AuthEmailField(
         email = state.email,
@@ -145,6 +149,12 @@ private fun AuthFormFields(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        TextButton(
+            enabled = state.activeOperation == null,
+            onClick = onCancelGoogleLinking,
+        ) {
+            Text(text = stringResource(R.string.auth_cancel_google_linking))
+        }
     }
     AuthSubmitButton(
         state = state,
@@ -308,9 +318,23 @@ private fun AuthMessage.stringRes(): Int =
         AuthMessage.SignInFailed -> R.string.auth_error_sign_in_failed
         AuthMessage.EmailAlreadyInUse -> R.string.auth_error_email_already_in_use
         AuthMessage.CreateAccountFailed -> R.string.auth_error_create_account_failed
+        AuthMessage.GoogleLinkRequired,
+        AuthMessage.NoGoogleCredential,
+        AuthMessage.GoogleProviderUnavailable,
+        AuthMessage.MissingGoogleIdToken,
+        AuthMessage.GoogleSignInFailed,
+        AuthMessage.GoogleLinkEmailMismatch,
+        -> googleAuthMessageStringRes()
+    }
+
+@StringRes
+private fun AuthMessage.googleAuthMessageStringRes(): Int =
+    when (this) {
         AuthMessage.NoGoogleCredential -> R.string.auth_error_no_google_credential
         AuthMessage.GoogleProviderUnavailable -> R.string.auth_error_google_provider_unavailable
         AuthMessage.MissingGoogleIdToken -> R.string.auth_error_missing_google_id_token
         AuthMessage.GoogleSignInFailed -> R.string.auth_error_google_sign_in_failed
         AuthMessage.GoogleLinkRequired -> R.string.auth_google_link_required
+        AuthMessage.GoogleLinkEmailMismatch -> R.string.auth_error_google_link_email_mismatch
+        else -> error("Unsupported Google auth message: $this")
     }

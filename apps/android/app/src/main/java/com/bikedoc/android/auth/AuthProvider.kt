@@ -51,7 +51,11 @@ interface AuthProvider {
 
     suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult
 
+    suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult
+
     fun currentUserId(): String?
+
+    fun currentUserEmail(): String?
 
     fun isSignedIn(): Boolean
 

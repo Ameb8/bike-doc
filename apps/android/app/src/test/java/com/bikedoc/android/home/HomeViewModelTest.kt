@@ -7,6 +7,7 @@ import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
 import com.bikedoc.android.auth.GoogleSignInHost
+import com.bikedoc.android.auth.PendingAuthCredential
 import com.bikedoc.android.navigation.AppRoute
 import com.bikedoc.android.navigation.UiEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -83,7 +84,13 @@ class HomeViewModelTest {
             return AuthResult.Failure(AuthFailureReason.Unknown)
         }
 
+        override suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
+
         override fun currentUserId(): String? = if (signedIn) "user-1" else null
+
+        override fun currentUserEmail(): String? = null
 
         override fun isSignedIn(): Boolean = signedIn
 
