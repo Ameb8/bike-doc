@@ -51,6 +51,7 @@ enum class AuthMessage {
     GoogleSignInFailed,
     GoogleLinkRequired,
     GoogleLinkEmailMismatch,
+    GoogleLinkTokenRefreshFailed,
 }
 
 @HiltViewModel
@@ -254,9 +255,7 @@ class AuthViewModel
 
             when (val result = authProvider.linkWithGoogle(credential)) {
                 AuthResult.Success -> {
-                    clearPendingGoogleLink()
-                    _uiState.value = _uiState.value.copy(activeOperation = null)
-                    eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                    forceRefreshTokenAfterGoogleLink()
                 }
                 AuthResult.Cancelled -> {
                     _uiState.value = _uiState.value.copy(activeOperation = null)
@@ -271,6 +270,25 @@ class AuthViewModel
                 is AuthResult.LinkRequired -> {
                     enterGoogleLinkingMode(result)
                 }
+            }
+        }
+
+        private suspend fun forceRefreshTokenAfterGoogleLink() {
+            try {
+                authProvider.getToken(forceRefresh = true)
+                clearPendingGoogleLink()
+                _uiState.value = _uiState.value.copy(activeOperation = null)
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+            } catch (_: Exception) {
+                authProvider.signOut()
+                clearPendingGoogleCredentialOnly()
+                _uiState.value =
+                    _uiState.value.copy(
+                        activeOperation = null,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
+                        message = AuthMessage.GoogleLinkTokenRefreshFailed,
+                    )
             }
         }
 

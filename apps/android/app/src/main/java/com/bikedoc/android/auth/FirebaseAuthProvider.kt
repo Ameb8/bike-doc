@@ -76,7 +76,6 @@ class FirebaseAuthProvider
             } else {
                 try {
                     user.linkWithCredential(credential).await()
-                    user.getIdToken(true).await()
                     AuthResult.Success
                 } catch (_: FirebaseException) {
                     AuthResult.Failure(AuthFailureReason.FirebaseSignInFailed)

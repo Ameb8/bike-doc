@@ -341,8 +341,45 @@ class AuthViewModelTest {
             }
 
             assertEquals(FakePendingAuthCredential, authProvider.linkedCredential)
+            assertEquals(listOf(true), authProvider.tokenRefreshes)
             assertEquals(false, viewModel.uiState.value.isLinkingGoogle)
             assertEquals(null, viewModel.uiState.value.linkingGoogleEmail)
+        }
+
+    @Test
+    fun `token refresh failure after Google linking signs out and returns retryable error`() =
+        runTest {
+            val authProvider =
+                FakeAuthProvider(
+                    googleSignInResult =
+                        AuthResult.LinkRequired(
+                            email = "rider@example.com",
+                            pendingCredential = FakePendingAuthCredential,
+                        ),
+                    signedInEmail = "rider@example.com",
+                    linkGoogleResult = AuthResult.Success,
+                    tokenResult = AuthException("Token refresh failed"),
+                )
+            val viewModel = AuthViewModel(authProvider)
+
+            viewModel.continueWithGoogle(FakeGoogleSignInHost)
+            viewModel.onPasswordChanged("secret1")
+
+            viewModel.events.test {
+                viewModel.submit()
+                runCurrent()
+
+                expectNoEvents()
+                cancelAndIgnoreRemainingEvents()
+            }
+
+            assertEquals(FakePendingAuthCredential, authProvider.linkedCredential)
+            assertEquals(listOf(true), authProvider.tokenRefreshes)
+            assertTrue(authProvider.signOutCalled)
+            assertEquals(false, viewModel.uiState.value.isLinkingGoogle)
+            assertEquals(null, viewModel.uiState.value.linkingGoogleEmail)
+            assertEquals(null, viewModel.uiState.value.activeOperation)
+            assertEquals(AuthMessage.GoogleLinkTokenRefreshFailed, viewModel.uiState.value.message)
         }
 
     @Test
@@ -445,14 +482,24 @@ class AuthViewModelTest {
         var googleSignInResult: AuthResult = AuthResult.Success,
         private val signedInEmail: String? = null,
         private val linkGoogleResult: AuthResult = AuthResult.Success,
+        private val tokenResult: Any = "token",
     ) : AuthProvider {
         var signInCalled = false
         var createAccountCalled = false
         var googleSignInCalled = false
         var googleSignInCallCount = 0
         var linkedCredential: PendingAuthCredential? = null
+        val tokenRefreshes = mutableListOf<Boolean>()
+        var signOutCalled = false
 
-        override suspend fun getToken(forceRefresh: Boolean): String = "token"
+        override suspend fun getToken(forceRefresh: Boolean): String {
+            tokenRefreshes += forceRefresh
+            return when (tokenResult) {
+                is Throwable -> throw tokenResult
+                is String -> tokenResult
+                else -> error("Unsupported token result type.")
+            }
+        }
 
         override suspend fun signIn(
             email: String,
@@ -491,7 +538,9 @@ class AuthViewModelTest {
 
         override fun isSignedIn(): Boolean = false
 
-        override fun signOut() = Unit
+        override fun signOut() {
+            signOutCalled = true
+        }
     }
 
     private data object FakeGoogleSignInHost : GoogleSignInHost

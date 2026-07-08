@@ -324,6 +324,7 @@ private fun AuthMessage.stringRes(): Int =
         AuthMessage.MissingGoogleIdToken,
         AuthMessage.GoogleSignInFailed,
         AuthMessage.GoogleLinkEmailMismatch,
+        AuthMessage.GoogleLinkTokenRefreshFailed,
         -> googleAuthMessageStringRes()
     }
 
@@ -336,5 +337,6 @@ private fun AuthMessage.googleAuthMessageStringRes(): Int =
         AuthMessage.GoogleSignInFailed -> R.string.auth_error_google_sign_in_failed
         AuthMessage.GoogleLinkRequired -> R.string.auth_google_link_required
         AuthMessage.GoogleLinkEmailMismatch -> R.string.auth_error_google_link_email_mismatch
+        AuthMessage.GoogleLinkTokenRefreshFailed -> R.string.auth_error_google_link_token_refresh_failed
         else -> error("Unsupported Google auth message: $this")
     }
