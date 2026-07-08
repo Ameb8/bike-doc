@@ -18,10 +18,32 @@ data class AuthUiState(
     val email: String = "",
     val password: String = "",
     val confirmPassword: String = "",
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val validationErrors: Map<String, String> = emptyMap(),
+    val activeOperation: AuthOperation? = null,
+    val message: AuthMessage? = null,
+    val validationMessages: Map<AuthField, AuthMessage> = emptyMap(),
 )
+
+enum class AuthOperation {
+    EmailPassword,
+    Google,
+}
+
+enum class AuthField {
+    Email,
+    Password,
+    ConfirmPassword,
+}
+
+enum class AuthMessage {
+    EmailRequired,
+    PasswordTooShort,
+    PasswordsDoNotMatch,
+    InvalidEmail,
+    InvalidCredentials,
+    SignInFailed,
+    EmailAlreadyInUse,
+    CreateAccountFailed,
+}
 
 @HiltViewModel
 class AuthViewModel
@@ -39,8 +61,8 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     mode = mode,
-                    error = null,
-                    validationErrors = emptyMap(),
+                    message = null,
+                    validationMessages = emptyMap(),
                 )
         }
 
@@ -48,8 +70,8 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     email = email,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "email",
+                    message = null,
+                    validationMessages = _uiState.value.validationMessages - AuthField.Email,
                 )
         }
 
@@ -57,8 +79,8 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     password = password,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "password",
+                    message = null,
+                    validationMessages = _uiState.value.validationMessages - AuthField.Password,
                 )
         }
 
@@ -66,8 +88,9 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     confirmPassword = confirmPassword,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "confirmPassword",
+                    message = null,
+                    validationMessages =
+                        _uiState.value.validationMessages - AuthField.ConfirmPassword,
                 )
         }
 
@@ -84,30 +107,30 @@ class AuthViewModel
                 if (validationErrors.isNotEmpty()) {
                     _uiState.value =
                         currentState.copy(
-                            isLoading = false,
-                            error = null,
-                            validationErrors = validationErrors,
+                            activeOperation = null,
+                            message = null,
+                            validationMessages = validationErrors,
                         )
                     return@launch
                 }
 
                 _uiState.value =
                     currentState.copy(
-                        isLoading = true,
-                        error = null,
-                        validationErrors = emptyMap(),
+                        activeOperation = AuthOperation.EmailPassword,
+                        message = null,
+                        validationMessages = emptyMap(),
                     )
 
                 when (val result = submitCredentials()) {
                     AuthResult.Success -> {
-                        _uiState.value = _uiState.value.copy(isLoading = false)
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
                         eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
                     }
                     is AuthResult.Failure -> {
                         _uiState.value =
                             _uiState.value.copy(
-                                isLoading = false,
-                                error = mapError(_uiState.value.mode, result.reason),
+                                activeOperation = null,
+                                message = mapError(_uiState.value.mode, result.reason),
                             )
                     }
                 }
@@ -129,16 +152,16 @@ class AuthViewModel
                 )
             }
 
-        private fun validateCreateAccount(state: AuthUiState): Map<String, String> {
-            val errors = mutableMapOf<String, String>()
+        private fun validateCreateAccount(state: AuthUiState): Map<AuthField, AuthMessage> {
+            val errors = mutableMapOf<AuthField, AuthMessage>()
             if (state.email.isBlank()) {
-                errors["email"] = "Email is required."
+                errors[AuthField.Email] = AuthMessage.EmailRequired
             }
             if (state.password.length < 6) {
-                errors["password"] = "Password must be at least 6 characters."
+                errors[AuthField.Password] = AuthMessage.PasswordTooShort
             }
             if (state.confirmPassword != state.password) {
-                errors["confirmPassword"] = "Passwords do not match."
+                errors[AuthField.ConfirmPassword] = AuthMessage.PasswordsDoNotMatch
             }
             return errors
         }
@@ -146,20 +169,20 @@ class AuthViewModel
         private fun mapError(
             mode: AuthMode,
             reason: AuthFailureReason,
-        ): String =
+        ): AuthMessage =
             when (mode) {
                 AuthMode.SignIn ->
                     when (reason) {
-                        AuthFailureReason.InvalidEmail -> "Enter a valid email address."
-                        AuthFailureReason.InvalidCredentials -> "Incorrect email or password."
-                        else -> "Sign in failed. Please try again."
+                        AuthFailureReason.InvalidEmail -> AuthMessage.InvalidEmail
+                        AuthFailureReason.InvalidCredentials -> AuthMessage.InvalidCredentials
+                        else -> AuthMessage.SignInFailed
                     }
                 AuthMode.CreateAccount ->
                     when (reason) {
-                        AuthFailureReason.WeakPassword -> "Password must be at least 6 characters."
-                        AuthFailureReason.EmailAlreadyInUse -> "An account with this email already exists."
-                        AuthFailureReason.InvalidEmail -> "Enter a valid email address."
-                        else -> "Account creation failed. Please try again."
+                        AuthFailureReason.WeakPassword -> AuthMessage.PasswordTooShort
+                        AuthFailureReason.EmailAlreadyInUse -> AuthMessage.EmailAlreadyInUse
+                        AuthFailureReason.InvalidEmail -> AuthMessage.InvalidEmail
+                        else -> AuthMessage.CreateAccountFailed
                     }
             }
     }

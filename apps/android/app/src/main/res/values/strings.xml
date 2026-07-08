@@ -9,6 +9,14 @@
     <string name="auth_confirm_password_label">Confirm Password</string>
     <string name="auth_show_password">Show</string>
     <string name="auth_hide_password">Hide</string>
+    <string name="auth_error_email_required">Email is required.</string>
+    <string name="auth_error_password_too_short">Password must be at least 6 characters.</string>
+    <string name="auth_error_passwords_do_not_match">Passwords do not match.</string>
+    <string name="auth_error_invalid_email">Enter a valid email address.</string>
+    <string name="auth_error_invalid_credentials">Incorrect email or password.</string>
+    <string name="auth_error_sign_in_failed">Sign in failed. Please try again.</string>
+    <string name="auth_error_email_already_in_use">An account with this email already exists.</string>
+    <string name="auth_error_create_account_failed">Account creation failed. Please try again.</string>
     <string name="home_title">Bike Doc</string>
     <string name="home_menu">Menu</string>
     <string name="home_greeting">Hi, %1$s</string>

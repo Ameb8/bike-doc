@@ -1,5 +1,6 @@
 package com.bikedoc.android.auth
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -103,14 +104,14 @@ private fun AuthFormFields(
 ) {
     AuthEmailField(
         email = state.email,
-        error = state.validationErrors["email"],
+        error = state.validationMessages[AuthField.Email],
         onEmailChanged = onEmailChanged,
     )
     AuthPasswordField(
         value = state.password,
         label = stringResource(R.string.auth_password_label),
         isVisible = isPasswordVisible,
-        error = state.validationErrors["password"],
+        error = state.validationMessages[AuthField.Password],
         imeAction = if (state.mode == AuthMode.CreateAccount) ImeAction.Next else ImeAction.Done,
         onToggleVisibility = onTogglePasswordVisibility,
         onValueChange = onPasswordChanged,
@@ -120,7 +121,7 @@ private fun AuthFormFields(
             value = state.confirmPassword,
             label = stringResource(R.string.auth_confirm_password_label),
             isVisible = isConfirmPasswordVisible,
-            error = state.validationErrors["confirmPassword"],
+            error = state.validationMessages[AuthField.ConfirmPassword],
             imeAction = ImeAction.Done,
             onToggleVisibility = onToggleConfirmPasswordVisibility,
             onValueChange = onConfirmPasswordChanged,
@@ -128,7 +129,7 @@ private fun AuthFormFields(
     }
     Button(
         modifier = Modifier.padding(top = 8.dp),
-        enabled = !state.isLoading,
+        enabled = state.activeOperation == null,
         onClick = onSubmit,
     ) {
         Text(
@@ -142,9 +143,9 @@ private fun AuthFormFields(
                 ),
         )
     }
-    state.error?.let {
+    state.message?.let {
         Text(
-            text = it,
+            text = stringResource(it.stringRes()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
         )
@@ -173,7 +174,7 @@ private fun AuthModeTabs(
 @Composable
 private fun AuthEmailField(
     email: String,
-    error: String?,
+    error: AuthMessage?,
     onEmailChanged: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -189,7 +190,7 @@ private fun AuthEmailField(
             ),
         isError = error != null,
         supportingText = {
-            error?.let { Text(text = it) }
+            error?.let { Text(text = stringResource(it.stringRes())) }
         },
     )
 }
@@ -199,7 +200,7 @@ private fun AuthPasswordField(
     value: String,
     label: String,
     isVisible: Boolean,
-    error: String?,
+    error: AuthMessage?,
     imeAction: ImeAction,
     onToggleVisibility: () -> Unit,
     onValueChange: (String) -> Unit,
@@ -237,7 +238,20 @@ private fun AuthPasswordField(
             ),
         isError = error != null,
         supportingText = {
-            error?.let { Text(text = it) }
+            error?.let { Text(text = stringResource(it.stringRes())) }
         },
     )
 }
+
+@StringRes
+private fun AuthMessage.stringRes(): Int =
+    when (this) {
+        AuthMessage.EmailRequired -> R.string.auth_error_email_required
+        AuthMessage.PasswordTooShort -> R.string.auth_error_password_too_short
+        AuthMessage.PasswordsDoNotMatch -> R.string.auth_error_passwords_do_not_match
+        AuthMessage.InvalidEmail -> R.string.auth_error_invalid_email
+        AuthMessage.InvalidCredentials -> R.string.auth_error_invalid_credentials
+        AuthMessage.SignInFailed -> R.string.auth_error_sign_in_failed
+        AuthMessage.EmailAlreadyInUse -> R.string.auth_error_email_already_in_use
+        AuthMessage.CreateAccountFailed -> R.string.auth_error_create_account_failed
+    }
