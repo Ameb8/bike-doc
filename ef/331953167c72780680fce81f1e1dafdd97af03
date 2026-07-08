@@ -1,0 +1,30 @@
+apps/android/app/src/main/res/values/strings.xml
+  s_5ee8de6b85ae16::t_49f401769643de 30
+apps/android/app/src/test/java/com/bikedoc/android/auth/AuthViewModelTest.kt
+  s_5ee8de6b85ae16::t_84301381bc78ff 344,349-384,485,492-502,541-543
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthScreen.kt
+  s_5ee8de6b85ae16::t_0a145381366540 327,340
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthViewModel.kt
+  s_5ee8de6b85ae16::t_b7905faae7dae5 54,258,276-291
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "ef331953167c72780680fce81f1e1dafdd97af03",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_5ee8de6b85ae16": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f440a-b49f-7260-9f39-00b52cab06ce",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
