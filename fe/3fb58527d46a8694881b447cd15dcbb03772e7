@@ -1,0 +1,25 @@
+apps/android/app/src/main/java/com/bikedoc/android/auth/AuthScreen.kt
+  s_48ca0fecb4d051::t_d205970092bf1b 239,241
+  s_48ca0fecb4d051::t_09a554257263a5 237-238,240,243-259
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "fe3fb58527d46a8694881b447cd15dcbb03772e7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_48ca0fecb4d051": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4835-407c-7992-b33c-892197a7e1c0",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
