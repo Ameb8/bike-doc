@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Bike Doc</string>
-    <string name="google_web_client_id" translatable="false"></string>
     <string name="auth_title">Bike Doc</string>
     <string name="auth_tab_sign_in">Sign In</string>
     <string name="auth_tab_create_account">Create Account</string>

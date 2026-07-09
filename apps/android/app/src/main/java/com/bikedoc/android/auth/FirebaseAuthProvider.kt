@@ -115,7 +115,7 @@ class FirebaseAuthProvider
 
         private suspend fun requestGoogleIdToken(host: AndroidGoogleSignInHost): GoogleIdTokenRequestResult {
             val context = host.context
-            val webClientId = context.getString(R.string.google_web_client_id)
+            val webClientId = context.getString(R.string.default_web_client_id)
             if (webClientId.isBlank()) {
                 return GoogleIdTokenRequestResult.Failure(
                     AuthFailureReason.GoogleProviderUnavailable,
