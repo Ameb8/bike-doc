@@ -2,13 +2,22 @@ package com.bikedoc.android.auth
 
 import android.content.Context
 import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -24,7 +33,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -160,14 +171,52 @@ private fun AuthFormFields(
         state = state,
         onSubmit = onSubmit,
     )
-    OutlinedButton(
-        modifier = Modifier.fillMaxWidth(),
+    ContinueWithGoogleButton(
         enabled = state.activeOperation == null,
         onClick = onContinueWithGoogle,
+    )
+    AuthMessageText(message = state.message)
+}
+
+@Composable
+private fun ContinueWithGoogleButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp),
+        enabled = enabled,
+        shape = RoundedCornerShape(20.dp),
+        border =
+            BorderStroke(
+                1.dp,
+                if (enabled) {
+                    GoogleButtonBorder
+                } else {
+                    GoogleButtonBorder.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA)
+                },
+            ),
+        colors =
+            ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White,
+                contentColor = GoogleButtonText,
+                disabledContainerColor = Color.White,
+                disabledContentColor = GoogleButtonText.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA),
+            ),
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+        onClick = onClick,
     ) {
+        Image(
+            painter = painterResource(R.drawable.ic_google_g),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
         Text(text = stringResource(R.string.auth_continue_with_google))
     }
-    AuthMessageText(message = state.message)
 }
 
 @Composable
@@ -306,6 +355,10 @@ private fun AuthPasswordField(
         },
     )
 }
+
+private val GoogleButtonBorder = Color(0xFF747775)
+private val GoogleButtonText = Color(0xFF1F1F1F)
+private const val DISABLED_GOOGLE_BUTTON_ALPHA = 0.38f
 
 @StringRes
 private fun AuthMessage.stringRes(): Int =
