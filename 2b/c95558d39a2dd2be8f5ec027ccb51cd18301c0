@@ -1,0 +1,26 @@
+apps/android/app/src/main/java/com/bikedoc/android/auth/FirebaseAuthProvider.kt
+  s_4bf437431f3c45::t_67d1fe033b761b 10,124-125,129
+apps/android/app/src/main/res/values/strings.xml
+  s_4bf437431f3c45::t_ebaadefe0f3e9e 21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "2bc95558d39a2dd2be8f5ec027ccb51cd18301c0",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_4bf437431f3c45": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f45cb-45f0-72d0-9b56-073fe327c0a5",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
