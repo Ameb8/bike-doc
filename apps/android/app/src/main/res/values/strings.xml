@@ -18,7 +18,7 @@
     <string name="auth_error_sign_in_failed">Sign in failed. Please try again.</string>
     <string name="auth_error_email_already_in_use">An account with this email already exists.</string>
     <string name="auth_error_create_account_failed">Account creation failed. Please try again.</string>
-    <string name="auth_error_no_google_credential">No Google account is available on this device. Add one in Android settings or use email and password.</string>
+    <string name="auth_error_no_google_credential">Google sign in could not find an available account. Try another Google account or use email and password.</string>
     <string name="auth_error_google_provider_unavailable">Google sign in is unavailable right now. Please try again.</string>
     <string name="auth_error_missing_google_id_token">Google did not return a usable sign-in token. Please try again.</string>
     <string name="auth_error_google_sign_in_failed">Google sign in failed. Please try again.</string>
