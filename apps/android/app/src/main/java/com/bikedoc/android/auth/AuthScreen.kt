@@ -234,8 +234,29 @@ private fun AuthSubmitButton(
     onSubmit: () -> Unit,
 ) {
     Button(
-        modifier = Modifier.padding(top = 8.dp),
+        modifier =
+            Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .height(40.dp),
         enabled = state.activeOperation == null,
+        shape = RoundedCornerShape(20.dp),
+        border =
+            BorderStroke(
+                1.dp,
+                if (state.activeOperation == null) {
+                    GoogleButtonBorder
+                } else {
+                    GoogleButtonBorder.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA)
+                },
+            ),
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = GoogleButtonText,
+                disabledContainerColor = Color.White,
+                disabledContentColor = GoogleButtonText.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA),
+            ),
         onClick = onSubmit,
     ) {
         Text(
