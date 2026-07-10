@@ -18,10 +18,41 @@ data class AuthUiState(
     val email: String = "",
     val password: String = "",
     val confirmPassword: String = "",
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val validationErrors: Map<String, String> = emptyMap(),
+    val activeOperation: AuthOperation? = null,
+    val isLinkingGoogle: Boolean = false,
+    val linkingGoogleEmail: String? = null,
+    val message: AuthMessage? = null,
+    val validationMessages: Map<AuthField, AuthMessage> = emptyMap(),
 )
+
+enum class AuthOperation {
+    EmailPassword,
+    Google,
+}
+
+enum class AuthField {
+    Email,
+    Password,
+    ConfirmPassword,
+}
+
+enum class AuthMessage {
+    EmailRequired,
+    PasswordTooShort,
+    PasswordsDoNotMatch,
+    InvalidEmail,
+    InvalidCredentials,
+    SignInFailed,
+    EmailAlreadyInUse,
+    CreateAccountFailed,
+    NoGoogleCredential,
+    GoogleProviderUnavailable,
+    MissingGoogleIdToken,
+    GoogleSignInFailed,
+    GoogleLinkRequired,
+    GoogleLinkEmailMismatch,
+    GoogleLinkTokenRefreshFailed,
+}
 
 @HiltViewModel
 class AuthViewModel
@@ -35,12 +66,20 @@ class AuthViewModel
         private val eventChannel = Channel<UiEvent>(Channel.BUFFERED)
         val events = eventChannel.receiveAsFlow()
 
+        private var pendingGoogleCredential: PendingAuthCredential? = null
+        private var pendingGoogleEmail: String? = null
+
         fun onModeSelected(mode: AuthMode) {
+            if (mode == AuthMode.CreateAccount) {
+                clearPendingGoogleLink()
+            }
             _uiState.value =
                 _uiState.value.copy(
                     mode = mode,
-                    error = null,
-                    validationErrors = emptyMap(),
+                    isLinkingGoogle = isGoogleLinkingActive(),
+                    linkingGoogleEmail = pendingGoogleCredential?.let { _uiState.value.linkingGoogleEmail },
+                    message = null,
+                    validationMessages = emptyMap(),
                 )
         }
 
@@ -48,8 +87,8 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     email = email,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "email",
+                    message = null,
+                    validationMessages = _uiState.value.validationMessages - AuthField.Email,
                 )
         }
 
@@ -57,8 +96,8 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     password = password,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "password",
+                    message = null,
+                    validationMessages = _uiState.value.validationMessages - AuthField.Password,
                 )
         }
 
@@ -66,14 +105,18 @@ class AuthViewModel
             _uiState.value =
                 _uiState.value.copy(
                     confirmPassword = confirmPassword,
-                    error = null,
-                    validationErrors = _uiState.value.validationErrors - "confirmPassword",
+                    message = null,
+                    validationMessages =
+                        _uiState.value.validationMessages - AuthField.ConfirmPassword,
                 )
         }
 
         fun submit() {
             viewModelScope.launch {
                 val currentState = _uiState.value
+                if (currentState.activeOperation != null) {
+                    return@launch
+                }
                 val validationErrors =
                     if (currentState.mode == AuthMode.CreateAccount) {
                         validateCreateAccount(currentState)
@@ -84,37 +127,96 @@ class AuthViewModel
                 if (validationErrors.isNotEmpty()) {
                     _uiState.value =
                         currentState.copy(
-                            isLoading = false,
-                            error = null,
-                            validationErrors = validationErrors,
+                            activeOperation = null,
+                            message = null,
+                            validationMessages = validationErrors,
                         )
                     return@launch
                 }
 
                 _uiState.value =
                     currentState.copy(
-                        isLoading = true,
-                        error = null,
-                        validationErrors = emptyMap(),
+                        activeOperation = AuthOperation.EmailPassword,
+                        message = null,
+                        validationMessages = emptyMap(),
                     )
 
                 when (val result = submitCredentials()) {
                     AuthResult.Success -> {
-                        _uiState.value = _uiState.value.copy(isLoading = false)
-                        eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                        handleSuccessfulEmailPasswordAuth()
+                    }
+                    AuthResult.Cancelled -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
                     }
                     is AuthResult.Failure -> {
                         _uiState.value =
                             _uiState.value.copy(
-                                isLoading = false,
-                                error = mapError(_uiState.value.mode, result.reason),
+                                activeOperation = null,
+                                message = mapError(_uiState.value.mode, result.reason),
                             )
+                    }
+                    is AuthResult.LinkRequired -> {
+                        enterGoogleLinkingMode(result)
                     }
                 }
             }
         }
 
+        fun continueWithGoogle(host: GoogleSignInHost) {
+            viewModelScope.launch {
+                val currentState = _uiState.value
+                if (currentState.activeOperation != null) {
+                    return@launch
+                }
+
+                _uiState.value =
+                    currentState.copy(
+                        activeOperation = AuthOperation.Google,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
+                        message = null,
+                    )
+                clearPendingGoogleCredentialOnly()
+
+                when (val result = authProvider.continueWithGoogle(host)) {
+                    AuthResult.Success -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
+                        eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                    }
+                    AuthResult.Cancelled -> {
+                        _uiState.value = _uiState.value.copy(activeOperation = null)
+                    }
+                    is AuthResult.Failure -> {
+                        _uiState.value =
+                            _uiState.value.copy(
+                                activeOperation = null,
+                                message = mapGoogleError(result.reason),
+                            )
+                    }
+                    is AuthResult.LinkRequired -> {
+                        enterGoogleLinkingMode(result)
+                    }
+                }
+            }
+        }
+
+        fun cancelGoogleLinking() {
+            clearPendingGoogleLink()
+            _uiState.value =
+                _uiState.value.copy(
+                    mode = AuthMode.SignIn,
+                    activeOperation = null,
+                    message = null,
+                    validationMessages = emptyMap(),
+                )
+        }
+
         fun isSignedIn(): Boolean = authProvider.isSignedIn()
+
+        override fun onCleared() {
+            clearPendingGoogleCredentialOnly()
+            super.onCleared()
+        }
 
         private suspend fun submitCredentials(): AuthResult =
             if (_uiState.value.mode == AuthMode.SignIn) {
@@ -129,16 +231,77 @@ class AuthViewModel
                 )
             }
 
-        private fun validateCreateAccount(state: AuthUiState): Map<String, String> {
-            val errors = mutableMapOf<String, String>()
+        private suspend fun handleSuccessfulEmailPasswordAuth() {
+            val credential = pendingGoogleCredential
+            if (credential == null) {
+                _uiState.value = _uiState.value.copy(activeOperation = null)
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+                return
+            }
+
+            val googleEmail = pendingGoogleEmail
+            val signedInEmail = authProvider.currentUserEmail()
+            if (!emailsMatch(signedInEmail, googleEmail)) {
+                clearPendingGoogleCredentialOnly()
+                _uiState.value =
+                    _uiState.value.copy(
+                        activeOperation = null,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
+                        message = AuthMessage.GoogleLinkEmailMismatch,
+                    )
+                return
+            }
+
+            when (val result = authProvider.linkWithGoogle(credential)) {
+                AuthResult.Success -> {
+                    forceRefreshTokenAfterGoogleLink()
+                }
+                AuthResult.Cancelled -> {
+                    _uiState.value = _uiState.value.copy(activeOperation = null)
+                }
+                is AuthResult.Failure -> {
+                    _uiState.value =
+                        _uiState.value.copy(
+                            activeOperation = null,
+                            message = mapGoogleError(result.reason),
+                        )
+                }
+                is AuthResult.LinkRequired -> {
+                    enterGoogleLinkingMode(result)
+                }
+            }
+        }
+
+        private suspend fun forceRefreshTokenAfterGoogleLink() {
+            try {
+                authProvider.getToken(forceRefresh = true)
+                clearPendingGoogleLink()
+                _uiState.value = _uiState.value.copy(activeOperation = null)
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.Home.route))
+            } catch (_: Exception) {
+                authProvider.signOut()
+                clearPendingGoogleCredentialOnly()
+                _uiState.value =
+                    _uiState.value.copy(
+                        activeOperation = null,
+                        isLinkingGoogle = false,
+                        linkingGoogleEmail = null,
+                        message = AuthMessage.GoogleLinkTokenRefreshFailed,
+                    )
+            }
+        }
+
+        private fun validateCreateAccount(state: AuthUiState): Map<AuthField, AuthMessage> {
+            val errors = mutableMapOf<AuthField, AuthMessage>()
             if (state.email.isBlank()) {
-                errors["email"] = "Email is required."
+                errors[AuthField.Email] = AuthMessage.EmailRequired
             }
             if (state.password.length < 6) {
-                errors["password"] = "Password must be at least 6 characters."
+                errors[AuthField.Password] = AuthMessage.PasswordTooShort
             }
             if (state.confirmPassword != state.password) {
-                errors["confirmPassword"] = "Passwords do not match."
+                errors[AuthField.ConfirmPassword] = AuthMessage.PasswordsDoNotMatch
             }
             return errors
         }
@@ -146,20 +309,69 @@ class AuthViewModel
         private fun mapError(
             mode: AuthMode,
             reason: AuthFailureReason,
-        ): String =
+        ): AuthMessage =
             when (mode) {
                 AuthMode.SignIn ->
                     when (reason) {
-                        AuthFailureReason.InvalidEmail -> "Enter a valid email address."
-                        AuthFailureReason.InvalidCredentials -> "Incorrect email or password."
-                        else -> "Sign in failed. Please try again."
+                        AuthFailureReason.InvalidEmail -> AuthMessage.InvalidEmail
+                        AuthFailureReason.InvalidCredentials -> AuthMessage.InvalidCredentials
+                        else -> AuthMessage.SignInFailed
                     }
                 AuthMode.CreateAccount ->
                     when (reason) {
-                        AuthFailureReason.WeakPassword -> "Password must be at least 6 characters."
-                        AuthFailureReason.EmailAlreadyInUse -> "An account with this email already exists."
-                        AuthFailureReason.InvalidEmail -> "Enter a valid email address."
-                        else -> "Account creation failed. Please try again."
+                        AuthFailureReason.WeakPassword -> AuthMessage.PasswordTooShort
+                        AuthFailureReason.EmailAlreadyInUse -> AuthMessage.EmailAlreadyInUse
+                        AuthFailureReason.InvalidEmail -> AuthMessage.InvalidEmail
+                        else -> AuthMessage.CreateAccountFailed
                     }
             }
+
+        private fun mapGoogleError(reason: AuthFailureReason): AuthMessage =
+            when (reason) {
+                AuthFailureReason.NoGoogleCredential -> AuthMessage.NoGoogleCredential
+                AuthFailureReason.GoogleProviderUnavailable -> AuthMessage.GoogleProviderUnavailable
+                AuthFailureReason.MissingGoogleIdToken -> AuthMessage.MissingGoogleIdToken
+                AuthFailureReason.FirebaseSignInFailed -> AuthMessage.GoogleSignInFailed
+                else -> AuthMessage.GoogleSignInFailed
+            }
+
+        private fun enterGoogleLinkingMode(result: AuthResult.LinkRequired) {
+            pendingGoogleCredential = result.pendingCredential
+            pendingGoogleEmail = result.email
+            _uiState.value =
+                _uiState.value.copy(
+                    mode = AuthMode.SignIn,
+                    email = result.email ?: _uiState.value.email,
+                    confirmPassword = "",
+                    activeOperation = null,
+                    isLinkingGoogle = true,
+                    linkingGoogleEmail = result.email,
+                    message = AuthMessage.GoogleLinkRequired,
+                    validationMessages = emptyMap(),
+                )
+        }
+
+        private fun clearPendingGoogleLink() {
+            clearPendingGoogleCredentialOnly()
+            _uiState.value =
+                _uiState.value.copy(
+                    isLinkingGoogle = false,
+                    linkingGoogleEmail = null,
+                )
+        }
+
+        private fun clearPendingGoogleCredentialOnly() {
+            pendingGoogleCredential = null
+            pendingGoogleEmail = null
+        }
+
+        private fun isGoogleLinkingActive(): Boolean = pendingGoogleCredential != null
+
+        private fun emailsMatch(
+            signedInEmail: String?,
+            googleEmail: String?,
+        ): Boolean =
+            !signedInEmail.isNullOrBlank() &&
+                !googleEmail.isNullOrBlank() &&
+                signedInEmail.trim().equals(googleEmail.trim(), ignoreCase = true)
     }

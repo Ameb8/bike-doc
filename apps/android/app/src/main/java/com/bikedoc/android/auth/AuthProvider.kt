@@ -10,16 +10,31 @@ enum class AuthFailureReason {
     InvalidEmail,
     WeakPassword,
     EmailAlreadyInUse,
+    NoGoogleCredential,
+    GoogleProviderUnavailable,
+    MissingGoogleIdToken,
+    FirebaseSignInFailed,
     Unknown,
 }
 
 sealed interface AuthResult {
     data object Success : AuthResult
 
+    data object Cancelled : AuthResult
+
+    data class LinkRequired(
+        val email: String?,
+        val pendingCredential: PendingAuthCredential,
+    ) : AuthResult
+
     data class Failure(
         val reason: AuthFailureReason,
     ) : AuthResult
 }
+
+interface GoogleSignInHost
+
+interface PendingAuthCredential
 
 interface AuthProvider {
     suspend fun getToken(forceRefresh: Boolean = false): String
@@ -34,7 +49,13 @@ interface AuthProvider {
         password: String,
     ): AuthResult
 
+    suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult
+
+    suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult
+
     fun currentUserId(): String?
+
+    fun currentUserEmail(): String?
 
     fun isSignedIn(): Boolean
 

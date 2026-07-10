@@ -1,13 +1,25 @@
 package com.bikedoc.android.auth
 
+import android.content.Context
+import androidx.annotation.StringRes
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -21,6 +33,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -32,6 +47,7 @@ import com.bikedoc.android.R
 @Composable
 fun AuthScreen(viewModel: AuthViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
     AuthContent(
         state = uiState,
         onModeSelected = viewModel::onModeSelected,
@@ -39,8 +55,14 @@ fun AuthScreen(viewModel: AuthViewModel) {
         onPasswordChanged = viewModel::onPasswordChanged,
         onConfirmPasswordChanged = viewModel::onConfirmPasswordChanged,
         onSubmit = viewModel::submit,
+        onContinueWithGoogle = { viewModel.continueWithGoogle(AndroidGoogleSignInHost(context)) },
+        onCancelGoogleLinking = viewModel::cancelGoogleLinking,
     )
 }
+
+data class AndroidGoogleSignInHost(
+    val context: Context,
+) : GoogleSignInHost
 
 @Composable
 private fun AuthContent(
@@ -50,6 +72,8 @@ private fun AuthContent(
     onPasswordChanged: (String) -> Unit,
     onConfirmPasswordChanged: (String) -> Unit,
     onSubmit: () -> Unit,
+    onContinueWithGoogle: () -> Unit,
+    onCancelGoogleLinking: () -> Unit,
 ) {
     val isPasswordVisible = remember { mutableStateOf(false) }
     val isConfirmPasswordVisible = remember { mutableStateOf(false) }
@@ -84,6 +108,8 @@ private fun AuthContent(
                     isConfirmPasswordVisible.value = !isConfirmPasswordVisible.value
                 },
                 onSubmit = onSubmit,
+                onContinueWithGoogle = onContinueWithGoogle,
+                onCancelGoogleLinking = onCancelGoogleLinking,
             )
         }
     }
@@ -100,17 +126,19 @@ private fun AuthFormFields(
     onTogglePasswordVisibility: () -> Unit,
     onToggleConfirmPasswordVisibility: () -> Unit,
     onSubmit: () -> Unit,
+    onContinueWithGoogle: () -> Unit,
+    onCancelGoogleLinking: () -> Unit,
 ) {
     AuthEmailField(
         email = state.email,
-        error = state.validationErrors["email"],
+        error = state.validationMessages[AuthField.Email],
         onEmailChanged = onEmailChanged,
     )
     AuthPasswordField(
         value = state.password,
         label = stringResource(R.string.auth_password_label),
         isVisible = isPasswordVisible,
-        error = state.validationErrors["password"],
+        error = state.validationMessages[AuthField.Password],
         imeAction = if (state.mode == AuthMode.CreateAccount) ImeAction.Next else ImeAction.Done,
         onToggleVisibility = onTogglePasswordVisibility,
         onValueChange = onPasswordChanged,
@@ -120,15 +148,115 @@ private fun AuthFormFields(
             value = state.confirmPassword,
             label = stringResource(R.string.auth_confirm_password_label),
             isVisible = isConfirmPasswordVisible,
-            error = state.validationErrors["confirmPassword"],
+            error = state.validationMessages[AuthField.ConfirmPassword],
             imeAction = ImeAction.Done,
             onToggleVisibility = onToggleConfirmPasswordVisibility,
             onValueChange = onConfirmPasswordChanged,
         )
     }
+    if (state.isLinkingGoogle) {
+        Text(
+            text = googleLinkRequiredText(state),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(
+            enabled = state.activeOperation == null,
+            onClick = onCancelGoogleLinking,
+        ) {
+            Text(text = stringResource(R.string.auth_cancel_google_linking))
+        }
+    }
+    AuthSubmitButton(
+        state = state,
+        onSubmit = onSubmit,
+    )
+    ContinueWithGoogleButton(
+        enabled = state.activeOperation == null,
+        onClick = onContinueWithGoogle,
+    )
+    AuthMessageText(message = state.message)
+}
+
+@Composable
+private fun ContinueWithGoogleButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    OutlinedButton(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp),
+        enabled = enabled,
+        shape = RoundedCornerShape(20.dp),
+        border =
+            BorderStroke(
+                1.dp,
+                if (enabled) {
+                    GoogleButtonBorder
+                } else {
+                    GoogleButtonBorder.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA)
+                },
+            ),
+        colors =
+            ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White,
+                contentColor = GoogleButtonText,
+                disabledContainerColor = Color.White,
+                disabledContentColor = GoogleButtonText.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA),
+            ),
+        contentPadding = PaddingValues(start = 12.dp, end = 16.dp),
+        onClick = onClick,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_google_g),
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(text = stringResource(R.string.auth_continue_with_google))
+    }
+}
+
+@Composable
+private fun googleLinkRequiredText(state: AuthUiState): String =
+    state.linkingGoogleEmail
+        ?.takeUnless(String::isBlank)
+        ?.let { email ->
+            stringResource(R.string.auth_google_link_required_with_email, email)
+        }
+        ?: stringResource(R.string.auth_google_link_required)
+
+@Composable
+private fun AuthSubmitButton(
+    state: AuthUiState,
+    onSubmit: () -> Unit,
+) {
     Button(
-        modifier = Modifier.padding(top = 8.dp),
-        enabled = !state.isLoading,
+        modifier =
+            Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth()
+                .height(40.dp),
+        enabled = state.activeOperation == null,
+        shape = RoundedCornerShape(20.dp),
+        border =
+            BorderStroke(
+                1.dp,
+                if (state.activeOperation == null) {
+                    GoogleButtonBorder
+                } else {
+                    GoogleButtonBorder.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA)
+                },
+            ),
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = GoogleButtonText,
+                disabledContainerColor = Color.White,
+                disabledContentColor = GoogleButtonText.copy(alpha = DISABLED_GOOGLE_BUTTON_ALPHA),
+            ),
         onClick = onSubmit,
     ) {
         Text(
@@ -142,9 +270,16 @@ private fun AuthFormFields(
                 ),
         )
     }
-    state.error?.let {
+}
+
+@Composable
+private fun AuthMessageText(message: AuthMessage?) {
+    message?.let {
+        if (it == AuthMessage.GoogleLinkRequired) {
+            return@let
+        }
         Text(
-            text = it,
+            text = stringResource(it.stringRes()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.error,
         )
@@ -173,7 +308,7 @@ private fun AuthModeTabs(
 @Composable
 private fun AuthEmailField(
     email: String,
-    error: String?,
+    error: AuthMessage?,
     onEmailChanged: (String) -> Unit,
 ) {
     OutlinedTextField(
@@ -189,7 +324,7 @@ private fun AuthEmailField(
             ),
         isError = error != null,
         supportingText = {
-            error?.let { Text(text = it) }
+            error?.let { Text(text = stringResource(it.stringRes())) }
         },
     )
 }
@@ -199,7 +334,7 @@ private fun AuthPasswordField(
     value: String,
     label: String,
     isVisible: Boolean,
-    error: String?,
+    error: AuthMessage?,
     imeAction: ImeAction,
     onToggleVisibility: () -> Unit,
     onValueChange: (String) -> Unit,
@@ -237,7 +372,45 @@ private fun AuthPasswordField(
             ),
         isError = error != null,
         supportingText = {
-            error?.let { Text(text = it) }
+            error?.let { Text(text = stringResource(it.stringRes())) }
         },
     )
 }
+
+private val GoogleButtonBorder = Color(0xFF747775)
+private val GoogleButtonText = Color(0xFF1F1F1F)
+private const val DISABLED_GOOGLE_BUTTON_ALPHA = 0.38f
+
+@StringRes
+private fun AuthMessage.stringRes(): Int =
+    when (this) {
+        AuthMessage.EmailRequired -> R.string.auth_error_email_required
+        AuthMessage.PasswordTooShort -> R.string.auth_error_password_too_short
+        AuthMessage.PasswordsDoNotMatch -> R.string.auth_error_passwords_do_not_match
+        AuthMessage.InvalidEmail -> R.string.auth_error_invalid_email
+        AuthMessage.InvalidCredentials -> R.string.auth_error_invalid_credentials
+        AuthMessage.SignInFailed -> R.string.auth_error_sign_in_failed
+        AuthMessage.EmailAlreadyInUse -> R.string.auth_error_email_already_in_use
+        AuthMessage.CreateAccountFailed -> R.string.auth_error_create_account_failed
+        AuthMessage.GoogleLinkRequired,
+        AuthMessage.NoGoogleCredential,
+        AuthMessage.GoogleProviderUnavailable,
+        AuthMessage.MissingGoogleIdToken,
+        AuthMessage.GoogleSignInFailed,
+        AuthMessage.GoogleLinkEmailMismatch,
+        AuthMessage.GoogleLinkTokenRefreshFailed,
+        -> googleAuthMessageStringRes()
+    }
+
+@StringRes
+private fun AuthMessage.googleAuthMessageStringRes(): Int =
+    when (this) {
+        AuthMessage.NoGoogleCredential -> R.string.auth_error_no_google_credential
+        AuthMessage.GoogleProviderUnavailable -> R.string.auth_error_google_provider_unavailable
+        AuthMessage.MissingGoogleIdToken -> R.string.auth_error_missing_google_id_token
+        AuthMessage.GoogleSignInFailed -> R.string.auth_error_google_sign_in_failed
+        AuthMessage.GoogleLinkRequired -> R.string.auth_google_link_required
+        AuthMessage.GoogleLinkEmailMismatch -> R.string.auth_error_google_link_email_mismatch
+        AuthMessage.GoogleLinkTokenRefreshFailed -> R.string.auth_error_google_link_token_refresh_failed
+        else -> error("Unsupported Google auth message: $this")
+    }

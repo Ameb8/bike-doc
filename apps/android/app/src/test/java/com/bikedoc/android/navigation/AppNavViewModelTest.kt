@@ -3,6 +3,8 @@ package com.bikedoc.android.navigation
 import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
+import com.bikedoc.android.auth.GoogleSignInHost
+import com.bikedoc.android.auth.PendingAuthCredential
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,7 +38,17 @@ class AppNavViewModelTest {
             password: String,
         ): AuthResult = AuthResult.Failure(AuthFailureReason.Unknown)
 
+        override suspend fun continueWithGoogle(host: GoogleSignInHost): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
+
+        override suspend fun linkWithGoogle(pendingCredential: PendingAuthCredential): AuthResult {
+            return AuthResult.Failure(AuthFailureReason.Unknown)
+        }
+
         override fun currentUserId(): String? = if (signedIn) "user-1" else null
+
+        override fun currentUserEmail(): String? = null
 
         override fun isSignedIn(): Boolean = signedIn
 
