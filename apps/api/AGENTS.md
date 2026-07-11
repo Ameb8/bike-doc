@@ -29,6 +29,8 @@ Read only the files relevant to the change:
 - `docs/specs/apps/diagnostic-report-v1.md`: Diagnostic report schema and validation.
 - `docs/specs/apps/adk-diagnostic-tools.md`: Internal diagnostic ADK tool contracts.
 - `docs/specs/apps/safety-diagnostic.md`: Diagnostic safety flags and state rules.
+- `docs/specs/apps/agent/bike-profile-inference.md`: Automatic image-based bike
+  profile inference, claim resolution, and expanded profile schema.
 
 ## Backend Shape
 
