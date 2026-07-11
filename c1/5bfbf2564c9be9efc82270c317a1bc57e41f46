@@ -1,0 +1,74 @@
+apps/api/tests/unit/services/test_bike_service.py
+  s_f60d5a6b8d728b::t_787eb75db3a20b 10-12,15-16,34-35,64-71,90-94,98-118
+  s_f60d5a6b8d728b::t_359933fc554afd 297-309,314-343
+  s_f60d5a6b8d728b::t_ffc24772c4abf1 344-399
+  s_f60d5a6b8d728b::t_0573d1c60d6430 470-472
+  s_f60d5a6b8d728b::t_c2517b65977fbf 13-14,310-313
+  s_f60d5a6b8d728b::t_2ddb2f8f81793b 95-97
+apps/api/src/bike_doc_api/services/bikes.py
+  s_f60d5a6b8d728b::t_224b4eeca6badc 86-88,376,404,426-438
+  s_f60d5a6b8d728b::t_180d1abef74e40 422
+  s_f60d5a6b8d728b::t_8aa1768aaed22c 40,618,630-644,650-658,663-711
+  s_f60d5a6b8d728b::t_1037b5c5bf7593 7,16-18,21-22,38-39,41-44,64-71,83-85,89-104
+  s_f60d5a6b8d728b::t_2642702c671b9a 245-259,293-298,301-304,306,310,312-319,333-375,377-392,397-403,405-421,423-425,439,558-563
+  s_f60d5a6b8d728b::t_bf1306bc63d388 537
+  s_f60d5a6b8d728b::t_c2517b65977fbf 19-20,146,307-309,393-396,519-521,524-526
+  s_f60d5a6b8d728b::t_f9ba63bf7f6c00 150-171,482,486-518,522-523,527-536,538-541
+  s_f60d5a6b8d728b::t_be2e16f2f15637 8,564-571,609-617,619-629
+apps/api/src/bike_doc_api/models/__init__.py
+  s_f60d5a6b8d728b::t_ab85436cb31131 4
+apps/api/tests/unit/services/test_profile_migration.py
+  s_f60d5a6b8d728b::t_c9978853b4c615 7-9,14,83-94
+  s_f60d5a6b8d728b::t_c9ce66b57fb0df 5-6
+  s_f60d5a6b8d728b::t_c2517b65977fbf 10-13
+  s_f60d5a6b8d728b::t_ad9915bea5cfa7 1-4,15-82
+apps/api/src/bike_doc_api/repositories/bikes.py
+  s_f60d5a6b8d728b::t_e76ab992035648 8,44-61,84-89,94-122
+  s_f60d5a6b8d728b::t_3ba1509bfb207a 90-93
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_f60d5a6b8d728b::t_c2517b65977fbf 177-187,208-213,218-227,233-238,241-248,252-259,266-275,278-283,287-293,305-313,317-319,322-328,330-333,336-346,348-380,392-396,398-406,409-411,413-445,447-487,489-494,496-500,502-511,513-519,521-537,540-542,544-555,557-563,566-571,574-584
+  s_f60d5a6b8d728b::t_0a395a719c28b7 149
+  s_f60d5a6b8d728b::t_2167866c4c071e 1-148,150-176,188-207,214-217,228-232,239-240,249-251,260-265,276-277,284-286,294-304,314-316,320-321,329,334-335,347,381-391,397,407-408,412,446,488,495,501,512,520,538-539,543,556,564-565,572-573,585-589
+apps/api/src/bike_doc_api/services/profile_resolution.py
+  s_f60d5a6b8d728b::t_65bb9961b9c6fe 126,142-156
+  s_f60d5a6b8d728b::t_778eb9abe5223c 1-4,7-34,159-161,175,189-195,197-204,206-213,215-220,222-230,232-239,241-248,250-252,254-262,264-271,273-286,288-295,297-299
+  s_f60d5a6b8d728b::t_2e60af5a8aca9b 162-174,176-188,196,205,214,221,231,240,249,263,272,287
+  s_f60d5a6b8d728b::t_9a1afbc22f07c1 5,78-79,91-125,127-141
+  s_f60d5a6b8d728b::t_c2517b65977fbf 6,296
+  s_f60d5a6b8d728b::t_76cd9ff6abea90 35-75,77,157-158
+  s_f60d5a6b8d728b::t_0a395a719c28b7 76,80-90,253
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_f60d5a6b8d728b::t_f08acd8929eb2a 29,45-48
+apps/api/src/bike_doc_api/db/migrations/versions/2026_07_11_0002_bike_profile_v2_claims.py
+  s_f60d5a6b8d728b::t_0a395a719c28b7 8-9
+  s_f60d5a6b8d728b::t_f5e470b1b5fa92 66-94
+  s_f60d5a6b8d728b::t_a32e801d08eaa0 26-29,195-199
+  s_f60d5a6b8d728b::t_16ee01abe926bb 1-7,10-25,30-65,95-194,200-257,259-263
+  s_f60d5a6b8d728b::t_1e80498ec313d2 258
+apps/api/src/bike_doc_api/models/bike.py
+  s_f60d5a6b8d728b::t_ce7293bb8c686b 129
+  s_f60d5a6b8d728b::t_d9cfaaff4b37db 4,16,28-32,128,130-136,143,155-181,185-186,190-194,198-204,208-237,243-249,255-266,271-273
+  s_f60d5a6b8d728b::t_c2517b65977fbf 6-15,139-141,182-184,187-189,195-197,205-207,238-242,250-254,268-270,274-276
+  s_f60d5a6b8d728b::t_d08e9f6ea54e66 33-48,137-138,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c15bfbf2564c9be9efc82270c317a1bc57e41f46",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_f60d5a6b8d728b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5240-f9c2-73e1-895d-3329a9bdf5d5",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
