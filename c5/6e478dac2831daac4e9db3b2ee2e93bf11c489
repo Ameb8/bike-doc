@@ -1,0 +1,44 @@
+apps/api/CONTEXT.md
+  s_6c106ccf6e6f92::t_83dc1756fbbca3 18-39
+docs/specs/apps/agent/bike-profile-inference.md
+  s_6a71dc40365306::t_0687d6fdfe6907 945-981,983-998,1012-1045
+  s_6c106ccf6e6f92::t_f7d809e1a7f7b1 289-290,298-308,315,608-612
+  s_6c106ccf6e6f92::t_d0bbc86e86766b 312-314
+  s_6c106ccf6e6f92::t_65d72b050e0dc2 214,216-217,295,557-567,646-648
+  s_6c106ccf6e6f92::t_7856e423d4cc84 489-491,575-578,596-599
+  s_6c106ccf6e6f92::t_60f5e97ebd3b01 1-2,4-213,215,218-288,291-294,296-297,309-311,316-488,492-533,537-556,568-574,579-595,600-607,613-645,649-937,941-944,999-1011,1046-1331,1337-1349,1358,1360,1362-1363,1365-1455,1459
+  s_6c106ccf6e6f92::t_a558f62bf61e81 3
+  s_6a71dc40365306::t_fd103841df3b5e 534-536,1332-1336,1351-1352,1355-1357,1359,1361,1364,1456-1458
+  s_6a71dc40365306::t_90e23909e1eaeb 938-940,982,1350,1353-1354
+apps/api/AGENTS.md
+  s_6c106ccf6e6f92::t_c3c87cf8560873 32-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c56e478dac2831daac4e9db3b2ee2e93bf11c489",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_6a71dc40365306": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4b38-39d3-7bc2-b981-d341b46a86b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_6c106ccf6e6f92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f4aaf-0936-77f2-bde9-caff49365830",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
