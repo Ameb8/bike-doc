@@ -7,7 +7,13 @@ from datetime import UTC, datetime
 import pytest
 
 from bike_doc_api.core.errors import BikeRepairHistoryConflictError, NotFoundError
-from bike_doc_api.models.bike import BikeProfile as BikeProfileModel
+from bike_doc_api.models.bike import (
+    BikeFactClaim,
+    BikeFieldResolution,
+)
+from bike_doc_api.models.bike import (
+    BikeProfile as BikeProfileModel,
+)
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.bike import BikeProfileCreate, BikeProfilePatch
@@ -25,6 +31,8 @@ class FakeBikeRepository:
         repair_session_bike_ids_by_user: dict[str, set[str]] | None = None,
     ) -> None:
         self.bikes = bikes or []
+        self.claims: list[BikeFactClaim] = []
+        self.resolutions: dict[tuple[str, str], BikeFieldResolution] = {}
         self.repair_session_bike_ids_by_user = repair_session_bike_ids_by_user or {
             "usr_owner": repair_session_bike_ids or set()
         }
@@ -53,6 +61,14 @@ class FakeBikeRepository:
                 return bike
         return None
 
+    async def get_owned_active_for_update(
+        self,
+        *,
+        bike_id: str,
+        user_id: str,
+    ) -> BikeProfileModel | None:
+        return await self.get_owned_active(bike_id=bike_id, user_id=user_id)
+
     async def list_owned_active(
         self,
         user_id: str,
@@ -70,6 +86,36 @@ class FakeBikeRepository:
     async def save(self, bike: BikeProfileModel) -> BikeProfileModel:
         bike.updated_at = datetime(2026, 2, 1, tzinfo=UTC)
         return bike
+
+    async def add_claim(self, claim: BikeFactClaim) -> BikeFactClaim:
+        claim.id = f"bfc_{len(self.claims) + 1}"
+        self.claims.append(claim)
+        return claim
+
+    async def get_claim(self, claim_id: str) -> BikeFactClaim | None:
+        return next((claim for claim in self.claims if claim.id == claim_id), None)
+
+    async def get_resolution(
+        self,
+        *,
+        bike_id: str,
+        field_path: str,
+    ) -> BikeFieldResolution | None:
+        return self.resolutions.get((bike_id, field_path))
+
+    async def save_resolution(
+        self,
+        resolution: BikeFieldResolution,
+    ) -> BikeFieldResolution:
+        self.resolutions[(resolution.bike_id, resolution.field_path)] = resolution
+        return resolution
+
+    async def list_resolutions(self, *, bike_id: str) -> list[BikeFieldResolution]:
+        return [
+            resolution
+            for (resolution_bike_id, _), resolution in self.resolutions.items()
+            if resolution_bike_id == bike_id
+        ]
 
     async def list_bike_ids_with_owned_repair_sessions(
         self,
@@ -248,6 +294,109 @@ async def test_update_bike_can_clear_nullable_model_year() -> None:
     assert updated.display_name == "Commuter"
 
 
+async def test_manual_technical_patch_creates_claims_and_resolved_v2_leaves() -> None:
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    service = ResolvedBikeProfileService(repo)
+
+    updated = await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(brake_type="hydraulic_disc"),
+    )
+
+    assert updated.brake_type == "hydraulic_disc"
+    assert bike.profile_revision == 1
+    assert [
+        (claim.field_path, claim.source_type, claim.disposition)
+        for claim in repo.claims
+    ] == [
+        ("brakes.front.mechanism", "manual_profile_edit", "applied"),
+        ("brakes.front.actuation", "manual_profile_edit", "applied"),
+        ("brakes.rear.mechanism", "manual_profile_edit", "applied"),
+        ("brakes.rear.actuation", "manual_profile_edit", "applied"),
+    ]
+    rear = repo.resolutions[(bike.id, "brakes.rear.actuation")]
+    assert rear.current_value == "hydraulic"
+    assert rear.current_claim_id == repo.claims[-1].id
+    assert rear.resolution_state == "resolved"
+
+
+async def test_manual_clear_creates_a_barrier_and_changes_revision_once() -> None:
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    service = ResolvedBikeProfileService(repo)
+
+    await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(model_year=None),
+    )
+
+    resolution = repo.resolutions[(bike.id, "identity.model_year")]
+    assert bike.profile_revision == 1
+    assert repo.claims[0].source_type == "manual_profile_clear"
+    assert resolution.resolution_state == "cleared"
+    assert resolution.current_value is None
+    assert resolution.manual_clear_barrier_at is not None
+
+
+async def test_duplicate_manual_evidence_does_not_change_profile_revision() -> None:
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    service = ResolvedBikeProfileService(repo)
+
+    await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(make="Surly"),
+    )
+    first_revision = bike.profile_revision
+    first_updated_at = bike.updated_at
+
+    await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(make="Surly"),
+    )
+
+    assert bike.profile_revision == first_revision
+    assert bike.updated_at == first_updated_at
+    assert repo.claims[-1].disposition == "supporting"
+
+
+async def test_display_name_and_notes_remain_outside_the_claim_ledger() -> None:
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    service = ResolvedBikeProfileService(repo)
+
+    await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(display_name="Updated", notes="New note"),
+    )
+
+    assert bike.display_name == "Updated"
+    assert bike.notes == "New note"
+    assert repo.claims == []
+    assert bike.profile_revision is None
+
+
+async def test_legacy_read_hides_mixed_positioned_brakes() -> None:
+    bike = _bike()
+    bike.technical_profile = {
+        "brakes": {
+            "front": {"mechanism": "disc", "actuation": "mechanical"},
+            "rear": {"mechanism": "disc", "actuation": "hydraulic"},
+        },
+    }
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
+
+    result = await service.get_bike(current_user=_user(), bike_id=bike.id)
+
+    assert result.brake_type is None
+
+
 async def test_delete_bike_soft_deletes_profile() -> None:
     bike = _bike()
     service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
@@ -318,4 +467,7 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
     assert result.bike_profile.id == bike.id
     assert result.bike_profile.drivetrain == "Shimano 2x10"
     assert result.bike_profile.brake_type == "mechanical_disc"
+    assert result.bike_profile.schema_version == "bike_profile.v2"
+    assert result.bike_profile.profile["profile_revision"] == 0
+    assert result.bike_profile.field_states == {}
     assert result.user_skill_level == "beginner"

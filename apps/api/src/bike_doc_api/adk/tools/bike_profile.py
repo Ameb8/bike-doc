@@ -26,7 +26,7 @@ class GetBikeProfileInput(BaseModel):
 
 
 class BikeProfileToolData(BaseModel):
-    """Bike profile fields exposed to the diagnostic agent."""
+    """Compact V2 profile context exposed to the diagnostic agent."""
 
     model_config = ConfigDict(extra="ignore", from_attributes=True)
 
@@ -42,6 +42,10 @@ class BikeProfileToolData(BaseModel):
     wheel_size: str | None = None
     tire_size: str | None = None
     notes: str | None = None
+    schema_version: str | None = None
+    profile: dict[str, Any] | None = None
+    field_states: dict[str, dict[str, Any]] | None = None
+    conflicts: list[dict[str, Any]] | None = None
 
 
 class BikeProfileResultProtocol(Protocol):
