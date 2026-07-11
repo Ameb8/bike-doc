@@ -8,9 +8,10 @@ import pytest
 
 from bike_doc_api.core.errors import BikeRepairHistoryConflictError, NotFoundError
 from bike_doc_api.models.bike import BikeProfile as BikeProfileModel
+from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.bike import BikeProfileCreate, BikeProfilePatch
-from bike_doc_api.services.bikes import BikeService
+from bike_doc_api.services.bikes import ResolvedBikeProfileService
 
 
 class FakeBikeRepository:
@@ -89,12 +90,36 @@ class FakeBikeRepository:
         return bike
 
 
-def _user(user_id: str = "usr_owner") -> User:
+class FakeDiagnosticRepairSessionRepository:
+    """In-memory repair-session lookup for resolved-profile tests."""
+
+    def __init__(self, repair_sessions: list[RepairSessionModel]) -> None:
+        self.repair_sessions = repair_sessions
+
+    async def get_owned(
+        self,
+        *,
+        repair_session_id: str,
+        user_id: str,
+    ) -> RepairSessionModel | None:
+        return next(
+            (
+                repair_session
+                for repair_session in self.repair_sessions
+                if repair_session.id == repair_session_id
+                and repair_session.user_id == user_id
+            ),
+            None,
+        )
+
+
+def _user(user_id: str = "usr_owner", *, skill_level: str = "unknown") -> User:
     return User(
         id=user_id,
         auth_subject=f"auth|{user_id}",
         email=f"{user_id}@example.com",
         display_name=user_id,
+        skill_level=skill_level,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
 
@@ -133,7 +158,7 @@ def _bike(
 
 async def test_create_bike_uses_defaults_and_returns_public_profile() -> None:
     repo = FakeBikeRepository()
-    service = BikeService(repo)
+    service = ResolvedBikeProfileService(repo)
 
     bike = await service.create_bike(
         current_user=_user(),
@@ -162,7 +187,7 @@ async def test_list_bikes_returns_owned_active_profiles_only() -> None:
         ],
         repair_session_bike_ids={"bike_old", "bike_other", "bike_deleted"},
     )
-    service = BikeService(repo)
+    service = ResolvedBikeProfileService(repo)
 
     bikes = await service.list_bikes(current_user=_user())
 
@@ -172,7 +197,9 @@ async def test_list_bikes_returns_owned_active_profiles_only() -> None:
 
 
 async def test_get_bike_requires_ownership() -> None:
-    service = BikeService(FakeBikeRepository([_bike(user_id="usr_other")]))
+    service = ResolvedBikeProfileService(
+        FakeBikeRepository([_bike(user_id="usr_other")]),
+    )
 
     with pytest.raises(NotFoundError):
         await service.get_bike(current_user=_user(), bike_id="bike_owned")
@@ -180,7 +207,7 @@ async def test_get_bike_requires_ownership() -> None:
 
 async def test_get_bike_includes_repair_session_history_flag() -> None:
     bike = _bike()
-    service = BikeService(
+    service = ResolvedBikeProfileService(
         FakeBikeRepository([bike], repair_session_bike_ids={bike.id}),
     )
 
@@ -191,7 +218,7 @@ async def test_get_bike_includes_repair_session_history_flag() -> None:
 
 async def test_update_bike_preserves_omitted_fields_and_clears_explicit_nulls() -> None:
     bike = _bike()
-    service = BikeService(FakeBikeRepository([bike]))
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
 
     updated = await service.update_bike(
         current_user=_user(),
@@ -209,7 +236,7 @@ async def test_update_bike_preserves_omitted_fields_and_clears_explicit_nulls() 
 
 async def test_update_bike_can_clear_nullable_model_year() -> None:
     bike = _bike()
-    service = BikeService(FakeBikeRepository([bike]))
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
 
     updated = await service.update_bike(
         current_user=_user(),
@@ -223,7 +250,7 @@ async def test_update_bike_can_clear_nullable_model_year() -> None:
 
 async def test_delete_bike_soft_deletes_profile() -> None:
     bike = _bike()
-    service = BikeService(FakeBikeRepository([bike]))
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
 
     await service.delete_bike(current_user=_user(), bike_id=bike.id)
 
@@ -232,7 +259,7 @@ async def test_delete_bike_soft_deletes_profile() -> None:
 
 async def test_delete_bike_conflicts_when_owned_history_exists() -> None:
     bike = _bike()
-    service = BikeService(
+    service = ResolvedBikeProfileService(
         FakeBikeRepository([bike], repair_session_bike_ids={bike.id}),
     )
 
@@ -244,7 +271,7 @@ async def test_delete_bike_conflicts_when_owned_history_exists() -> None:
 
 async def test_delete_bike_ignores_other_users_history() -> None:
     bike = _bike()
-    service = BikeService(
+    service = ResolvedBikeProfileService(
         FakeBikeRepository(
             [bike],
             repair_session_bike_ids_by_user={"usr_other": {bike.id}},
@@ -257,7 +284,38 @@ async def test_delete_bike_ignores_other_users_history() -> None:
 
 
 async def test_delete_bike_requires_ownership() -> None:
-    service = BikeService(FakeBikeRepository([_bike(user_id="usr_other")]))
+    service = ResolvedBikeProfileService(
+        FakeBikeRepository([_bike(user_id="usr_other")]),
+    )
 
     with pytest.raises(NotFoundError):
         await service.delete_bike(current_user=_user(), bike_id="bike_owned")
+
+
+async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() -> None:
+    bike = _bike()
+    repair_session = RepairSessionModel(
+        id="rs_diagnostic",
+        user_id=bike.user_id,
+        bike_id=bike.id,
+        phase="diagnostic",
+        status="running",
+        safety_state="ok",
+        active_safety_flags=[],
+        latest_event_sequence=0,
+    )
+    service = ResolvedBikeProfileService(
+        FakeBikeRepository([bike]),
+        repair_sessions=FakeDiagnosticRepairSessionRepository([repair_session]),
+    )
+
+    result = await service.get_diagnostic_bike_profile(
+        current_user=_user(skill_level="beginner"),
+        repair_session_id=repair_session.id,
+        diagnostic_session_id="phs_diagnostic",
+    )
+
+    assert result.bike_profile.id == bike.id
+    assert result.bike_profile.drivetrain == "Shimano 2x10"
+    assert result.bike_profile.brake_type == "mechanical_disc"
+    assert result.user_skill_level == "beginner"

@@ -22,8 +22,6 @@ from bike_doc_api.models.repair_session import (
 )
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
-from bike_doc_api.schemas.bike import BikeProfile as BikeProfileSchema
-from bike_doc_api.schemas.bike import bike_profile_from_model
 from bike_doc_api.schemas.common import (
     RepairSessionPhase,
     RepairSessionStatus,
@@ -95,14 +93,6 @@ class RepairPhaseSessionRepositoryProtocol(Protocol):
         phase: str,
     ) -> RepairPhaseSessionModel | None:
         """Return a phase session for one repair session phase."""
-
-
-@dataclass(frozen=True, slots=True)
-class DiagnosticBikeProfile:
-    """Bike profile context attached to a diagnostic repair session."""
-
-    bike_profile: BikeProfileSchema
-    user_skill_level: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,31 +244,6 @@ class RepairSessionService:
         if repair_session is None:
             raise NotFoundError()
         return repair_session_from_model(repair_session)
-
-    async def get_diagnostic_bike_profile(
-        self,
-        *,
-        current_user: User,
-        repair_session_id: str,
-        diagnostic_session_id: str,
-    ) -> DiagnosticBikeProfile:
-        """Return the active diagnostic session's attached bike profile."""
-
-        repair_session = await self._get_owned_diagnostic_session(
-            current_user=current_user,
-            repair_session_id=repair_session_id,
-            diagnostic_session_id=diagnostic_session_id,
-        )
-        bike = await self._bikes.get_owned_active(
-            bike_id=repair_session.bike_id,
-            user_id=current_user.id,
-        )
-        if bike is None:
-            raise NotFoundError()
-        return DiagnosticBikeProfile(
-            bike_profile=bike_profile_from_model(bike),
-            user_skill_level=current_user.skill_level,
-        )
 
     async def lookup_repair_history(
         self,

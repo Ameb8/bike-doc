@@ -60,6 +60,7 @@ from bike_doc_api.schemas.common import RepairSessionStatus
 from bike_doc_api.schemas.event import RepairSessionEventType
 from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.artifacts import ArtifactService
+from bike_doc_api.services.bikes import ResolvedBikeProfileService
 from bike_doc_api.services.events import EventService
 from bike_doc_api.services.repair_sessions import RepairSessionService
 from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportService
@@ -170,6 +171,11 @@ def _build_background_orchestrator(
         phase_sessions=phase_sessions,
         rollback=session.rollback,
     )
+    bike_profile_service = ResolvedBikeProfileService(
+        BikeRepository(session),
+        repair_sessions=repair_sessions,
+        phase_sessions=phase_sessions,
+    )
     artifact_service = ArtifactService(
         artifacts,
         repair_sessions,
@@ -195,7 +201,7 @@ def _build_background_orchestrator(
         rollback=session.rollback,
     )
     tool_dependencies = DiagnosticAgentToolDependencies(
-        bike_profile_service=cast(BikeProfileServiceProtocol, repair_session_service),
+        bike_profile_service=cast(BikeProfileServiceProtocol, bike_profile_service),
         repair_history_service=cast(
             RepairHistoryServiceProtocol,
             repair_session_service,
@@ -226,7 +232,7 @@ def _build_background_orchestrator(
         ),
         runner=runner,
         get_bike_profile=GetBikeProfileTool(
-            cast(BikeProfileServiceProtocol, repair_session_service),
+            cast(BikeProfileServiceProtocol, bike_profile_service),
         ),
         lookup_repair_history=LookupRepairHistoryTool(
             cast(RepairHistoryServiceProtocol, repair_session_service),
