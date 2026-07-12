@@ -5,7 +5,10 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, Path, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bike_doc_api.adk.background import execute_diagnostic_turn_background
+from bike_doc_api.adk.background import (
+    execute_diagnostic_turn_background,
+    execute_profile_inference_background,
+)
 from bike_doc_api.adk.sessions import (
     DiagnosticADKSessionClientProtocol,
     DiagnosticPhaseSessionManager,
@@ -87,4 +90,10 @@ async def create_repair_session_turn(
             accepted.repair_session_id,
             accepted.turn_id,
         )
+        if request.message.artifact_ids:
+            # Run after diagnostic processing so enrichment cannot delay it.
+            background_tasks.add_task(
+                execute_profile_inference_background,
+                accepted.turn_id,
+            )
     return accepted

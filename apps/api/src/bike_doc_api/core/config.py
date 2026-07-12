@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
+    profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_extractor_version: str = Field(
+        default="rear-brake-shadow.v1",
+        min_length=1,
+    )
     price_lookup_provider: Literal["unavailable", "gemini_grounded"] = "unavailable"
     price_lookup_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     price_lookup_model: str = Field(default="gemini-2.5-flash", min_length=1)
@@ -170,6 +177,25 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("profile_inference_llm_provider", mode="before")
+    @classmethod
+    def validate_profile_inference_llm_provider(cls, value: object) -> object:
+        """Normalize the isolated image-extraction provider selection."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("profile_inference_model", "profile_inference_extractor_version")
+    @classmethod
+    def validate_profile_inference_strings(cls, value: str) -> str:
+        """Reject blank model or version identifiers used for run idempotency."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("profile inference settings must not be blank")
+        return normalized
+
     @field_validator(
         "diagnostic_agent_temperature",
         "diagnostic_agent_timeout_seconds",
@@ -179,6 +205,15 @@ class Settings(BaseSettings):
         """Reject non-finite diagnostic generation settings."""
         if not isfinite(value):
             raise ValueError("diagnostic numeric settings must be finite")
+        return value
+
+    @field_validator("profile_inference_timeout_seconds")
+    @classmethod
+    def validate_finite_profile_inference_float(cls, value: float) -> float:
+        """Reject non-finite profile-inference generation settings."""
+
+        if not isfinite(value):
+            raise ValueError("profile inference numeric settings must be finite")
         return value
 
     @field_validator("price_lookup_provider", mode="before")
@@ -294,6 +329,32 @@ def validate_price_lookup_runtime_configuration(
         raise ValueError("vertex_ai price lookup requires GOOGLE_CLOUD_PROJECT")
     if not env.get("GOOGLE_CLOUD_LOCATION"):
         raise ValueError("vertex_ai price lookup requires GOOGLE_CLOUD_LOCATION")
+
+
+def validate_profile_inference_runtime_configuration(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate credentials required by the configured image extractor."""
+
+    if settings.environment.lower() == "test":
+        return
+    env = environ if environ is not None else os.environ
+    if settings.profile_inference_llm_provider == "google_ai":
+        if env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY"):
+            return
+        raise ValueError(
+            "google_ai profile inference requires GEMINI_API_KEY or GOOGLE_API_KEY",
+        )
+    if env.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() != "true":
+        raise ValueError(
+            "vertex_ai profile inference requires GOOGLE_GENAI_USE_VERTEXAI=true",
+        )
+    if not env.get("GOOGLE_CLOUD_PROJECT"):
+        raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_PROJECT")
+    if not env.get("GOOGLE_CLOUD_LOCATION"):
+        raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_LOCATION")
 
 
 def validate_artifact_storage_runtime_configuration(

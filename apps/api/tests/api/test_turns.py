@@ -78,6 +78,7 @@ class _InMemoryTurnStore:
         self.turns: dict[tuple[str, str], RepairTurnModel] = {}
         self.events: list[RepairSessionEventModel] = []
         self.background_calls: list[tuple[str, str, str]] = []
+        self.profile_inference_calls: list[str] = []
         self.artifacts = {
             OWNED_ARTIFACT_ID: ArtifactRefModel(
                 id=OWNED_ARTIFACT_ID,
@@ -347,6 +348,15 @@ def turn_service_override(
         "execute_diagnostic_turn_background",
         execute_background,
     )
+
+    async def execute_profile_inference(turn_id: str) -> None:
+        store.profile_inference_calls.append(turn_id)
+
+    monkeypatch.setattr(
+        turns_route,
+        "execute_profile_inference_background",
+        execute_profile_inference,
+    )
     app.dependency_overrides[get_turn_service] = lambda: turn_service
     app.dependency_overrides[get_event_service] = lambda: event_service
     yield store
@@ -474,6 +484,25 @@ async def test_repeating_client_turn_id_returns_original_acceptance(
     assert turn_service_override.background_calls == [
         expected_call,
     ]
+
+
+async def test_accepted_image_turn_schedules_one_shadow_inference_run(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id="client-turn-image-inference",
+            message={"text": "Rear brake photo.", "artifact_ids": [OWNED_ARTIFACT_ID]},
+        ),
+    )
+
+    assert response.status_code == 202
+    assert turn_service_override.profile_inference_calls == [response.json()["turn_id"]]
 
 
 async def test_new_turn_while_session_running_returns_409(
