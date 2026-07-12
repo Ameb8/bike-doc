@@ -1,0 +1,58 @@
+apps/api/src/bike_doc_api/models/profile_inference.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 1-69
+apps/api/src/bike_doc_api/providers/storage/gcs.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 50-57
+apps/api/src/bike_doc_api/providers/storage/local.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 41-48
+apps/api/src/bike_doc_api/schemas/profile_inference.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 1-17,19-29,31-35,37-51,53-82,84-91,93,95-118,120-122
+  s_41f0b699d75ce6::t_11b41d9d2e6d1f 18,30,36,52,83,92
+  s_41f0b699d75ce6::t_f40bb46159fe98 119
+  s_41f0b699d75ce6::t_2ecb553452136f 94
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_41f0b699d75ce6::t_6b16d4964f8df8 159-160
+  s_41f0b699d75ce6::t_2dd098905a1524 315-317,343-346
+  s_41f0b699d75ce6::t_49a691fd5b4aa0 1-77,79-158,161-314,318-328,330-332,336-342,347-351,354-373
+  s_41f0b699d75ce6::t_7c591ff23faca7 78
+  s_41f0b699d75ce6::t_11b41d9d2e6d1f 329,333-335,352-353
+apps/api/src/bike_doc_api/models/__init__.py
+  s_41f0b699d75ce6::t_a0e9f15692fa61 7
+apps/api/src/bike_doc_api/repositories/profile_inference.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 1-45
+apps/api/src/bike_doc_api/db/migrations/versions/2026_07_11_0003_profile_inference_runs.py
+  s_41f0b699d75ce6::t_a0e9f15692fa61 1-25,28-57
+  s_41f0b699d75ce6::t_2dd098905a1524 26-27
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_41f0b699d75ce6::t_bc89423235a7b0 6
+  s_41f0b699d75ce6::t_4449e2d5e2b102 306
+  s_41f0b699d75ce6::t_5f4c2da38bd81b 1-4,7,10-19,29,34-105,115-138,196-198,200-206,208-223
+  s_41f0b699d75ce6::t_96c484a2ae67ff 5,8-9,275-297,337-364
+  s_41f0b699d75ce6::t_02fb508dddb2f7 25-28,30-33,199,207,224-274,300-305,307-336,365
+  s_41f0b699d75ce6::t_49a691fd5b4aa0 139-145,152-195
+  s_41f0b699d75ce6::t_b55fac490aabb3 298-299
+  s_41f0b699d75ce6::t_7c591ff23faca7 106-114
+  s_41f0b699d75ce6::t_2dd098905a1524 20-24,146-151
+apps/api/src/bike_doc_api/providers/storage/base.py
+  s_41f0b699d75ce6::t_925d873a7e81e5 34-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "95ac347a6ff06774834e5a19414eea758f9936bb",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_41f0b699d75ce6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5401-fd32-7343-ac66-406b01b7c00c",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
