@@ -1,0 +1,26 @@
+apps/api/src/bike_doc_api/adk/ARCHITECTURE.md
+  s_4d5e267dda0b0e::t_707cbc08fb4f36 101-103,229-233
+  s_4d5e267dda0b0e::t_52b5840e6a3df8 1-12,14-100,104-227
+  s_4d5e267dda0b0e::t_7eca6b95493d48 13,228
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1766c30da2e61d9cb0e7d77ef43e54c5389a37d7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_4d5e267dda0b0e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f559c-f1fd-7ae3-9ac4-c9fff6cf813f",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
