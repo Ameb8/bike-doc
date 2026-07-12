@@ -6,7 +6,8 @@ evals.
 
 ## Canonical References
 
-- Backend scaffold and ownership: `docs/specs/apps/api.md`
+- Current system structure and layout: `apps/api/ARCHITECTURE.md`
+- Backend canonical high-level spec: `docs/specs/apps/api.md`
 - Product API contract: `docs/specs/openapi.yaml`
 - Product behavior and workflow: `docs/specs/bike-doc.md`
 
@@ -37,15 +38,27 @@ package root `src/bike_doc_api`. Google ADK is imported as an internal library
 only; do not expose ADK sessions, prompts, tools, model settings, or internal
 schemas through the public API.
 
-Expected boundaries:
+### Module Layout
 
-- `api/` adapts HTTP requests and responses.
-- `schemas/` holds Pydantic API models aligned with the OpenAPI contract.
-- `services/` owns product behavior, workflow rules, idempotency, events, and
-  safety enforcement.
-- `repositories/`, `models/`, and `db/` own persistence.
-- `adk/` isolates agent orchestration and ADK-specific code.
-- `providers/` isolates external storage, price, and repair-reference services.
+- `api/`: adapts HTTP requests and responses at the FastAPI boundary.
+  It owns routing, dependency wiring, authentication dependencies, and transport concerns.
+- `schemas/`: holds Pydantic request, response, and shared API models.
+  These models define the public shapes aligned with the OpenAPI contract.
+- `services/`: owns product behavior and workflow rules.
+  It coordinates idempotency, events, safety enforcement, and domain operations without HTTP concerns.
+- `adk/`: isolates agent orchestration and Google ADK-specific code.
+  It contains agents, prompts, runners, sessions, report schemas, and thin ADK tool adapters.
+- `providers/`: isolates integrations with external or replaceable services.
+  Provider implementations cover storage, price lookup, and repair-reference sources behind interfaces.
+- `repositories/`: owns persistence-oriented data access operations.
+  Repositories query and mutate database-backed entities while keeping SQL details out of services and routes.
+- `models/`: defines the SQLAlchemy persistence models and database-facing domain records.
+  These models represent stored users, bikes, repair sessions, events, reports, artifacts, and related data.
+- `db/`: configures the database foundation used by the persistence layer.
+  It provides SQLAlchemy metadata, asynchronous sessions, and migration integration.
+- `core/`: contains cross-cutting backend infrastructure.
+  It centralizes configuration, logging, security helpers, and public error handling.
+
 
 ## Development Rules
 
@@ -57,6 +70,9 @@ Expected boundaries:
 - Do not add fake production behavior in placeholders.
 - Keep backend tests under `apps/api/tests`; agent behavior evaluations belong
   under `evals/bike-doc`.
+- Update `ARCHITECTURE.md` in the same change when adding, removing, renaming, or 
+  materially changing a module’s responsibility, interface, or dependency direction. 
+  Ordinary file additions within an existing module do not require an update. 
 
 ## Local Backend Commands
 
