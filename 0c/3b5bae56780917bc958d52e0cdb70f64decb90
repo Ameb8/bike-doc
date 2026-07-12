@@ -1,0 +1,35 @@
+apps/api/ARCHITECTURE.md
+  s_1d0043847b83a9::t_cdd91978d3692c 1-304
+apps/api/AGENTS.md
+  h_11a994996f9bb9 9-10,41,43,45,47,49,51,53,55,57,59,73-75
+  s_7fb573f3e2ea5b::t_e8ade4258a73c8 44,46,48,50,52,54,56,58,60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "0c3b5bae56780917bc958d52e0cdb70f64decb90",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_1d0043847b83a9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5564-2769-7491-aeaa-9a07c4f23020",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_7fb573f3e2ea5b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f556a-0b32-7421-86e4-a4a52b02ad93",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
