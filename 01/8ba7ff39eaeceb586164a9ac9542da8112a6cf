@@ -1,0 +1,35 @@
+apps/android/AGENTS.md
+  h_11a994996f9bb9 13-14,17-19,129-135
+  s_dd44d3eae2cc34::t_49a6dfc9daeba7 16,20-37
+apps/android/ARCHITECTURE.md
+  s_ec1803a1989b64::t_36f7993d08fdc7 1-268
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "018ba7ff39eaeceb586164a9ac9542da8112a6cf",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_dd44d3eae2cc34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f557d-2304-7d42-8aa1-6a62ec8ed4ea",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_ec1803a1989b64": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5777-a928-7451-9d0b-ccf9a619ba66",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
