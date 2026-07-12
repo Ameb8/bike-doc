@@ -10,7 +10,31 @@ behavior, navigation flow, SSE event handling, and client-side architecture
 decisions. Agents must treat it as authoritative over inference from this
 file, prior code, or general Android conventions. If a task appears to
 conflict with `mvp-spec.md`, stop and flag the conflict rather than silently
-resolving it either direction.
+resolving it either direction. `apps/android/ARCHITECTURE.md` provides an 
+up-to-date explanation of codebase structure, layout, and design.
+
+## Service Layout
+
+Modules in `apps/android/app/src/main/java/com/bikedoc/android`
+
+- `api`: Defines the Retrofit API service, authentication interceptor, API result
+  handling, network DTOs, and repositories for bikes, sessions, reports, and artifacts.
+- `auth`: Owns authentication providers, authentication errors, the sign-in screen,
+  and its ViewModel; Firebase-specific details stay behind `AuthProvider`.
+- `bikes`: Provides bike list and edit screens, their ViewModels, list repository,
+  and navigation result contracts for bike management.
+- `core`: Contains shared application infrastructure, such as injected coroutine
+  dispatcher qualifiers used across feature modules.
+- `di`: Contains Hilt modules that bind shared services and feature-specific
+  repositories, data sources, and dependencies.
+- `home`: Owns the home screen, its ViewModel, and the repository for loading
+  the signed-in user’s home data.
+- `navigation`: Defines typed application routes, the top-level Navigation Compose
+  graph, navigation-scoped state, and one-shot UI navigation events.
+- `sessions`: Owns diagnostic chat and report flows, including SSE streaming,
+  photo preparation, session models, screens, and ViewModels.
+- `ui`: Contains app-wide Compose presentation resources shared by screens,
+  currently including the Material theme and design configuration.
 
 ## Commands
 
@@ -102,5 +126,11 @@ class reference artifact — copy that pattern rather than inventing a new one.
   interfaces). Composables containing real logic (not pure layout) get a
   Compose UI test where practical.
 
-## App Code Overview
+## Service Rules
+
+- Update `ARCHITECTURE.md` in the same change when adding, removing, renaming, or 
+  materially changing a module’s responsibility, interface, or dependency direction. 
+  Ordinary file additions within an existing module do not require an update. 
+
+
 
