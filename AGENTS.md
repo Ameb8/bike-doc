@@ -11,6 +11,10 @@ BikeDoc is an AI-powered bike repair and diagnostic assistant.
 
 ### App
 
+```
+apps/android
+```
+
 App is Android Kotlin. always read `apps/android/AGENTS.md` if working on android app.
 
 ### Notable Docs
@@ -20,6 +24,10 @@ App is Android Kotlin. always read `apps/android/AGENTS.md` if working on androi
 
 
 ### Backend API
+
+```
+apps/api
+```
 
 Backend is a FastAPI service, with Google ADK agent backend. PostgreSQL is used for data persistence. Always read `apps/api/AGENTS.md` if working in backend.
 
