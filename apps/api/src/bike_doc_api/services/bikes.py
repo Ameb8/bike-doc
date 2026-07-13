@@ -35,8 +35,12 @@ from bike_doc_api.schemas.bike import (
     FrameMaterial,
 )
 from bike_doc_api.schemas.common import RepairSessionPhase
-from bike_doc_api.services.profile_registry import get_canonical_field
+from bike_doc_api.services.profile_registry import (
+    get_canonical_field,
+    get_canonical_field_definition,
+)
 from bike_doc_api.services.profile_resolution import (
+    NewBikeFactClaim,
     has_technical_value_path,
     manual_legacy_field_claims,
     technical_value,
@@ -339,85 +343,137 @@ class ResolvedBikeProfileService:
     ) -> bool:
         """Append manual claims and atomically update the resolved projection."""
 
-        changed = False
-        timestamp = datetime.now(UTC)
+        claims: list[NewBikeFactClaim] = []
         for field_name, value in field_values.items():
             if not include_clears and (value is None or value == "unknown"):
                 continue
             for new_claim in manual_legacy_field_claims(field_name, value):
                 if new_claim.value is not None:
                     get_canonical_field(new_claim.field_path, new_claim.value)
-                claim = await self._bikes.add_claim(
-                    BikeFactClaim(
-                        bike_id=bike.id,
-                        field_path=new_claim.field_path,
-                        value=new_claim.value,
-                        source_type=new_claim.source_type,
-                        source_ref={"type": "bike_profile", "id": bike.id},
-                        scope_assumption=new_claim.scope_assumption,
-                        observed_at=timestamp,
-                        disposition="applied",
-                        disposition_reason="manual_profile_write",
-                    ),
-                )
-                resolution = await self._bikes.get_resolution(
+                else:
+                    get_canonical_field_definition(new_claim.field_path)
+                claims.append(new_claim)
+        return await self._apply_manual_claims(bike=bike, claims=claims)
+
+    async def set_manual_technical_value(
+        self,
+        *,
+        current_user: User,
+        bike_id: str,
+        field_path: str,
+        value: Any | None,
+    ) -> None:
+        """Apply one internal V2 manual value or clear through the claim ledger.
+
+        This is deliberately an internal service operation until the V2 public
+        contract is introduced. It gives future manual editors the same atomic
+        claim, resolution, projection, and clear-barrier behavior as legacy
+        compatibility writes.
+        """
+
+        bike = await self._get_owned_bike_for_update(
+            current_user=current_user,
+            bike_id=bike_id,
+        )
+        field = get_canonical_field_definition(field_path)
+        if field.volatility_class in {"derived", "user_managed"}:
+            raise ValueError(f"{field_path} cannot be manually written directly.")
+        if value is not None:
+            get_canonical_field(field_path, value)
+            claim = NewBikeFactClaim(
+                field_path=field_path,
+                value=value,
+                source_type="manual_profile_edit",
+            )
+        else:
+            claim = NewBikeFactClaim(
+                field_path=field_path,
+                value=None,
+                source_type="manual_profile_clear",
+            )
+        await self._apply_manual_claims(bike=bike, claims=[claim])
+        if self._commit is not None:
+            await self._commit()
+
+    async def _apply_manual_claims(
+        self,
+        *,
+        bike: BikeProfileModel,
+        claims: list[NewBikeFactClaim],
+    ) -> bool:
+        """Append already-validated manual claims and resolve them atomically."""
+
+        changed = False
+        timestamp = datetime.now(UTC)
+        for new_claim in claims:
+            candidate_projection = with_technical_value(
+                bike.technical_profile,
+                field_path=new_claim.field_path,
+                value=new_claim.value,
+            )
+            claim = await self._bikes.add_claim(
+                BikeFactClaim(
                     bike_id=bike.id,
                     field_path=new_claim.field_path,
+                    value=new_claim.value,
+                    source_type=new_claim.source_type,
+                    source_ref={"type": "bike_profile", "id": bike.id},
+                    scope_assumption=new_claim.scope_assumption,
+                    observed_at=timestamp,
+                    disposition="applied",
+                    disposition_reason="manual_profile_write",
+                ),
+            )
+            resolution = await self._bikes.get_resolution(
+                bike_id=bike.id,
+                field_path=new_claim.field_path,
+            )
+            if resolution is None:
+                resolution = BikeFieldResolution(
+                    bike_id=bike.id,
+                    field_path=new_claim.field_path,
+                    current_value=None,
+                    resolution_state="unknown",
+                    effective_confidence="unknown",
                 )
-                if resolution is None:
-                    resolution = BikeFieldResolution(
-                        bike_id=bike.id,
-                        field_path=new_claim.field_path,
-                        current_value=None,
-                        resolution_state="unknown",
-                        effective_confidence="unknown",
-                    )
-                if new_claim.source_type == "manual_profile_clear":
-                    await self._supersede_current_claim(resolution)
-                    resolution.current_value = None
-                    resolution.resolution_state = "cleared"
-                    resolution.current_claim_id = claim.id
-                    resolution.supporting_claim_ids = []
-                    resolution.conflicting_claim_ids = []
-                    resolution.effective_confidence = "unknown"
-                    resolution.source_type = claim.source_type
-                    resolution.observed_at = timestamp
-                    resolution.resolved_at = timestamp
-                    resolution.manual_clear_barrier_at = timestamp
-                    bike.technical_profile = with_technical_value(
-                        bike.technical_profile,
-                        field_path=new_claim.field_path,
-                        value=None,
-                    )
-                    changed = True
-                elif (
-                    resolution.current_value == new_claim.value
-                    and resolution.resolution_state == "resolved"
-                ):
-                    claim.disposition = "supporting"
-                    claim.disposition_reason = "matches_current_manual_resolution"
-                    resolution.supporting_claim_ids = [
-                        *resolution.supporting_claim_ids,
-                        claim.id,
-                    ]
-                else:
-                    await self._supersede_current_claim(resolution)
-                    resolution.current_value = new_claim.value
-                    resolution.resolution_state = "resolved"
-                    resolution.current_claim_id = claim.id
-                    resolution.supporting_claim_ids = []
-                    resolution.conflicting_claim_ids = []
-                    resolution.effective_confidence = "high"
-                    resolution.source_type = claim.source_type
-                    resolution.observed_at = timestamp
-                    resolution.resolved_at = timestamp
-                    bike.technical_profile = with_technical_value(
-                        bike.technical_profile,
-                        field_path=new_claim.field_path,
-                        value=new_claim.value,
-                    )
-                    changed = True
-                await self._bikes.save_resolution(resolution)
+            if new_claim.source_type == "manual_profile_clear":
+                await self._supersede_current_claim(resolution)
+                resolution.current_value = None
+                resolution.resolution_state = "cleared"
+                resolution.current_claim_id = claim.id
+                resolution.supporting_claim_ids = []
+                resolution.conflicting_claim_ids = []
+                resolution.effective_confidence = "unknown"
+                resolution.source_type = claim.source_type
+                resolution.observed_at = timestamp
+                resolution.resolved_at = timestamp
+                resolution.manual_clear_barrier_at = timestamp
+                bike.technical_profile = candidate_projection
+                changed = True
+            elif (
+                resolution.current_value == new_claim.value
+                and resolution.resolution_state == "resolved"
+            ):
+                claim.disposition = "supporting"
+                claim.disposition_reason = "matches_current_manual_resolution"
+                resolution.supporting_claim_ids = [
+                    *resolution.supporting_claim_ids,
+                    claim.id,
+                ]
+            else:
+                await self._supersede_current_claim(resolution)
+                resolution.current_value = new_claim.value
+                resolution.resolution_state = "resolved"
+                resolution.current_claim_id = claim.id
+                resolution.supporting_claim_ids = []
+                resolution.conflicting_claim_ids = []
+                resolution.effective_confidence = "high"
+                resolution.source_type = claim.source_type
+                resolution.observed_at = timestamp
+                resolution.resolved_at = timestamp
+                bike.technical_profile = candidate_projection
+                changed = True
+            await self._bikes.save_resolution(resolution)
         if changed:
             bike.profile_revision = (bike.profile_revision or 0) + 1
             bike.updated_at = timestamp
@@ -533,9 +589,12 @@ class ResolvedBikeProfileService:
                 "id": bike.id,
                 "user_id": bike.user_id,
                 "display_name": bike.display_name,
+                "has_repair_sessions": True,
                 "profile_revision": bike.profile_revision or 0,
                 **(bike.technical_profile or {}),
                 "notes": bike.notes,
+                "created_at": bike.created_at,
+                "updated_at": bike.updated_at,
             },
             field_states=field_states,
             conflicts=conflicts,
@@ -708,4 +767,18 @@ def _legacy_brake_type(bike: BikeProfileModel) -> str | None:
         return "rim"
     if has_technical_value_path(bike.technical_profile, "brakes.legacy_summary"):
         return technical_value(bike.technical_profile, "brakes.legacy_summary")
+    if (
+        rear_mechanism == "coaster"
+        and rear_actuation == "none"
+        and front_mechanism is None
+        and front_actuation is None
+    ):
+        return "coaster"
+    if (
+        front_mechanism is None
+        and rear_mechanism is None
+        and front_actuation is None
+        and rear_actuation is None
+    ):
+        return "unknown"
     return None

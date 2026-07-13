@@ -24,9 +24,17 @@ def upgrade() -> None:
         ALTER TABLE bike_profiles
           ADD COLUMN profile_revision bigint NOT NULL DEFAULT 0,
           ADD COLUMN technical_profile jsonb NOT NULL DEFAULT
-            '{"identity":{},"frame":{},"brakes":{"front":{},"rear":{}},
+            '{"schema_version":"bike_profile.v2","identity":{},"frame":{},"brakes":{"front":{},"rear":{}},
               "drivetrain":{},"rolling_system":{"front":{},"rear":{}},
-              "suspension":{},"cockpit":{},"seating":{},"electric_assist":{}}'::jsonb;
+              "suspension":{},"cockpit":{},"seating":{},"electric_assist":{}}'::jsonb,
+          ADD CONSTRAINT ck_bike_profiles_technical_profile_v2 CHECK (
+            jsonb_typeof(technical_profile) = 'object'
+            AND technical_profile->>'schema_version' = 'bike_profile.v2'
+            AND technical_profile ?& ARRAY[
+              'identity', 'frame', 'brakes', 'drivetrain', 'rolling_system',
+              'suspension', 'cockpit', 'seating', 'electric_assist'
+            ]
+          );
 
         CREATE TABLE bike_fact_claims (
           id text PRIMARY KEY,
@@ -143,9 +151,10 @@ def upgrade() -> None:
 
         UPDATE bike_profiles AS bike
         SET technical_profile = jsonb_strip_nulls(jsonb_build_object(
+          'schema_version', 'bike_profile.v2',
           'identity', jsonb_strip_nulls(jsonb_build_object(
-            'make', NULLIF(bike.make, ''),
-            'model', NULLIF(bike.model, ''),
+            'make', CASE WHEN lower(btrim(bike.make)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.make), '') END,
+            'model', CASE WHEN lower(btrim(bike.model)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.model), '') END,
             'model_year', bike.model_year,
             'bike_type', NULLIF(bike.bike_type, 'unknown')
           )),
@@ -169,16 +178,16 @@ def upgrade() -> None:
             'legacy_summary', CASE WHEN bike.brake_type = 'other' THEN '"other"'::jsonb END
           )),
           'drivetrain', jsonb_strip_nulls(jsonb_build_object(
-            'legacy_description', NULLIF(bike.drivetrain, '')
+            'legacy_description', CASE WHEN lower(btrim(bike.drivetrain)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.drivetrain), '') END
           )),
           'rolling_system', jsonb_strip_nulls(jsonb_build_object(
             'front', jsonb_strip_nulls(jsonb_build_object(
-              'wheel', jsonb_strip_nulls(jsonb_build_object('nominal_size', NULLIF(bike.wheel_size, ''))),
-              'tire', jsonb_strip_nulls(jsonb_build_object('marked_size', NULLIF(bike.tire_size, '')))
+              'wheel', jsonb_strip_nulls(jsonb_build_object('nominal_size', CASE WHEN lower(btrim(bike.wheel_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.wheel_size), '') END)),
+              'tire', jsonb_strip_nulls(jsonb_build_object('marked_size', CASE WHEN lower(btrim(bike.tire_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.tire_size), '') END))
             )),
             'rear', jsonb_strip_nulls(jsonb_build_object(
-              'wheel', jsonb_strip_nulls(jsonb_build_object('nominal_size', NULLIF(bike.wheel_size, ''))),
-              'tire', jsonb_strip_nulls(jsonb_build_object('marked_size', NULLIF(bike.tire_size, '')))
+              'wheel', jsonb_strip_nulls(jsonb_build_object('nominal_size', CASE WHEN lower(btrim(bike.wheel_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.wheel_size), '') END)),
+              'tire', jsonb_strip_nulls(jsonb_build_object('marked_size', CASE WHEN lower(btrim(bike.tire_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.tire_size), '') END))
             ))
           )),
           'suspension', '{}'::jsonb,
@@ -186,17 +195,9 @@ def upgrade() -> None:
           'seating', '{}'::jsonb,
           'electric_assist', '{}'::jsonb
         )),
-        profile_revision = CASE
-          WHEN bike.make IS NOT NULL OR bike.model IS NOT NULL OR bike.model_year IS NOT NULL
-            OR bike.bike_type <> 'unknown' OR bike.frame_material <> 'unknown'
-            OR bike.drivetrain IS NOT NULL OR bike.brake_type <> 'unknown'
-            OR bike.wheel_size IS NOT NULL OR bike.tire_size IS NOT NULL
-          THEN 1 ELSE 0
-        END
-        WHERE bike.make IS NOT NULL OR bike.model IS NOT NULL OR bike.model_year IS NOT NULL
-          OR bike.bike_type <> 'unknown' OR bike.frame_material <> 'unknown'
-          OR bike.drivetrain IS NOT NULL OR bike.brake_type <> 'unknown'
-          OR bike.wheel_size IS NOT NULL OR bike.tire_size IS NOT NULL;
+        profile_revision = CASE WHEN EXISTS (
+          SELECT 1 FROM bike_fact_claims AS claim WHERE claim.bike_id = bike.id
+        ) THEN 1 ELSE 0 END;
         """,
     )
 
@@ -229,21 +230,21 @@ def _migrate_legacy_claims() -> None:
     op.execute(
         insert.format(
             values="""
-              ('identity.make', to_jsonb(bike.make), NULL::text),
-              ('identity.model', to_jsonb(bike.model), NULL::text),
+              ('identity.make', to_jsonb(CASE WHEN lower(btrim(bike.make)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.make), '') END), NULL::text),
+              ('identity.model', to_jsonb(CASE WHEN lower(btrim(bike.model)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.model), '') END), NULL::text),
               ('identity.model_year', to_jsonb(bike.model_year), NULL::text),
               ('identity.bike_type', CASE WHEN bike.bike_type = 'unknown' THEN NULL ELSE to_jsonb(bike.bike_type) END, NULL::text),
               ('frame.material', CASE WHEN bike.frame_material = 'unknown' THEN NULL ELSE to_jsonb(bike.frame_material) END, NULL::text),
-              ('drivetrain.legacy_description', to_jsonb(bike.drivetrain), NULL::text),
+              ('drivetrain.legacy_description', to_jsonb(CASE WHEN lower(btrim(bike.drivetrain)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.drivetrain), '') END), NULL::text),
               ('brakes.front.mechanism', CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc') THEN '"disc"'::jsonb WHEN bike.brake_type = 'rim' THEN '"rim_other"'::jsonb END, CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc', 'rim') THEN 'whole_bike' END),
               ('brakes.front.actuation', CASE WHEN bike.brake_type = 'mechanical_disc' THEN '"mechanical"'::jsonb WHEN bike.brake_type = 'hydraulic_disc' THEN '"hydraulic"'::jsonb END, CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc') THEN 'whole_bike' END),
               ('brakes.rear.mechanism', CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc') THEN '"disc"'::jsonb WHEN bike.brake_type = 'rim' THEN '"rim_other"'::jsonb WHEN bike.brake_type = 'coaster' THEN '"coaster"'::jsonb END, CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc', 'rim') THEN 'whole_bike' END),
               ('brakes.rear.actuation', CASE WHEN bike.brake_type = 'mechanical_disc' THEN '"mechanical"'::jsonb WHEN bike.brake_type = 'hydraulic_disc' THEN '"hydraulic"'::jsonb WHEN bike.brake_type = 'coaster' THEN '"none"'::jsonb END, CASE WHEN bike.brake_type IN ('mechanical_disc', 'hydraulic_disc') THEN 'whole_bike' END),
               ('brakes.legacy_summary', CASE WHEN bike.brake_type = 'other' THEN '"other"'::jsonb END, NULL::text),
-              ('rolling_system.front.wheel.nominal_size', to_jsonb(bike.wheel_size), CASE WHEN bike.wheel_size IS NOT NULL THEN 'whole_bike' END),
-              ('rolling_system.rear.wheel.nominal_size', to_jsonb(bike.wheel_size), CASE WHEN bike.wheel_size IS NOT NULL THEN 'whole_bike' END),
-              ('rolling_system.front.tire.marked_size', to_jsonb(bike.tire_size), CASE WHEN bike.tire_size IS NOT NULL THEN 'whole_bike' END),
-              ('rolling_system.rear.tire.marked_size', to_jsonb(bike.tire_size), CASE WHEN bike.tire_size IS NOT NULL THEN 'whole_bike' END)
+              ('rolling_system.front.wheel.nominal_size', to_jsonb(CASE WHEN lower(btrim(bike.wheel_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.wheel_size), '') END), CASE WHEN NULLIF(btrim(bike.wheel_size), '') IS NOT NULL AND lower(btrim(bike.wheel_size)) <> 'unknown' THEN 'whole_bike' END),
+              ('rolling_system.rear.wheel.nominal_size', to_jsonb(CASE WHEN lower(btrim(bike.wheel_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.wheel_size), '') END), CASE WHEN NULLIF(btrim(bike.wheel_size), '') IS NOT NULL AND lower(btrim(bike.wheel_size)) <> 'unknown' THEN 'whole_bike' END),
+              ('rolling_system.front.tire.marked_size', to_jsonb(CASE WHEN lower(btrim(bike.tire_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.tire_size), '') END), CASE WHEN NULLIF(btrim(bike.tire_size), '') IS NOT NULL AND lower(btrim(bike.tire_size)) <> 'unknown' THEN 'whole_bike' END),
+              ('rolling_system.rear.tire.marked_size', to_jsonb(CASE WHEN lower(btrim(bike.tire_size)) = 'unknown' THEN NULL ELSE NULLIF(btrim(bike.tire_size), '') END), CASE WHEN NULLIF(btrim(bike.tire_size), '') IS NOT NULL AND lower(btrim(bike.tire_size)) <> 'unknown' THEN 'whole_bike' END)
             """,
         ),
     )

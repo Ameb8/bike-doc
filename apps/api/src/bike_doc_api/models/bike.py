@@ -34,6 +34,7 @@ def empty_technical_profile() -> dict[str, Any]:
     """Return a fresh empty V2 technical projection."""
 
     return {
+        "schema_version": "bike_profile.v2",
         "identity": {},
         "frame": {},
         "brakes": {"front": {}, "rear": {}},
@@ -79,6 +80,15 @@ class BikeProfile(Base):
             "'coaster', 'other'"
             ")",
             name="ck_bike_profiles_brake_type",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(technical_profile) = 'object' "
+            "AND technical_profile->>'schema_version' = 'bike_profile.v2' "
+            "AND technical_profile ?& ARRAY["
+            "'identity', 'frame', 'brakes', 'drivetrain', 'rolling_system', "
+            "'suspension', 'cockpit', 'seating', 'electric_assist'"
+            "]",
+            name="ck_bike_profiles_technical_profile_v2",
         ),
         Index(
             "ix_bike_profiles_user_created",
@@ -136,7 +146,7 @@ class BikeProfile(Base):
         nullable=False,
         default=empty_technical_profile,
         server_default=text(
-            '\'{"identity":{},"frame":{},"brakes":{"front":{},"rear":{}},'
+            '\'{"schema_version":"bike_profile.v2","identity":{},"frame":{},"brakes":{"front":{},"rear":{}},'
             '"drivetrain":{},"rolling_system":{"front":{},"rear":{}},'
             '"suspension":{},"cockpit":{},"seating":{},"electric_assist":{}}\'::jsonb',
         ),

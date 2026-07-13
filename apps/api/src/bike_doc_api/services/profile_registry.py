@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Literal
 
 FieldValueKind = Literal["string", "integer", "number", "boolean", "enum"]
@@ -47,11 +48,24 @@ class CanonicalField:
                 raise FieldRegistryValidationError(
                     f"{self.field_path} requires an integer.",
                 )
+            if self.field_path == "identity.model_year" and not 1880 <= value <= 2100:
+                raise FieldRegistryValidationError(
+                    "identity.model_year must be between 1880 and 2100.",
+                )
+            if self.field_path != "identity.model_year" and value <= 0:
+                raise FieldRegistryValidationError(
+                    f"{self.field_path} requires a positive integer.",
+                )
             return
         if self.value_kind == "number":
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not isfinite(value)
+                or value <= 0
+            ):
                 raise FieldRegistryValidationError(
-                    f"{self.field_path} requires a number.",
+                    f"{self.field_path} requires a finite positive number.",
                 )
             return
         if self.value_kind == "boolean":
@@ -66,12 +80,19 @@ class CanonicalField:
             )
 
 
-def get_canonical_field(field_path: str, value: Any) -> CanonicalField:
-    """Return a validated registry entry; unknown paths are never persisted."""
+def get_canonical_field_definition(field_path: str) -> CanonicalField:
+    """Return a registry entry while rejecting unknown canonical paths."""
 
     field = CANONICAL_FIELD_REGISTRY.get(field_path)
     if field is None:
         raise FieldRegistryValidationError(f"Unknown bike-profile field: {field_path}")
+    return field
+
+
+def get_canonical_field(field_path: str, value: Any) -> CanonicalField:
+    """Return a validated registry entry; unknown paths are never persisted."""
+
+    field = get_canonical_field_definition(field_path)
     field.validate(value)
     return field
 
@@ -239,7 +260,7 @@ def _build_registry() -> dict[str, CanonicalField]:
         )
         registry[f"{prefix}.mechanism"] = _enum(
             f"{prefix}.mechanism",
-            mechanism_values,
+            mechanism_values if position == "rear" else mechanism_values - {"coaster"},
             scope=position,
             consequence="safety",
             auto_fill=True,
@@ -250,7 +271,7 @@ def _build_registry() -> dict[str, CanonicalField]:
         )
         registry[f"{prefix}.actuation"] = _enum(
             f"{prefix}.actuation",
-            actuation_values,
+            actuation_values if position == "rear" else actuation_values - {"none"},
             scope=position,
             consequence="safety",
             auto_fill=True,
@@ -381,13 +402,19 @@ def _build_registry() -> dict[str, CanonicalField]:
         "chain": ({}, {"speed_compatibility": "integer"}),
         "belt": ({}, {}),
         "gear_unit": ({}, {"speed_count": "integer"}),
-        "bottom_bracket": ({"interface": {"other"}}, {"shell_width_mm": "number"}),
+        "bottom_bracket": ({}, {"shell_width_mm": "number"}),
     }
     for component, (enum_fields, scalar_fields) in drivetrain_components.items():
         prefix = f"drivetrain.{component}"
         _component_fields(registry, prefix)
         for name, values in enum_fields.items():
             registry[f"{prefix}.{name}"] = _enum(f"{prefix}.{name}", values)
+        if component == "bottom_bracket":
+            registry[f"{prefix}.interface"] = _field(
+                f"{prefix}.interface",
+                "string",
+                bundle="exact_dimension",
+            )
         for name, kind in scalar_fields.items():
             registry[f"{prefix}.{name}"] = _field(
                 f"{prefix}.{name}",

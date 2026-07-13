@@ -11,6 +11,7 @@ from bike_doc_api.services.profile_registry import (
 from bike_doc_api.services.profile_resolution import (
     LegacyBikeProfileValues,
     migrate_legacy_profile,
+    with_technical_value,
 )
 
 
@@ -82,6 +83,20 @@ def test_legacy_unknown_sentinels_migrate_to_no_claims() -> None:
     assert claims == []
 
 
+def test_legacy_blank_and_text_unknown_values_migrate_to_no_claims() -> None:
+    claims = migrate_legacy_profile(
+        LegacyBikeProfileValues(
+            make="  ",
+            model="UNKNOWN",
+            drivetrain="unknown",
+            wheel_size="",
+            tire_size="  ",
+        ),
+    )
+
+    assert claims == []
+
+
 def test_canonical_field_registry_rejects_unknown_and_invalid_values() -> None:
     rear_brake = get_canonical_field("brakes.rear.mechanism", "disc")
 
@@ -92,3 +107,33 @@ def test_canonical_field_registry_rejects_unknown_and_invalid_values() -> None:
         get_canonical_field("brakes.whole_bike.mechanism", "disc")
     with pytest.raises(FieldRegistryValidationError):
         get_canonical_field("brakes.rear.mechanism", "hydraulic_disc")
+    with pytest.raises(FieldRegistryValidationError):
+        get_canonical_field("brakes.front.mechanism", "coaster")
+    with pytest.raises(FieldRegistryValidationError):
+        get_canonical_field("brakes.front.actuation", "none")
+    with pytest.raises(FieldRegistryValidationError):
+        get_canonical_field("identity.model_year", 1)
+    with pytest.raises(FieldRegistryValidationError):
+        get_canonical_field("rolling_system.front.tire.iso_width_mm", 0)
+
+
+def test_projection_rejects_component_absence_with_specifications() -> None:
+    projection = with_technical_value(
+        None,
+        field_path="brakes.rear.brake_unit.manufacturer",
+        value="Shimano",
+    )
+
+    with pytest.raises(ValueError, match="presence=absent"):
+        with_technical_value(
+            projection,
+            field_path="brakes.rear.brake_unit.presence",
+            value="absent",
+        )
+
+    with pytest.raises(ValueError, match="presence=absent"):
+        with_technical_value(
+            projection,
+            field_path="brakes.rear.presence",
+            value="absent",
+        )

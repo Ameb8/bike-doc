@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from bike_doc_api.schemas.common import APIBaseModel
 
@@ -81,6 +81,15 @@ class BikeProfileCreate(APIBaseModel):
     tire_size: str | None = None
     notes: str | None = None
 
+    @field_validator("make", "model", "drivetrain", "wheel_size", "tire_size")
+    @classmethod
+    def reject_blank_technical_text(cls, value: str | None) -> str | None:
+        """Reject empty technical values before they reach the claim ledger."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Technical values must not be blank.")
+        return value
+
 
 class BikeProfilePatch(APIBaseModel):
     """Bike profile patch request."""
@@ -96,6 +105,15 @@ class BikeProfilePatch(APIBaseModel):
     wheel_size: str | None = None
     tire_size: str | None = None
     notes: str | None = None
+
+    @field_validator("make", "model", "drivetrain", "wheel_size", "tire_size")
+    @classmethod
+    def reject_blank_technical_text(cls, value: str | None) -> str | None:
+        """Reject empty technical values before they reach the claim ledger."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Technical values must not be blank.")
+        return value
 
     @model_validator(mode="after")
     def reject_nulls_for_non_nullable_fields(self) -> Self:

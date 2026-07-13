@@ -64,7 +64,7 @@ def manual_legacy_field_claims(
     """Convert one compatibility PATCH field into manual claims or clears."""
 
     paths = LEGACY_FIELD_PATHS[field_name]
-    if value is None or value == "unknown":
+    if value is None or (isinstance(value, str) and value.strip().lower() == "unknown"):
         return [
             NewBikeFactClaim(
                 field_path=field_path,
@@ -92,6 +92,7 @@ def empty_technical_projection() -> dict[str, Any]:
     """Return the stable top-level shape of the internal V2 projection."""
 
     return {
+        "schema_version": "bike_profile.v2",
         "identity": {},
         "frame": {},
         "brakes": {"front": {}, "rear": {}},
@@ -124,7 +125,82 @@ def with_technical_value(
             cursor[part] = child
         cursor = child
     cursor[parts[-1]] = value
+    validate_technical_projection(result)
     return result
+
+
+def validate_technical_projection(projection: dict[str, Any]) -> None:
+    """Enforce cross-field V2 component invariants before projection writes."""
+
+    if projection.get("schema_version") != "bike_profile.v2":
+        raise ValueError("Technical projection must use bike_profile.v2.")
+
+    for component_path in _PRESENCE_COMPONENT_PATHS:
+        component = technical_value(projection, component_path)
+        if not isinstance(component, dict) or component.get("presence") != "absent":
+            continue
+        if _has_resolved_specification(component):
+            raise ValueError(
+                f"{component_path}.presence=absent requires null specifications.",
+            )
+
+    front_mechanism = technical_value(projection, "brakes.front.mechanism")
+    rear_mechanism = technical_value(projection, "brakes.rear.mechanism")
+    front_actuation = technical_value(projection, "brakes.front.actuation")
+    rear_actuation = technical_value(projection, "brakes.rear.actuation")
+    if front_mechanism == "coaster" or front_actuation == "none":
+        raise ValueError("Only a rear coaster brake may use coaster/none semantics.")
+    if rear_mechanism == "coaster" and rear_actuation not in {None, "none"}:
+        raise ValueError("A coaster brake must use none actuation.")
+    if rear_actuation == "none" and rear_mechanism not in {None, "coaster"}:
+        raise ValueError("None actuation requires a coaster mechanism.")
+
+    for position, mechanism in (("front", front_mechanism), ("rear", rear_mechanism)):
+        rotor = technical_value(projection, f"brakes.{position}.rotor")
+        if not isinstance(rotor, dict):
+            continue
+        rotor_has_specification = any(
+            value is not None for key, value in rotor.items() if key != "presence"
+        )
+        if rotor.get("presence") == "present" and mechanism != "disc":
+            raise ValueError("A present rotor requires a disc brake mechanism.")
+        if mechanism not in {None, "disc"} and rotor_has_specification:
+            raise ValueError(
+                "Non-disc brake systems cannot retain rotor specifications."
+            )
+
+
+_PRESENCE_COMPONENT_PATHS = (
+    "brakes.front",
+    "brakes.rear",
+    *(
+        f"brakes.{position}.{component}"
+        for position in ("front", "rear")
+        for component in ("control", "brake_unit", "rotor")
+    ),
+    *(
+        f"rolling_system.{position}.{component}"
+        for position in ("front", "rear")
+        for component in ("wheel", "rim", "tire", "hub")
+    ),
+    "suspension.rear_shock",
+    "seating.seatpost",
+    "electric_assist",
+)
+
+
+def _has_resolved_specification(component: dict[str, Any]) -> bool:
+    """Return whether a component has a non-presence identity/specification leaf."""
+
+    for key, value in component.items():
+        if key == "presence":
+            continue
+        if isinstance(value, dict):
+            if _has_resolved_specification(value):
+                return True
+        elif value is not None:
+            return True
+    return False
 
 
 def technical_value(
@@ -213,11 +289,12 @@ def _append_value(
     value: str | int | None,
     source_type: str,
 ) -> None:
-    if value is not None and value != "unknown":
+    normalized = _normalized_legacy_value(value)
+    if normalized is not None:
         claims.append(
             NewBikeFactClaim(
                 field_path=field_path,
-                value=value,
+                value=normalized,
                 source_type=source_type,
             ),
         )
@@ -230,17 +307,29 @@ def _append_symmetric_claims(
     paths: tuple[str, str],
     source_type: str,
 ) -> None:
-    if value is None or value == "unknown":
+    normalized = _normalized_legacy_value(value)
+    if normalized is None:
         return
     for path in paths:
         claims.append(
             NewBikeFactClaim(
                 field_path=path,
-                value=value,
+                value=normalized,
                 source_type=source_type,
                 scope_assumption="whole_bike",
             ),
         )
+
+
+def _normalized_legacy_value(value: str | int | None) -> str | int | None:
+    """Map legacy empty and unknown sentinels to the V2 unknown state."""
+
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip()
+    if not normalized or normalized.lower() == "unknown":
+        return None
+    return normalized
 
 
 def _append_legacy_brake_claims(
