@@ -505,6 +505,78 @@ async def test_accepted_image_turn_schedules_one_shadow_inference_run(
     assert turn_service_override.profile_inference_calls == [response.json()["turn_id"]]
 
 
+async def test_accepted_multi_image_turn_schedules_one_shadow_inference_run(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    turn_service_override.artifacts["art_second_owned_contract"] = ArtifactRefModel(
+        id="art_second_owned_contract",
+        user_id=turn_service_override.sessions[OWNED_SESSION_ID].user_id,
+        repair_session_id=OWNED_SESSION_ID,
+        purpose="diagnostic_photo",
+        media_type="image",
+        mime_type="image/jpeg",
+        filename="second-owned.jpg",
+        byte_size=123,
+        status="ready",
+        content_sha256="d" * 64,
+        storage_provider="local",
+        storage_path="objects/second-owned.jpg",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id="client-turn-multi-image-inference",
+            message={
+                "text": "Two rear brake photos.",
+                "artifact_ids": [OWNED_ARTIFACT_ID, "art_second_owned_contract"],
+            },
+        ),
+    )
+
+    assert response.status_code == 202
+    assert turn_service_override.profile_inference_calls == [response.json()["turn_id"]]
+
+
+async def test_text_only_turn_does_not_schedule_profile_inference(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(client_turn_id="client-turn-text-only"),
+    )
+
+    assert response.status_code == 202
+    assert turn_service_override.profile_inference_calls == []
+
+
+async def test_replayed_image_turn_does_not_schedule_another_profile_inference_run(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    payload = _valid_turn_payload(
+        client_turn_id="client-turn-image-replay",
+        message={"text": "Rear brake photo.", "artifact_ids": [OWNED_ARTIFACT_ID]},
+    )
+    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    turn_service_override.sessions[OWNED_SESSION_ID].status = "running"
+    replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+
+    assert first.status_code == 202
+    assert replay.status_code == 202
+    assert turn_service_override.profile_inference_calls == [first.json()["turn_id"]]
+
+
 async def test_new_turn_while_session_running_returns_409(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],

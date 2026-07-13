@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -52,6 +52,20 @@ class ProfileInferenceExtractor(Protocol):
 
     async def extract(self, request: ProfileInferenceRequest) -> dict[str, Any]:
         """Return one raw structured model response."""
+
+
+class _ArtifactContextError(Exception):
+    """A submitted artifact cannot safely be used as inference evidence."""
+
+    def __init__(
+        self,
+        *,
+        status: ProfileInferenceStatus,
+        failure_code: str,
+    ) -> None:
+        self.status = status
+        self.failure_code = failure_code
+        super().__init__(failure_code)
 
 
 class TurnRepositoryProtocol(Protocol):
@@ -115,6 +129,7 @@ class ProfileInferenceService:
         storage: StorageProviderProtocol,
         extractor: ProfileInferenceExtractor,
         extractor_version: str,
+        running_lease_seconds: float = 60.0,
         commit: Any | None = None,
     ) -> None:
         self._turns = turns
@@ -125,6 +140,7 @@ class ProfileInferenceService:
         self._storage = storage
         self._extractor = extractor
         self._extractor_version = extractor_version
+        self._running_lease_seconds = running_lease_seconds
         self._commit = commit
 
     async def process_submitted_profile_evidence(
@@ -133,11 +149,11 @@ class ProfileInferenceService:
     ) -> ProfileInferenceOutcome:
         """Extract pending rear-brake evidence from one accepted image turn."""
 
-        context = await self._load_context(turn_id)
+        context = await self._load_base_context(turn_id)
         if context is None:
             return ProfileInferenceOutcome(ProfileInferenceStatus.SKIPPED, None)
-        turn, repair_session, bike, artifacts = context
-        if not artifacts:
+        turn, repair_session, bike, artifact_ids = context
+        if not artifact_ids:
             return ProfileInferenceOutcome(ProfileInferenceStatus.SKIPPED, None)
 
         existing = await self._runs.get_by_identity(
@@ -145,7 +161,19 @@ class ProfileInferenceService:
             inference_schema_version=INFERENCE_SCHEMA_VERSION,
             extractor_version=self._extractor_version,
         )
-        if existing is not None and existing.status != ProfileInferenceStatus.RETRYABLE:
+        now = datetime.now(UTC)
+        if existing is not None and existing.status in {
+            ProfileInferenceStatus.COMPLETED,
+            ProfileInferenceStatus.ABSTAINED,
+            ProfileInferenceStatus.FAILED,
+        }:
+            return _outcome_for_run(existing)
+        if (
+            existing is not None
+            and existing.status == ProfileInferenceStatus.RUNNING
+            and existing.started_at
+            > now - timedelta(seconds=self._running_lease_seconds)
+        ):
             return _outcome_for_run(existing)
 
         run = existing or ProfileInferenceRun(
@@ -154,10 +182,11 @@ class ProfileInferenceService:
             bike_id=bike.id,
             inference_schema_version=INFERENCE_SCHEMA_VERSION,
             extractor_version=self._extractor_version,
-            input_artifact_ids=[artifact.id for artifact in artifacts],
+            input_artifact_ids=artifact_ids,
             status=ProfileInferenceStatus.RUNNING,
             claim_count=0,
             attempt_count=1,
+            started_at=now,
         )
         if existing is None:
             await self._runs.add(run)
@@ -165,11 +194,33 @@ class ProfileInferenceService:
             run.status = ProfileInferenceStatus.RUNNING
             run.failure_code = None
             run.attempt_count += 1
+            run.started_at = now
+            run.completed_at = None
             await self._runs.save(run)
         await self._commit_if_configured()
 
         try:
+            artifacts = await self._load_ready_images(
+                artifact_ids=artifact_ids,
+                repair_session=repair_session,
+            )
+        except _ArtifactContextError as exc:
+            return await self._finish(
+                run,
+                status=exc.status,
+                failure_code=exc.failure_code,
+            )
+
+        try:
             request = await self._build_request(turn, repair_session, bike, artifacts)
+        except Exception:
+            return await self._finish(
+                run,
+                status=ProfileInferenceStatus.RETRYABLE,
+                failure_code="artifact_unavailable",
+            )
+
+        try:
             raw_output = await self._extractor.extract(request)
         except Exception:
             return await self._finish(
@@ -207,6 +258,7 @@ class ProfileInferenceService:
                         {"type": "artifact", "id": artifact_id}
                         for artifact_id in claim.artifact_ids
                     ],
+                    scope_assumption=claim.subject_relation,
                     observed_at=turn.created_at,
                     evidence_basis=claim.evidence_basis,
                     visibility=claim.visibility,
@@ -219,11 +271,11 @@ class ProfileInferenceService:
         run.claim_count = len(claims)
         return await self._finish(run, status=ProfileInferenceStatus.COMPLETED)
 
-    async def _load_context(
+    async def _load_base_context(
         self,
         turn_id: str,
-    ) -> tuple[RepairTurn, RepairSession, BikeProfile, list[ArtifactRef]] | None:
-        """Reload server-owned rows and reject stale or unowned image evidence."""
+    ) -> tuple[RepairTurn, RepairSession, BikeProfile, list[str]] | None:
+        """Reload the app-owned turn, session, bike, and submitted IDs."""
 
         turn = await self._turns.get(turn_id)
         if turn is None:
@@ -241,22 +293,41 @@ class ProfileInferenceService:
             artifact_ids = _turn_artifact_ids(turn)
         except ValueError:
             return None
+        return turn, repair_session, bike, artifact_ids
+
+    async def _load_ready_images(
+        self,
+        *,
+        artifact_ids: list[str],
+        repair_session: RepairSession,
+    ) -> list[ArtifactRef]:
+        """Revalidate submitted artifacts before provider access."""
+
         artifacts: list[ArtifactRef] = []
         for artifact_id in artifact_ids:
             artifact = await self._artifacts.get_owned(
                 artifact_id=artifact_id,
                 user_id=repair_session.user_id,
             )
-            if (
-                artifact is None
-                or artifact.repair_session_id != repair_session.id
-                or artifact.status != "ready"
-                or artifact.media_type != "image"
-                or not artifact.mime_type.startswith("image/")
+            if artifact is None or artifact.repair_session_id != repair_session.id:
+                raise _ArtifactContextError(
+                    status=ProfileInferenceStatus.FAILED,
+                    failure_code="artifact_invalid",
+                )
+            if artifact.status != "ready":
+                raise _ArtifactContextError(
+                    status=ProfileInferenceStatus.RETRYABLE,
+                    failure_code="artifact_unavailable",
+                )
+            if artifact.media_type != "image" or not artifact.mime_type.startswith(
+                "image/"
             ):
-                return None
+                raise _ArtifactContextError(
+                    status=ProfileInferenceStatus.FAILED,
+                    failure_code="artifact_invalid",
+                )
             artifacts.append(artifact)
-        return turn, repair_session, bike, artifacts
+        return artifacts
 
     async def _build_request(
         self,
@@ -326,6 +397,12 @@ def _validated_tracer_claims(
     """Validate registry, scope, invariants, and evidence against this run input."""
 
     valid_artifact_ids = {artifact.id for artifact in artifacts}
+    if output.claims and (
+        not output.scene.contains_bicycle
+        or output.scene.multiple_bicycles
+        or output.scene.target_relation != "installed_on_target_bike"
+    ):
+        raise ValueError("scene cannot support installed target-bike claims")
     abstained_paths: set[str] = set()
     for abstention in output.abstentions:
         if abstention.field_path not in REAR_BRAKE_TRACER_FIELDS:
@@ -339,6 +416,8 @@ def _validated_tracer_claims(
     for claim in output.claims:
         if claim.field_path not in REAR_BRAKE_TRACER_FIELDS:
             raise ValueError("claim is outside the rear-brake tracer")
+        if claim.subject_relation != "installed_on_target_bike":
+            raise ValueError("claim is not installed on the target bike")
         field = get_canonical_field(claim.field_path, claim.value)
         if (
             field.scope != "rear"

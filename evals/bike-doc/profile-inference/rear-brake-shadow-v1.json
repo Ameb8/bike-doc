@@ -29,6 +29,24 @@
       "label": "installedness_abstention",
       "expected_claims": [],
       "expected_abstentions": ["brakes.rear.mechanism", "brakes.rear.actuation"]
+    },
+    {
+      "id": "boxed_rear_brake_packaging",
+      "label": "packaging_reference_abstention",
+      "expected_claims": [],
+      "expected_abstentions": ["brakes.rear.mechanism", "brakes.rear.actuation"]
+    },
+    {
+      "id": "multiple_bikes_rear_brakes_visible",
+      "label": "multiple_bikes_abstention",
+      "expected_claims": [],
+      "expected_abstentions": ["brakes.rear.mechanism", "brakes.rear.actuation"]
+    },
+    {
+      "id": "no_bike_scene",
+      "label": "no_bike_abstention",
+      "expected_claims": [],
+      "expected_abstentions": ["brakes.rear.mechanism", "brakes.rear.actuation"]
     }
   ]
 }

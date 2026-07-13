@@ -217,6 +217,7 @@ def _build_profile_inference_service(
         storage=get_storage_provider(settings),
         extractor=extractor,
         extractor_version=settings.profile_inference_extractor_version,
+        running_lease_seconds=settings.profile_inference_timeout_seconds + 30.0,
         commit=session.commit,
     )
 
