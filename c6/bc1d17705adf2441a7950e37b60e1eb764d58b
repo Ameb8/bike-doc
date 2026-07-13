@@ -1,0 +1,39 @@
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_71c45e49a70e44::t_eb1c1f8f569b10 136-137,159-161,195-197,227-229,314-331,335-342,344-373,377-380,382-393,416-446
+  s_71c45e49a70e44::t_84cd3be934a609 6,381
+  s_71c45e49a70e44::t_d5a26ff71723f1 332-334,374-376
+  s_71c45e49a70e44::t_5d4aab2941d124 343
+  s_71c45e49a70e44::t_4fc39abc30894d 394-415
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_71c45e49a70e44::t_d1b506aa3c22c4 174-175
+  s_71c45e49a70e44::t_edb8b8af05ad04 57-70,152,155-156,165-169,185,189,197-198,202-213,216-223,261,274,277-278,296-305,312-323,325-328,330,400-405,419-420
+  s_71c45e49a70e44::t_84cd3be934a609 6,132,143,164,171-173,176
+apps/api/tests/api/test_turns.py
+  s_71c45e49a70e44::t_3af5d5f1d3b626 508-512,528-579
+  s_71c45e49a70e44::t_fce83a5d43944b 513-527
+evals/bike-doc/profile-inference/rear-brake-shadow-v1.json
+  s_71c45e49a70e44::t_c5199855cd24e5 32-49
+apps/api/src/bike_doc_api/adk/background.py
+  s_71c45e49a70e44::t_84cd3be934a609 220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c6bc1d17705adf2441a7950e37b60e1eb764d58b",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_71c45e49a70e44": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5a62-0629-75a2-be70-dc8bc5a901ad",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
