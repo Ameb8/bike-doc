@@ -91,6 +91,21 @@ class BikeRepository:
         """Return a claim so a later resolution may update its disposition."""
         return await self._session.get(BikeFactClaim, claim_id)
 
+    async def list_claims(
+        self,
+        *,
+        bike_id: str,
+        field_path: str | None = None,
+    ) -> list[BikeFactClaim]:
+        """Return immutable claim history used for replay-safe resolution."""
+        statement = select(BikeFactClaim).where(BikeFactClaim.bike_id == bike_id)
+        if field_path is not None:
+            statement = statement.where(BikeFactClaim.field_path == field_path)
+        result = await self._session.execute(
+            statement.order_by(BikeFactClaim.created_at, BikeFactClaim.id),
+        )
+        return list(result.scalars().all())
+
     async def get_resolution(
         self,
         *,

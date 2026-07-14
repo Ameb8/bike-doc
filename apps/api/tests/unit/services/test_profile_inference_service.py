@@ -8,11 +8,15 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from bike_doc_api.models.artifact import ArtifactRef
-from bike_doc_api.models.bike import BikeProfile
+from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
 from bike_doc_api.services.profile_inference import (
     ProfileInferenceService,
     ProfileInferenceStatus,
+)
+from bike_doc_api.services.profile_inference_resolution import (
+    ActiveFieldPolicy,
+    ProfileResolverPolicy,
 )
 
 
@@ -137,6 +141,7 @@ class _Store:
         self.storage_error: Exception | None = None
         self.claims: list[object] = []
         self.runs: list[object] = []
+        self.resolutions: dict[tuple[str, str], object] = {}
 
     async def get(self, identifier: str) -> object | None:
         if identifier == self.turn.id:
@@ -154,6 +159,28 @@ class _Store:
         if self.bike.id == bike_id and self.bike.user_id == user_id:
             return self.bike
         return None
+
+    async def get_owned_active_for_update(
+        self,
+        *,
+        bike_id: str,
+        user_id: str,
+    ) -> BikeProfile | None:
+        return await self.get_owned_active(bike_id=bike_id, user_id=user_id)
+
+    async def get_resolution(
+        self,
+        *,
+        bike_id: str,
+        field_path: str,
+    ) -> object | None:
+        return self.resolutions.get((bike_id, field_path))
+
+    async def save_resolution(self, resolution: object) -> object:
+        if getattr(self, "fail_resolution_for", None) == resolution.field_path:
+            raise RuntimeError("resolution write failed")
+        self.resolutions[(resolution.bike_id, resolution.field_path)] = resolution
+        return resolution
 
     async def get_owned(self, *, artifact_id: str, user_id: str) -> ArtifactRef | None:
         artifact = self.artifacts.get(artifact_id)
@@ -234,6 +261,307 @@ async def test_rear_brake_claims_are_persisted_as_pending_shadow_evidence() -> N
     assert request.caption == "This is the rear brake."
     assert not hasattr(request, "profile")
     assert not hasattr(request, "diagnostic_history")
+
+
+async def test_bootstrap_policy_auto_fills_clear_installed_rear_hydraulic_disc() -> (
+    None
+):
+    store = _Store()
+    service = _service(store, _Extractor(), policy=ProfileResolverPolicy.bootstrap_v1())
+
+    outcome = await service.process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert outcome.policy_mode == "provisional"
+    assert store.bike.technical_profile["brakes"]["rear"] == {
+        "mechanism": "disc",
+        "actuation": "hydraulic",
+    }
+    assert store.bike.profile_revision == 1
+    assert {claim.disposition for claim in store.claims} == {"applied"}
+
+
+async def test_newer_installed_evidence_supersedes_older_manual_rear_brake() -> None:
+    store = _Store()
+    older = datetime(2026, 7, 10, tzinfo=UTC)
+    current = BikeFactClaim(
+        id="bfc_manual",
+        bike_id=store.bike.id,
+        field_path="brakes.rear.actuation",
+        value="mechanical",
+        source_type="manual_profile_edit",
+        source_ref={"type": "bike_profile", "id": store.bike.id},
+        evidence_refs=[],
+        observed_at=older,
+        disposition="applied",
+    )
+    store.claims.append(current)
+    store.resolutions[(store.bike.id, current.field_path)] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path=current.field_path,
+        current_value=current.value,
+        resolution_state="resolved",
+        current_claim_id=current.id,
+        effective_confidence="high",
+        source_type=current.source_type,
+        observed_at=older,
+        resolved_at=older,
+    )
+    store.turn.created_at = datetime(2026, 7, 11, tzinfo=UTC)
+
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.rear.actuation"
+    output["claims"][0]["value"] = "hydraulic"
+    output["claims"][0]["confidence_score"] = 0.99
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["brakes"]["rear"]["actuation"] == "hydraulic"
+    assert store.bike.profile_revision == 1
+    assert current.disposition == "superseded"
+    assert store.claims[-1].disposition == "applied"
+
+
+async def test_older_disagreement_is_retained_as_a_disputed_conflict() -> None:
+    store = _Store()
+    current_time = datetime(2026, 7, 12, tzinfo=UTC)
+    current = BikeFactClaim(
+        id="bfc_current",
+        bike_id=store.bike.id,
+        field_path="brakes.rear.actuation",
+        value="mechanical",
+        source_type="manual_profile_edit",
+        source_ref={"type": "bike_profile", "id": store.bike.id},
+        evidence_refs=[],
+        observed_at=current_time,
+        disposition="applied",
+    )
+    store.claims.append(current)
+    store.resolutions[(store.bike.id, current.field_path)] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path=current.field_path,
+        current_value=current.value,
+        resolution_state="resolved",
+        current_claim_id=current.id,
+        effective_confidence="high",
+        source_type=current.source_type,
+        observed_at=current_time,
+        resolved_at=current_time,
+    )
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.rear.actuation"
+    output["claims"][0]["value"] = "hydraulic"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    resolution = store.resolutions[(store.bike.id, current.field_path)]
+    assert store.claims[-1].disposition == "conflict"
+    assert resolution.current_value == "mechanical"
+    assert resolution.resolution_state == "disputed"
+    assert resolution.conflicting_claim_ids == [store.claims[-1].id]
+    assert store.bike.profile_revision == 1
+
+
+async def test_evidence_before_manual_clear_remains_pending() -> None:
+    store = _Store()
+    barrier = datetime(2026, 7, 12, tzinfo=UTC)
+    store.resolutions["bike_rear", "brakes.rear.actuation"] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path="brakes.rear.actuation",
+        current_value=None,
+        resolution_state="cleared",
+        effective_confidence="unknown",
+        manual_clear_barrier_at=barrier,
+    )
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        claim
+        for claim in output["claims"]
+        if claim["field_path"] == "brakes.rear.mechanism"
+    ]
+    output["claims"][0]["field_path"] = "brakes.rear.actuation"
+    output["claims"][0]["value"] = "hydraulic"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    claim = next(
+        claim for claim in store.claims if claim.field_path == "brakes.rear.actuation"
+    )
+    assert claim.disposition == "pending"
+    assert claim.disposition_reason == "observed_before_manual_clear_barrier"
+    assert (
+        store.resolutions["bike_rear", "brakes.rear.actuation"].resolution_state
+        == "cleared"
+    )
+    assert store.bike.profile_revision == 0
+
+
+async def test_loose_replacement_evidence_is_retained_pending_without_mutation() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["scene"]["target_relation"] = "loose_component"
+    output["claims"][0]["subject_relation"] = "loose_component"
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.claims[0].disposition == "pending"
+    assert store.claims[0].disposition_reason == "not_installed_on_target_bike"
+    assert store.bike.technical_profile["brakes"]["rear"] == {}
+    assert store.bike.profile_revision == 0
+
+
+async def test_production_without_promoted_policy_keeps_high_score_claims_pending() -> (
+    None
+):
+    store = _Store()
+
+    outcome = await _service(store, _Extractor()).process_submitted_profile_evidence(
+        "turn_rear",
+    )
+
+    assert outcome.policy_mode == "evaluated"
+    assert {claim.disposition_reason for claim in store.claims} == {
+        "no_active_field_policy"
+    }
+    assert store.bike.technical_profile["brakes"]["rear"] == {}
+    assert store.bike.profile_revision == 0
+
+
+async def test_evaluated_production_policy_can_enable_one_promoted_field_class() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    policy = ProfileResolverPolicy.evaluated(
+        {
+            ("brakes.rear.mechanism", "direct_visual"): ActiveFieldPolicy(
+                auto_fill_threshold=0.96,
+            ),
+        },
+    )
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=policy,
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.policy_mode == "evaluated"
+    assert store.claims[0].disposition == "applied"
+    resolution = store.resolutions[("bike_rear", "brakes.rear.mechanism")]
+    assert resolution.effective_confidence == "medium"
+
+
+@pytest.mark.parametrize(
+    ("score", "expected_state", "expected_confidence"),
+    [
+        (0.919, "pending", None),
+        (0.92, "applied", "medium"),
+        (0.97, "applied", "high"),
+    ],
+)
+async def test_bootstrap_maps_raw_score_only_through_inclusive_field_policy(
+    score: float,
+    expected_state: str,
+    expected_confidence: str | None,
+) -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"][0]["confidence_score"] = score
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.claims[0].disposition == expected_state
+    if expected_confidence is None:
+        assert store.bike.profile_revision == 0
+        assert "brakes.rear.mechanism" not in store.resolutions
+    else:
+        resolution = store.resolutions[("bike_rear", "brakes.rear.mechanism")]
+        assert resolution.effective_confidence == expected_confidence
+        assert not hasattr(resolution, "model_score")
+
+
+async def test_bootstrap_keeps_partial_installed_evidence_pending() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"][0]["visibility"] = "partial"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.claims[0].disposition == "pending"
+    assert store.claims[0].disposition_reason == "visibility_not_clear"
+    assert store.bike.profile_revision == 0
+
+
+async def test_resolution_failure_rolls_back_profile_changes() -> None:
+    store = _Store()
+    store.fail_resolution_for = "brakes.rear.actuation"
+    committed: dict[str, object] = {}
+    rollbacks = 0
+
+    async def commit() -> None:
+        committed["claims"] = list(store.claims)
+        committed["resolutions"] = dict(store.resolutions)
+        committed["technical_profile"] = deepcopy(store.bike.technical_profile)
+        committed["profile_revision"] = store.bike.profile_revision
+
+    async def rollback() -> None:
+        nonlocal rollbacks
+        rollbacks += 1
+        store.claims = list(committed["claims"])
+        store.resolutions = dict(committed["resolutions"])
+        store.bike.technical_profile = deepcopy(committed["technical_profile"])
+        store.bike.profile_revision = committed["profile_revision"]
+
+    service = ProfileInferenceService(
+        turns=store,
+        repair_sessions=store,
+        bikes=store,
+        artifacts=store,
+        runs=store,
+        storage=store,
+        extractor=_Extractor(),
+        extractor_version="rear-brake-shadow.v1",
+        resolver_policy=ProfileResolverPolicy.bootstrap_v1(),
+        commit=commit,
+        rollback=rollback,
+    )
+
+    with pytest.raises(RuntimeError, match="resolution write failed"):
+        await service.process_submitted_profile_evidence("turn_rear")
+
+    assert rollbacks == 1
+    assert store.claims == []
+    assert store.resolutions == {}
+    assert store.bike.technical_profile["brakes"]["rear"] == {}
+    assert store.bike.profile_revision == 0
 
 
 async def test_explicit_abstention_completes_without_claims() -> None:
@@ -467,7 +795,12 @@ async def test_retryable_failure_replay_does_not_duplicate_evidence() -> None:
     assert len(successful.requests) == 1
 
 
-def _service(store: _Store, extractor: _Extractor) -> ProfileInferenceService:
+def _service(
+    store: _Store,
+    extractor: _Extractor,
+    *,
+    policy: ProfileResolverPolicy | None = None,
+) -> ProfileInferenceService:
     return ProfileInferenceService(
         turns=store,
         repair_sessions=store,
@@ -477,6 +810,7 @@ def _service(store: _Store, extractor: _Extractor) -> ProfileInferenceService:
         storage=store,
         extractor=extractor,
         extractor_version="rear-brake-shadow.v1",
+        resolver_policy=policy,
     )
 
 

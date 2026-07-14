@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from datetime import datetime
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -44,8 +45,29 @@ class BikeProfileToolData(BaseModel):
     notes: str | None = None
     schema_version: str | None = None
     profile: dict[str, Any] | None = None
-    field_states: dict[str, dict[str, Any]] | None = None
-    conflicts: list[dict[str, Any]] | None = None
+    field_states: dict[str, BikeProfileFieldState] | None = None
+    conflicts: list[BikeProfileConflict] | None = None
+
+
+class BikeProfileFieldState(BaseModel):
+    """Compact resolver state safe to provide to a phase agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    resolution_state: Literal["unknown", "resolved", "disputed", "cleared"]
+    effective_confidence: Literal["unknown", "low", "medium", "high"]
+    source_type: str | None = None
+    observed_at: datetime | None = None
+
+
+class BikeProfileConflict(BaseModel):
+    """Compact conflict summary without evidence, scores, or provenance IDs."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_path: str
+    current_value: Any | None = None
+    candidate_values: list[Any]
 
 
 class BikeProfileResultProtocol(Protocol):

@@ -40,6 +40,19 @@ class _BikeProfileService:
                 tire_size="700x38",
                 notes="Rear rack.",
                 user_id="usr_hidden",
+                profile={
+                    "schema_version": "bike_profile.v2",
+                    "brakes": {"front": {}, "rear": {"actuation": "hydraulic"}},
+                },
+                field_states={
+                    "brakes.rear.actuation": {
+                        "resolution_state": "resolved",
+                        "effective_confidence": "high",
+                        "source_type": "image_inference",
+                        "observed_at": "2026-07-12T00:00:00Z",
+                    },
+                },
+                conflicts=[],
             ),
             user_skill_level="beginner",
         )
@@ -66,6 +79,16 @@ async def test_get_bike_profile_returns_success_shape_and_active_profile() -> No
     assert result["data"]["bike_profile"]["id"] == "bike_active"
     assert result["data"]["bike_profile"]["display_name"] == "Commuter"
     assert "user_id" not in result["data"]["bike_profile"]
+    assert result["data"]["bike_profile"]["profile"]["brakes"]["rear"] == {
+        "actuation": "hydraulic"
+    }
+    assert result["data"]["bike_profile"]["field_states"]["brakes.rear.actuation"] == {
+        "resolution_state": "resolved",
+        "effective_confidence": "high",
+        "source_type": "image_inference",
+        "observed_at": "2026-07-12T00:00:00Z",
+    }
+    assert "model_score" not in str(result)
     assert result["data"]["user_skill_level"] == "beginner"
     assert service.calls[0]["current_user"].id == "usr_tool"
     assert service.calls[0]["diagnostic_session_id"] == "phs_tool"

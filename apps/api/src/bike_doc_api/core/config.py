@@ -55,6 +55,9 @@ class Settings(BaseSettings):
         default="rear-brake-shadow.v1",
         min_length=1,
     )
+    profile_inference_resolver_policy: Literal["production", "bootstrap-v1"] = (
+        "production"
+    )
     price_lookup_provider: Literal["unavailable", "gemini_grounded"] = "unavailable"
     price_lookup_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     price_lookup_model: str = Field(default="gemini-2.5-flash", min_length=1)
@@ -263,6 +266,13 @@ class Settings(BaseSettings):
         if self.artifact_storage_provider == "gcs" and self.artifact_gcs_bucket is None:
             raise ValueError(
                 "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
+            )
+        if (
+            environment == "production"
+            and self.profile_inference_resolver_policy == "bootstrap-v1"
+        ):
+            raise ValueError(
+                "bootstrap-v1 profile inference policy is not permitted in production"
             )
         return self
 

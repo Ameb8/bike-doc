@@ -69,6 +69,7 @@ from bike_doc_api.services.profile_inference import (
     ProfileInferenceExtractor,
     ProfileInferenceService,
 )
+from bike_doc_api.services.profile_inference_resolution import ProfileResolverPolicy
 from bike_doc_api.services.repair_sessions import RepairSessionService
 from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportService
 from bike_doc_api.services.safety import DiagnosticSafetyService
@@ -180,6 +181,7 @@ async def execute_profile_inference_background(turn_id: str) -> None:
                     "run_id": outcome.run_id,
                     "status": outcome.status.value,
                     "claim_count": outcome.claim_count,
+                    "policy_mode": outcome.policy_mode,
                     "schema_version": "bike_profile_inference.v1",
                     "extractor_version": settings.profile_inference_extractor_version,
                 },
@@ -218,7 +220,13 @@ def _build_profile_inference_service(
         extractor=extractor,
         extractor_version=settings.profile_inference_extractor_version,
         running_lease_seconds=settings.profile_inference_timeout_seconds + 30.0,
+        resolver_policy=(
+            ProfileResolverPolicy.bootstrap_v1()
+            if settings.profile_inference_resolver_policy == "bootstrap-v1"
+            else ProfileResolverPolicy.production()
+        ),
         commit=session.commit,
+        rollback=session.rollback,
     )
 
 

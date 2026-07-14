@@ -97,6 +97,18 @@ def get_canonical_field(field_path: str, value: Any) -> CanonicalField:
     return field
 
 
+def normalize_canonical_value(field_path: str, value: Any) -> Any:
+    """Validate and return the stable representation used for comparisons."""
+    field = get_canonical_field_definition(field_path)
+    normalized = value
+    if isinstance(value, str):
+        normalized = value.strip()
+        if field.value_kind == "enum":
+            normalized = normalized.lower()
+    field.validate(normalized)
+    return normalized
+
+
 def _field(
     field_path: str,
     value_kind: FieldValueKind,
@@ -315,7 +327,7 @@ def _build_registry() -> dict[str, CanonicalField]:
         )
     registry["brakes.legacy_summary"] = _enum(
         "brakes.legacy_summary",
-        {"other"},
+        {"mechanical_disc", "hydraulic_disc", "rim", "coaster", "other"},
         volatility="derived",
         consequence="low",
         derived="legacy_compatibility_only",

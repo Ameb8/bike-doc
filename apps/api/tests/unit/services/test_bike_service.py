@@ -333,10 +333,11 @@ async def test_manual_technical_patch_creates_claims_and_resolved_v2_leaves() ->
         ("brakes.front.actuation", "manual_profile_edit", "applied"),
         ("brakes.rear.mechanism", "manual_profile_edit", "applied"),
         ("brakes.rear.actuation", "manual_profile_edit", "applied"),
+        ("brakes.legacy_summary", "derived_resolution", "applied"),
     ]
     rear = repo.resolutions[(bike.id, "brakes.rear.actuation")]
     assert rear.current_value == "hydraulic"
-    assert rear.current_claim_id == repo.claims[-1].id
+    assert rear.current_claim_id == repo.claims[3].id
     assert rear.resolution_state == "resolved"
 
 
@@ -547,3 +548,102 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
     assert result.bike_profile.profile["profile_revision"] == 0
     assert result.bike_profile.field_states == {}
     assert result.user_skill_level == "beginner"
+
+
+async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
+    bike = _bike()
+    bike.technical_profile = {
+        **empty_technical_profile(),
+        "brakes": {
+            "front": {},
+            "rear": {"mechanism": "disc", "actuation": "hydraulic"},
+        },
+    }
+    repair_session = RepairSessionModel(
+        id="rs_diagnostic",
+        user_id=bike.user_id,
+        bike_id=bike.id,
+        phase="diagnostic",
+        status="running",
+        safety_state="ok",
+        active_safety_flags=[],
+        latest_event_sequence=0,
+    )
+    repository = FakeBikeRepository([bike])
+    observed_at = datetime(2026, 7, 12, tzinfo=UTC)
+    repository.claims.extend(
+        [
+            BikeFactClaim(
+                id="bfc_current",
+                bike_id=bike.id,
+                field_path="brakes.rear.actuation",
+                value="hydraulic",
+                source_type="image_inference",
+                source_ref={"type": "profile_inference_run", "id": "pir_current"},
+                evidence_refs=[{"type": "artifact", "id": "art_current"}],
+                observed_at=observed_at,
+                evidence_basis="direct_visual",
+                visibility="clear",
+                model_score=0.99,
+                evidence_cues=["A hose enters the rear caliper."],
+                disposition="applied",
+            ),
+            BikeFactClaim(
+                id="bfc_conflict",
+                bike_id=bike.id,
+                field_path="brakes.rear.actuation",
+                value="mechanical",
+                source_type="image_inference",
+                source_ref={"type": "profile_inference_run", "id": "pir_conflict"},
+                evidence_refs=[{"type": "artifact", "id": "art_conflict"}],
+                observed_at=observed_at,
+                evidence_basis="direct_visual",
+                visibility="clear",
+                model_score=0.98,
+                evidence_cues=["A cable arm may be visible."],
+                disposition="conflict",
+            ),
+        ],
+    )
+    repository.resolutions[(bike.id, "brakes.rear.actuation")] = BikeFieldResolution(
+        bike_id=bike.id,
+        field_path="brakes.rear.actuation",
+        current_value="hydraulic",
+        resolution_state="disputed",
+        current_claim_id="bfc_current",
+        supporting_claim_ids=[],
+        conflicting_claim_ids=["bfc_conflict"],
+        effective_confidence="medium",
+        source_type="image_inference",
+        observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+    service = ResolvedBikeProfileService(
+        repository,
+        repair_sessions=FakeDiagnosticRepairSessionRepository([repair_session]),
+    )
+
+    result = await service.get_diagnostic_bike_profile(
+        current_user=_user(),
+        repair_session_id=repair_session.id,
+        diagnostic_session_id="phs_diagnostic",
+    )
+
+    assert result.bike_profile.profile["brakes"]["rear"]["actuation"] == "hydraulic"
+    assert result.bike_profile.field_states["brakes.rear.actuation"] == {
+        "resolution_state": "disputed",
+        "effective_confidence": "medium",
+        "source_type": "image_inference",
+        "observed_at": observed_at,
+    }
+    assert result.bike_profile.conflicts == [
+        {
+            "field_path": "brakes.rear.actuation",
+            "current_value": "hydraulic",
+            "candidate_values": ["mechanical"],
+        },
+    ]
+    serialized = str(result.bike_profile)
+    assert "model_score" not in serialized
+    assert "evidence_cues" not in serialized
+    assert "pir_current" not in serialized

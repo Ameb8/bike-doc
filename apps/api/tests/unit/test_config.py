@@ -111,6 +111,22 @@ def test_blank_diagnostic_agent_model_is_rejected(
         Settings()
 
 
+def test_bootstrap_profile_policy_is_explicit_and_non_production_only() -> None:
+    development = Settings(
+        environment="test",
+        profile_inference_resolver_policy="bootstrap-v1",
+    )
+
+    assert development.profile_inference_resolver_policy == "bootstrap-v1"
+    with pytest.raises(ValidationError, match="not permitted in production"):
+        Settings(
+            environment="production",
+            auth_mode="firebase",
+            firebase_project_id="bike-doc",
+            profile_inference_resolver_policy="bootstrap-v1",
+        )
+
+
 def test_settings_accept_valid_diagnostic_runtime_settings() -> None:
     settings = Settings(
         environment="test",

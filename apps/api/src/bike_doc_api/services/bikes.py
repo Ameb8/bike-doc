@@ -35,9 +35,12 @@ from bike_doc_api.schemas.bike import (
     FrameMaterial,
 )
 from bike_doc_api.schemas.common import RepairSessionPhase
+from bike_doc_api.services.profile_inference_resolution import (
+    recompute_derived_brake_summary,
+)
 from bike_doc_api.services.profile_registry import (
-    get_canonical_field,
     get_canonical_field_definition,
+    normalize_canonical_value,
 )
 from bike_doc_api.services.profile_resolution import (
     NewBikeFactClaim,
@@ -349,7 +352,17 @@ class ResolvedBikeProfileService:
                 continue
             for new_claim in manual_legacy_field_claims(field_name, value):
                 if new_claim.value is not None:
-                    get_canonical_field(new_claim.field_path, new_claim.value)
+                    normalized_value = normalize_canonical_value(
+                        new_claim.field_path,
+                        new_claim.value,
+                    )
+                    new_claim = NewBikeFactClaim(
+                        field_path=new_claim.field_path,
+                        value=normalized_value,
+                        source_type=new_claim.source_type,
+                        scope_assumption=new_claim.scope_assumption,
+                        explicit_correction=new_claim.explicit_correction,
+                    )
                 else:
                     get_canonical_field_definition(new_claim.field_path)
                 claims.append(new_claim)
@@ -362,6 +375,7 @@ class ResolvedBikeProfileService:
         bike_id: str,
         field_path: str,
         value: Any | None,
+        explicit_correction: bool = False,
     ) -> None:
         """Apply one internal V2 manual value or clear through the claim ledger.
 
@@ -379,11 +393,12 @@ class ResolvedBikeProfileService:
         if field.volatility_class in {"derived", "user_managed"}:
             raise ValueError(f"{field_path} cannot be manually written directly.")
         if value is not None:
-            get_canonical_field(field_path, value)
+            value = normalize_canonical_value(field_path, value)
             claim = NewBikeFactClaim(
                 field_path=field_path,
                 value=value,
                 source_type="manual_profile_edit",
+                explicit_correction=explicit_correction,
             )
         else:
             claim = NewBikeFactClaim(
@@ -437,6 +452,10 @@ class ResolvedBikeProfileService:
                     effective_confidence="unknown",
                 )
             if new_claim.source_type == "manual_profile_clear":
+                if resolution.resolution_state == "cleared":
+                    claim.disposition = "supporting"
+                    claim.disposition_reason = "matches_existing_manual_clear"
+                    continue
                 await self._supersede_current_claim(resolution)
                 resolution.current_value = None
                 resolution.resolution_state = "cleared"
@@ -461,7 +480,10 @@ class ResolvedBikeProfileService:
                     claim.id,
                 ]
             else:
-                await self._supersede_current_claim(resolution)
+                if new_claim.explicit_correction:
+                    await self._reject_current_model_claim(resolution)
+                else:
+                    await self._supersede_current_claim(resolution)
                 resolution.current_value = new_claim.value
                 resolution.resolution_state = "resolved"
                 resolution.current_claim_id = claim.id
@@ -474,11 +496,25 @@ class ResolvedBikeProfileService:
                 bike.technical_profile = candidate_projection
                 changed = True
             await self._bikes.save_resolution(resolution)
+        if await recompute_derived_brake_summary(bikes=self._bikes, bike=bike):
+            changed = True
         if changed:
             bike.profile_revision = (bike.profile_revision or 0) + 1
             bike.updated_at = timestamp
             await self._bikes.save(bike)
         return changed
+
+    async def _reject_current_model_claim(
+        self,
+        resolution: BikeFieldResolution,
+    ) -> None:
+        """Reject only a specifically corrected model claim."""
+        if resolution.current_claim_id is None:
+            return
+        current = await self._bikes.get_claim(resolution.current_claim_id)
+        if current is not None and current.source_type == "image_inference":
+            current.disposition = "rejected"
+            current.disposition_reason = "explicit_user_correction"
 
     async def _supersede_current_claim(
         self,
@@ -557,11 +593,19 @@ class ResolvedBikeProfileService:
                 "observed_at": resolution.observed_at,
             }
             if resolution.resolution_state == "disputed":
+                candidate_values: list[Any] = []
+                for claim_id in resolution.conflicting_claim_ids or []:
+                    conflicting_claim = await self._bikes.get_claim(claim_id)
+                    if (
+                        conflicting_claim is not None
+                        and conflicting_claim.value not in candidate_values
+                    ):
+                        candidate_values.append(conflicting_claim.value)
                 conflicts.append(
                     {
                         "field_path": resolution.field_path,
                         "current_value": resolution.current_value,
-                        "candidate_values": [],
+                        "candidate_values": candidate_values,
                     },
                 )
         return DiagnosticBikeProfileProjection(
@@ -587,7 +631,6 @@ class ResolvedBikeProfileService:
             profile={
                 "schema_version": "bike_profile.v2",
                 "id": bike.id,
-                "user_id": bike.user_id,
                 "display_name": bike.display_name,
                 "has_repair_sessions": True,
                 "profile_revision": bike.profile_revision or 0,

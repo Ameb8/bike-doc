@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -21,9 +22,15 @@ from bike_doc_api.schemas.profile_inference import (
     ProfileInferenceOutput,
     ProfileInferenceRequest,
 )
+from bike_doc_api.services.profile_inference_resolution import (
+    ProfileInferenceResolver,
+    ProfileResolutionConflictError,
+    ProfileResolverPolicy,
+)
 from bike_doc_api.services.profile_registry import (
     FieldRegistryValidationError,
     get_canonical_field,
+    normalize_canonical_value,
 )
 
 
@@ -45,6 +52,7 @@ class ProfileInferenceOutcome:
     status: ProfileInferenceStatus
     run_id: str | None
     claim_count: int = 0
+    policy_mode: str = "evaluated"
 
 
 class ProfileInferenceExtractor(Protocol):
@@ -84,8 +92,33 @@ class BikeRepositoryProtocol(Protocol):
     ) -> BikeProfile | None:
         """Return an active bike only when it remains user-owned."""
 
+    async def get_owned_active_for_update(
+        self, *, bike_id: str, user_id: str
+    ) -> BikeProfile | None:
+        """Lock an owned active profile before deterministic resolution."""
+
     async def add_claim(self, claim: BikeFactClaim) -> BikeFactClaim:
         """Persist one immutable bike-fact claim."""
+
+    async def get_claim(self, claim_id: str) -> BikeFactClaim | None:
+        """Return a claim whose disposition may be updated."""
+
+    async def list_claims(
+        self,
+        *,
+        bike_id: str,
+        field_path: str | None = None,
+    ) -> list[BikeFactClaim]:
+        """Return claims used to avoid duplicate evidence on replay."""
+
+    async def get_resolution(self, *, bike_id: str, field_path: str) -> Any:
+        """Return one current field resolution."""
+
+    async def save_resolution(self, resolution: Any) -> Any:
+        """Persist one changed field resolution."""
+
+    async def save(self, bike: BikeProfile) -> BikeProfile:
+        """Persist the resolved bike projection."""
 
 
 class ArtifactRepositoryProtocol(Protocol):
@@ -130,7 +163,10 @@ class ProfileInferenceService:
         extractor: ProfileInferenceExtractor,
         extractor_version: str,
         running_lease_seconds: float = 60.0,
-        commit: Any | None = None,
+        resolution_retry_limit: int = 3,
+        resolver_policy: ProfileResolverPolicy | None = None,
+        commit: Callable[[], Awaitable[None]] | None = None,
+        rollback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._turns = turns
         self._repair_sessions = repair_sessions
@@ -141,7 +177,14 @@ class ProfileInferenceService:
         self._extractor = extractor
         self._extractor_version = extractor_version
         self._running_lease_seconds = running_lease_seconds
+        self._resolution_retry_limit = max(1, resolution_retry_limit)
+        self._resolver_policy = resolver_policy or ProfileResolverPolicy.production()
+        self._resolver = ProfileInferenceResolver(
+            bikes=bikes,
+            policy=self._resolver_policy,
+        )
         self._commit = commit
+        self._rollback = rollback
 
     async def process_submitted_profile_evidence(
         self,
@@ -167,14 +210,20 @@ class ProfileInferenceService:
             ProfileInferenceStatus.ABSTAINED,
             ProfileInferenceStatus.FAILED,
         }:
-            return _outcome_for_run(existing)
+            return _outcome_for_run(
+                existing,
+                policy_mode=self._resolver_policy.outcome_mode,
+            )
         if (
             existing is not None
             and existing.status == ProfileInferenceStatus.RUNNING
             and existing.started_at
             > now - timedelta(seconds=self._running_lease_seconds)
         ):
-            return _outcome_for_run(existing)
+            return _outcome_for_run(
+                existing,
+                policy_mode=self._resolver_policy.outcome_mode,
+            )
 
         run = existing or ProfileInferenceRun(
             turn_id=turn.id,
@@ -242,34 +291,118 @@ class ProfileInferenceService:
         if not claims:
             return await self._finish(run, status=ProfileInferenceStatus.ABSTAINED)
 
-        for claim in claims:
-            await self._bikes.add_claim(
-                BikeFactClaim(
-                    bike_id=bike.id,
-                    field_path=claim.field_path,
-                    value=claim.value,
-                    source_type="image_inference",
-                    source_ref={
-                        "type": "profile_inference_run",
-                        "id": run.id,
-                        "subject_relation": claim.subject_relation,
-                    },
-                    evidence_refs=[
-                        {"type": "artifact", "id": artifact_id}
-                        for artifact_id in claim.artifact_ids
-                    ],
-                    scope_assumption=claim.subject_relation,
-                    observed_at=turn.created_at,
-                    evidence_basis=claim.evidence_basis,
-                    visibility=claim.visibility,
-                    model_score=claim.confidence_score,
-                    evidence_cues=claim.evidence_cues,
-                    disposition="pending",
-                    disposition_reason="shadow_mode",
-                ),
+        for attempt in range(self._resolution_retry_limit):
+            latest_bike = await self._bikes.get_owned_active_for_update(
+                bike_id=bike.id,
+                user_id=repair_session.user_id,
             )
+            if latest_bike is None:
+                return await self._finish(
+                    run,
+                    status=ProfileInferenceStatus.FAILED,
+                    failure_code="bike_unavailable",
+                )
+            try:
+                persisted_claims: list[BikeFactClaim] = []
+                for claim in claims:
+                    artifact_by_id = {artifact.id: artifact for artifact in artifacts}
+                    evidence_refs = [
+                        {
+                            "type": "artifact",
+                            "id": artifact_id,
+                            "content_sha256": artifact_by_id[
+                                artifact_id
+                            ].content_sha256,
+                        }
+                        for artifact_id in claim.artifact_ids
+                    ]
+                    duplicate = await self._find_duplicate_claim(
+                        bike_id=bike.id,
+                        field_path=claim.field_path,
+                        value=claim.value,
+                        evidence_refs=evidence_refs,
+                        content_hashes={
+                            artifact_by_id[artifact_id].content_sha256
+                            for artifact_id in claim.artifact_ids
+                        },
+                    )
+                    if duplicate is not None:
+                        persisted_claims.append(duplicate)
+                        continue
+                    persisted_claims.append(
+                        await self._bikes.add_claim(
+                            BikeFactClaim(
+                                bike_id=bike.id,
+                                field_path=claim.field_path,
+                                value=claim.value,
+                                source_type="image_inference",
+                                source_ref={
+                                    "type": "profile_inference_run",
+                                    "id": run.id,
+                                    "subject_relation": claim.subject_relation,
+                                },
+                                evidence_refs=evidence_refs,
+                                scope_assumption=claim.subject_relation,
+                                observed_at=turn.created_at,
+                                evidence_basis=claim.evidence_basis,
+                                visibility=claim.visibility,
+                                model_score=claim.confidence_score,
+                                evidence_cues=claim.evidence_cues,
+                                disposition="pending",
+                                disposition_reason="pending_resolution",
+                            ),
+                        ),
+                    )
+                await self._resolver.resolve(
+                    bike=latest_bike,
+                    claims=persisted_claims,
+                )
+                break
+            except ProfileResolutionConflictError:
+                if self._rollback is not None:
+                    await self._rollback()
+                if attempt + 1 == self._resolution_retry_limit:
+                    raise
+                continue
+            except Exception:
+                if self._rollback is not None:
+                    await self._rollback()
+                raise
         run.claim_count = len(claims)
         return await self._finish(run, status=ProfileInferenceStatus.COMPLETED)
+
+    async def _find_duplicate_claim(
+        self,
+        *,
+        bike_id: str,
+        field_path: str,
+        value: Any,
+        evidence_refs: list[dict[str, str]],
+        content_hashes: set[str],
+    ) -> BikeFactClaim | None:
+        """Reuse an identical artifact-backed fact across retries or replays."""
+        list_claims = getattr(self._bikes, "list_claims", None)
+        if list_claims is None:
+            return None
+        existing_claims = await list_claims(bike_id=bike_id, field_path=field_path)
+        return next(
+            (
+                existing
+                for existing in existing_claims
+                if existing.source_type == "image_inference"
+                and existing.value == value
+                and (
+                    existing.evidence_refs == evidence_refs
+                    or {
+                        ref.get("content_sha256")
+                        for ref in existing.evidence_refs
+                        if ref.get("content_sha256") is not None
+                    }
+                    == content_hashes
+                )
+            ),
+            None,
+        )
 
     async def _load_base_context(
         self,
@@ -372,7 +505,10 @@ class ProfileInferenceService:
         run.completed_at = datetime.now(UTC)
         await self._runs.save(run)
         await self._commit_if_configured()
-        return _outcome_for_run(run)
+        return _outcome_for_run(
+            run,
+            policy_mode=self._resolver_policy.outcome_mode,
+        )
 
     async def _commit_if_configured(self) -> None:
         if self._commit is not None:
@@ -400,7 +536,13 @@ def _validated_tracer_claims(
     if output.claims and (
         not output.scene.contains_bicycle
         or output.scene.multiple_bicycles
-        or output.scene.target_relation != "installed_on_target_bike"
+        or output.scene.target_relation
+        not in {
+            "installed_on_target_bike",
+            "likely_installed_on_target_bike",
+            "loose_component",
+            "packaging_or_reference",
+        }
     ):
         raise ValueError("scene cannot support installed target-bike claims")
     abstained_paths: set[str] = set()
@@ -416,8 +558,9 @@ def _validated_tracer_claims(
     for claim in output.claims:
         if claim.field_path not in REAR_BRAKE_TRACER_FIELDS:
             raise ValueError("claim is outside the rear-brake tracer")
-        if claim.subject_relation != "installed_on_target_bike":
-            raise ValueError("claim is not installed on the target bike")
+        if claim.subject_relation != output.scene.target_relation:
+            raise ValueError("claim subject relation does not match the scene")
+        claim.value = normalize_canonical_value(claim.field_path, claim.value)
         field = get_canonical_field(claim.field_path, claim.value)
         if (
             field.scope != "rear"
@@ -442,11 +585,16 @@ def _validated_tracer_claims(
     return claims
 
 
-def _outcome_for_run(run: ProfileInferenceRun) -> ProfileInferenceOutcome:
+def _outcome_for_run(
+    run: ProfileInferenceRun,
+    *,
+    policy_mode: str = "evaluated",
+) -> ProfileInferenceOutcome:
     """Map persisted run state into the service's compact result."""
 
     return ProfileInferenceOutcome(
         status=ProfileInferenceStatus(run.status),
         run_id=run.id,
         claim_count=run.claim_count,
+        policy_mode=policy_mode,
     )

@@ -30,6 +30,7 @@ class NewBikeFactClaim:
     value: Any
     source_type: str
     scope_assumption: str | None = None
+    explicit_correction: bool = False
 
 
 LEGACY_FIELD_PATHS: dict[str, tuple[str, ...]] = {
