@@ -1,0 +1,60 @@
+{
+  "accepted_at": "2026-07-14T17:58:25.583028+00:00",
+  "baseline_schema_version": "bike_profile_inference_eval_baseline.v1",
+  "case_count": 13,
+  "dataset_version": "rear-brake-v1.0.0",
+  "field_evidence_metrics": [
+    {
+      "evidence_class": "direct_visual",
+      "field_path": "brakes.rear.actuation",
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "tp": 6
+    },
+    {
+      "evidence_class": "direct_visual",
+      "field_path": "brakes.rear.mechanism",
+      "fn": 0,
+      "fp": 2,
+      "precision": 0.666667,
+      "recall": 1.0,
+      "tp": 4
+    }
+  ],
+  "metrics": {
+    "abstention_correctness": 0.894737,
+    "auto_fill_coverage": 1.0,
+    "auto_fill_precision": 0.6,
+    "auto_overwrite_coverage": 1.0,
+    "auto_overwrite_precision": 1.0,
+    "conflict_accuracy": 1.0,
+    "cost_usd_total": 0.048299999999999996,
+    "false_positive_rate": 0.166667,
+    "front_rear_position_accuracy": 0.833333,
+    "input_tokens_mean": 805.0,
+    "installedness_accuracy": 1.0,
+    "latency_ms_mean": 379.846154,
+    "later_correction_accuracy": 1.0,
+    "later_correction_rate": 0.0,
+    "output_tokens_mean": 115.769231,
+    "profile_corruption_failures": {
+      "position": 2
+    },
+    "expected_profile_corruption_failures": {
+      "installedness": 4,
+      "position": 2
+    }
+  },
+  "policy": "bootstrap-v1",
+  "versions": {
+    "extractor_version": "rear-brake-shadow.v1",
+    "model_version": "recorded-response",
+    "output_schema_version": "bike_profile_inference.v1",
+    "preprocessing_version": "image-preprocessing.v1",
+    "prompt_version": "rear-brake-prompt.v1",
+    "registry_version": "bike_profile_registry.v1",
+    "resolver_policy_version": "bootstrap-v1"
+  }
+}

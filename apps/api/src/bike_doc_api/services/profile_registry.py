@@ -7,6 +7,7 @@ from math import isfinite
 from typing import Any, Literal
 
 FieldValueKind = Literal["string", "integer", "number", "boolean", "enum"]
+FIELD_REGISTRY_VERSION = "bike_profile_registry.v1"
 
 
 class FieldRegistryValidationError(ValueError):
