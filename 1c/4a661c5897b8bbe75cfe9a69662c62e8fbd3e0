@@ -1,0 +1,56 @@
+evals/bike-doc/profile-inference/evaluate.py
+  s_a858adb007b6d2::t_06dfa5d56d4a23 1-60
+evals/bike-doc/datasets/README.md
+  s_a858adb007b6d2::t_06dfa5d56d4a23 8-23,25-35
+  s_a858adb007b6d2::t_028abacddcb66b 24
+apps/api/src/bike_doc_api/services/profile_inference_evaluation.py
+  s_a858adb007b6d2::t_e5d07cdbc31c81 186-190,234-237,292-294,312-314,316-318,328-330,358-360,381-383,411-413,449-451,498-500,514-515,518-520,534-536,573,575-578,580-585,593-595,627-629,647-650,665-667,677-679,716-718,734-736
+  s_a858adb007b6d2::t_59c8a0c9393c18 181-182,384,485-491,603
+  s_a858adb007b6d2::t_97835e3c1fc169 719-722
+  s_a858adb007b6d2::t_6a7077abf1b5b0 14,554-555
+  s_a858adb007b6d2::t_5b23aa99058a65 300-306,319-320
+  s_a858adb007b6d2::t_cebd359ae606e9 25
+  s_a858adb007b6d2::t_3da2ae03967990 32,557-558,563,723-725
+  s_a858adb007b6d2::t_ed02bd195e287d 521
+  s_a858adb007b6d2::t_0186b433afe92b 1-13,15-24,26-31,33-180,183-185,191-233,238-291,295-299,307-311,315,321-327,331-357,361-380,385-410,414-448,452-484,493-497,501-513,516-517,523,533,537-545,549-553,556,559-562,564-570,572,579,586-587,591-592,596-602,604-626,630-646,651-652,661-664,668,675-676,680-715,726-733,737-753
+  s_a858adb007b6d2::t_b9308e3f2f5c4f 492,522,524-532,546-548,571,574,588-590
+  s_a858adb007b6d2::t_34a2d3abcce40b 653-660,669-674
+evals/bike-doc/profile-inference/rear-brake-shadow-v1.responses.json
+  s_a858adb007b6d2::t_8e95f170444e0b 1-109,122-158
+  s_a858adb007b6d2::t_2d9cd656c1231d 110-121
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_a858adb007b6d2::t_ffaaaf928c94d0 1-42,44-46,51-79
+  s_a858adb007b6d2::t_86563915868f12 43,47-50
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_a858adb007b6d2::t_0186b433afe92b 10
+evals/bike-doc/profile-inference/rear-brake-shadow-v1.json
+  s_a858adb007b6d2::t_2d9cd656c1231d 149-164
+  s_a858adb007b6d2::t_5b23aa99058a65 2-3,5-15,19-21,23-24,26-45,49-51,53-60,63-66,68-75,78-80,82-104,108-117,120-130,133-148,165-194,196-201
+evals/bike-doc/profile-inference/rear-brake-shadow-v1.baseline.json
+  s_a858adb007b6d2::t_90f49b7df25a4c 1-28,30-42,47-60
+  s_a858adb007b6d2::t_6ee85f429aa4d6 29,43-46
+Taskfile.yml
+  s_a858adb007b6d2::t_06dfa5d56d4a23 65-67,69
+  s_a858adb007b6d2::t_028abacddcb66b 68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "1c4a661c5897b8bbe75cfe9a69662c62e8fbd3e0",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_a858adb007b6d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f61bb-3e04-7da1-81df-d824f4667b40",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
