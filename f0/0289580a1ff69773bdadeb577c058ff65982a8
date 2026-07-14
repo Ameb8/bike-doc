@@ -1,0 +1,111 @@
+.env.example
+  s_6b6a7a88874392::t_90c25acfb190c5 67-69
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_6b0826870ceae4::t_7cee941abcf30f 33
+  s_6b0826870ceae4::t_e05dba55446140 166,180,294-297,299-303,305-307,309,317-320,329-353,355-358,360,362-370
+  s_6b6a7a88874392::t_e8b6bfc512d738 25-26,28,55,95-99,114-122,167,181-185,213-216,223-226
+  s_6b0826870ceae4::t_d3b0c7041c3df7 304,374-380,382-393,403-405
+  s_6b0826870ceae4::t_9fd9c71bafb6d8 313-315,321-328
+  s_6b0826870ceae4::t_a0d44066cb2c12 308,310-312,316,381,394-402
+  s_6b0826870ceae4::t_441737498ac8f5 539-545,561-562
+  s_6b6a7a88874392::t_e843c90fa239c7 5,29
+  s_6b0826870ceae4::t_0e7739d2f9a56c 27,103-105,361
+  s_6b6a7a88874392::t_1b78cf576b70cd 168-169,187,354,359
+  s_6b0826870ceae4::t_cb72966e113580 563
+  s_6b0826870ceae4::t_eb76034db207c5 106-113
+  s_6b6a7a88874392::t_05cddcc8a53b36 508-511,588-592,599
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_6b6a7a88874392::t_3be0c16d11b55a 266-268,432-434,449-451
+  s_6b6a7a88874392::t_55d1e35016ec8c 470-471
+  s_6b6a7a88874392::t_311e37c566b530 523
+  s_6b6a7a88874392::t_266651131f1ad7 17-20,447-448,452-469
+  s_6b0826870ceae4::t_e87a9b09ecbe37 400,404-407,411-413
+  s_6b6a7a88874392::t_98af2a715ec077 180-181,520-522,524-563
+  s_6b6a7a88874392::t_46099609aac3d7 144,163-179,182-184,798-803,813
+  s_6b0826870ceae4::t_799d4e2afd9ea4 384-390,395
+  s_6b0826870ceae4::t_e614259196f617 391
+  s_6b0826870ceae4::t_da112ec830aea2 329-383,392-394,396-399,401-403,408-410,414-431
+  s_6b6a7a88874392::t_0ca7238878fad7 269-281
+  s_6b6a7a88874392::t_0c338e0b4e9072 435-446,472-519,564-566
+  s_6b0826870ceae4::t_3a5761d498c19e 11
+  s_6b0826870ceae4::t_196e793a2926e1 282-326
+apps/api/tests/unit/services/test_bike_service.py
+  s_6b6a7a88874392::t_311e37c566b530 553
+  s_6b6a7a88874392::t_99bfcc52fc2683 551-552,554-649
+  s_6b0826870ceae4::t_0604e0efc70a43 340
+  s_6b0826870ceae4::t_292b1f44cf0fdb 336
+apps/api/tests/unit/adk/tools/test_bike_profile_tool.py
+  s_6b6a7a88874392::t_3be0c16d11b55a 85
+  s_6b6a7a88874392::t_e909f6d7dc7910 43-55,82-84,86-91
+apps/api/src/bike_doc_api/repositories/bikes.py
+  s_6b0826870ceae4::t_eb76034db207c5 94-108
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_6b0826870ceae4::t_9f26c0d14f2bb5 330
+  s_6b0826870ceae4::t_7cee941abcf30f 100-111
+apps/api/src/bike_doc_api/services/profile_resolution.py
+  s_6b0826870ceae4::t_b8758c909c0eb4 33
+apps/api/src/bike_doc_api/services/profile_inference_resolution.py
+  s_6b0826870ceae4::t_4c73c1a18d19e0 207-211
+  s_6b0826870ceae4::t_770c34f3ba41f4 466,470-471
+  s_6b6a7a88874392::t_55d1e35016ec8c 537-540
+  s_6b0826870ceae4::t_0e7739d2f9a56c 19
+  s_6b0826870ceae4::t_3ff8bb5bc9b3af 302-311
+  s_6b6a7a88874392::t_931fa8ff292697 14,84-87
+  s_6b0826870ceae4::t_2942d2ed6414a5 383-387
+  s_6b6a7a88874392::t_3be0c16d11b55a 527
+  s_6b0826870ceae4::t_e05dba55446140 20-22
+  s_6b0826870ceae4::t_5164765af54136 419-426,428,433-442
+  s_6b6a7a88874392::t_2f21c08366693f 11-13,15,52-60,148-151,515-526,528-529
+  s_6b0826870ceae4::t_6eca3feec424ec 108-113,165-169,177-178,183-201,212-214,217,219-234,253-254,257,259-264,266-268,280-301,312-340
+  s_6b0826870ceae4::t_6a380827a96d78 215-216,218,255-256,258
+  s_6b0826870ceae4::t_9f26c0d14f2bb5 269-274,341-382,388-418,427,429-432,443-465,467-469,472-500
+  s_6b0826870ceae4::t_745bc5f3a106a3 202-206
+  s_6b6a7a88874392::t_4a985e24c3bb0d 1-10,16-18,23-51,61-83,88-107,114-147,152-164,170-176,179-182,235-252,265,275-279,501-514,530-536,541-561
+apps/api/src/bike_doc_api/core/config.py
+  s_6b6a7a88874392::t_90c25acfb190c5 58-60,270-275
+apps/api/tests/unit/test_config.py
+  s_6b6a7a88874392::t_10b0cff14120b7 114-129
+apps/api/src/bike_doc_api/services/bikes.py
+  s_6b0826870ceae4::t_cb72966e113580 43,355-365,396
+  s_6b6a7a88874392::t_99bfcc52fc2683 596,598-603,608
+  s_6b0826870ceae4::t_b8758c909c0eb4 378,401,455-458,483-486,507-517
+  s_6b0826870ceae4::t_770c34f3ba41f4 597
+  s_6b0826870ceae4::t_bb64bab1fcc381 499-500
+  s_6b0826870ceae4::t_3a5761d498c19e 38-40
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_6b6a7a88874392::t_459220f7b01c92 6,60
+  s_6b6a7a88874392::t_e843c90fa239c7 48-49
+  s_6b6a7a88874392::t_e909f6d7dc7910 7,50-59,61-70
+apps/api/src/bike_doc_api/adk/background.py
+  s_6b6a7a88874392::t_90c25acfb190c5 72,223-227,229
+  s_6b6a7a88874392::t_ecc16eb71062af 184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "f00289580a1ff69773bdadeb577c058ff65982a8",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_6b0826870ceae4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5f5c-fbda-7a20-a807-1829180dc8cb",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_6b6a7a88874392": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f5f4c-ce42-7391-b538-80ef1388378a",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
