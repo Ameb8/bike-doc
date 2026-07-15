@@ -1,0 +1,68 @@
+Taskfile.yml
+  s_73b5bd5d61664e::t_34b803a4a75d44 70-74
+evals/bike-doc/profile-inference/rolling-system-v1.responses.json
+  s_73b5bd5d61664e::t_b8c7ead426c8ea 1-36
+apps/api/src/bike_doc_api/services/profile_inference_resolution.py
+  s_73b5bd5d61664e::t_15530a18dc3067 778
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_73b5bd5d61664e::t_a17ac0a7a0a347 25-34,72-93
+apps/api/tests/unit/services/test_profile_registry.py
+  s_73b5bd5d61664e::t_c4edc75eb3bd5e 1-25,31-78,80-94
+  s_73b5bd5d61664e::t_44c51be022b6b5 79
+  s_73b5bd5d61664e::t_17c4ad01a286d0 26-30
+  s_73b5bd5d61664e::t_024cf4b445b890 95-96
+apps/api/src/bike_doc_api/schemas/profile_inference.py
+  s_73b5bd5d61664e::t_67ecf27afe520c 18-26,135
+apps/api/src/bike_doc_api/services/bikes.py
+  s_73b5bd5d61664e::t_42874482337078 223-225,229,231-232,295,345,618-625,686-694,757,789,796,834,836-837
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_73b5bd5d61664e::t_67ecf27afe520c 467,476,485,504,525,534,541,551
+  s_73b5bd5d61664e::t_15530a18dc3067 518
+  s_73b5bd5d61664e::t_f46bcbdbcbe8a1 10
+  s_73b5bd5d61664e::t_abcd314c21f493 549-550,552
+apps/api/tests/unit/services/test_bike_service.py
+  s_73b5bd5d61664e::t_cfb41307ba16a8 575-609
+  s_73b5bd5d61664e::t_fd7c0f2d544d37 528-574
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_73b5bd5d61664e::t_5611fb579904a2 447-450,452-485
+  s_73b5bd5d61664e::t_961159c96b6ee5 375-405
+  s_73b5bd5d61664e::t_26e01a6817cbd1 406-446,1352-1360
+  s_73b5bd5d61664e::t_aab71b32a628af 486-505
+  s_73b5bd5d61664e::t_abcd314c21f493 451
+  s_73b5bd5d61664e::t_c33f393736b38e 341-374,1339-1351
+evals/bike-doc/profile-inference/rolling-system-v1.baseline.json
+  s_73b5bd5d61664e::t_34b803a4a75d44 1-36
+apps/api/src/bike_doc_api/services/profile_inference_evaluation.py
+  s_73b5bd5d61664e::t_17c4ad01a286d0 330
+  s_73b5bd5d61664e::t_fb8c7b5e344eb3 332-335
+  s_73b5bd5d61664e::t_631b585197a5d4 24,295
+  s_73b5bd5d61664e::t_024cf4b445b890 326-329,331
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_73b5bd5d61664e::t_17c4ad01a286d0 905
+  s_73b5bd5d61664e::t_67ecf27afe520c 20,882-883,891-892
+  s_73b5bd5d61664e::t_024cf4b445b890 901-904,906
+  s_73b5bd5d61664e::t_fb8c7b5e344eb3 907-908
+evals/bike-doc/profile-inference/rolling-system-v1.json
+  s_73b5bd5d61664e::t_b8c7ead426c8ea 1-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "e36bf4484d9bc16dc817e4bf21ac427adb5a9701",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_73b5bd5d61664e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f66e6-926a-7422-97e4-639237bd627d",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
