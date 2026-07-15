@@ -101,8 +101,6 @@ class ProfileResolverPolicy:
         from bike_doc_api.services.profile_registry import CANONICAL_FIELD_REGISTRY
 
         for field_path, field in CANONICAL_FIELD_REGISTRY.items():
-            if not field_path.startswith(("brakes.front.", "brakes.rear.")):
-                continue
             thresholds = bundle_thresholds.get(field.policy_bundle)
             if not field.image_auto_fill or thresholds is None:
                 continue
@@ -777,8 +775,7 @@ def _is_valid_image_claim(claim: BikeFactClaim) -> bool:
     except FieldRegistryValidationError:
         return False
     return (
-        field.image_auto_fill
-        and field.volatility_class not in {"derived", "user_managed"}
+        field.volatility_class not in {"derived", "user_managed"}
         and claim.evidence_basis in field.permitted_evidence_bases
         and bool(claim.evidence_refs)
     )

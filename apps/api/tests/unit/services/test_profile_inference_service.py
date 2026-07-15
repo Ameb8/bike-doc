@@ -338,6 +338,171 @@ async def test_bootstrap_policy_resolves_a_front_brake_without_populating_rear()
     assert store.bike.technical_profile["brakes"]["rear"] == {}
 
 
+async def test_readable_rear_tire_sidewall_resolves_only_rear_tire_fields() -> None:
+    """A positioned sidewall never supplies wheel, rim, or opposite-tire facts."""
+
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _rolling_claim("rolling_system.rear.tire.manufacturer", "Maxxis"),
+        _rolling_claim("rolling_system.rear.tire.model", "Minion DHF"),
+        _rolling_claim("rolling_system.rear.tire.marked_size", "29 x 2.40"),
+        _rolling_claim("rolling_system.rear.tire.iso_width_mm", 61),
+        _rolling_claim("rolling_system.rear.tire.iso_bsd_mm", 622),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["rolling_system"] == {
+        "front": {},
+        "rear": {
+            "tire": {
+                "manufacturer": "Maxxis",
+                "model": "Minion DHF",
+                "marked_size": "29 x 2.40",
+                "iso_width_mm": 61,
+                "iso_bsd_mm": 622,
+            },
+        },
+    }
+
+
+async def test_tubeless_ready_is_resolved_without_deriving_tubeless_setup() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _rolling_claim("rolling_system.rear.tire.tubeless_ready", True),
+        {
+            **_rolling_claim("rolling_system.rear.tire.setup", "tubeless"),
+            "evidence_basis": "direct_visual",
+            "observed_text": None,
+        },
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["rolling_system"]["rear"]["tire"] == {
+        "tubeless_ready": True,
+    }
+    setup_claim = next(
+        claim
+        for claim in store.claims
+        if claim.field_path == "rolling_system.rear.tire.setup"
+    )
+    assert setup_claim.disposition == "pending"
+    assert setup_claim.disposition_reason == "no_active_field_policy"
+
+
+async def test_readable_rear_hub_and_wheel_markings_resolve_without_front_leakage() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _rolling_claim("rolling_system.rear.wheel.nominal_size", "29 in"),
+        _rolling_claim("rolling_system.rear.wheel.iso_bsd_mm", 622),
+        _rolling_claim("rolling_system.rear.rim.internal_width_mm", 30),
+        _rolling_claim("rolling_system.rear.hub.manufacturer", "DT Swiss"),
+        _rolling_claim("rolling_system.rear.hub.model", "350"),
+        _direct_rolling_claim("rolling_system.rear.hub.axle_type", "thru_axle"),
+        _rolling_claim("rolling_system.rear.hub.axle_standard", "12x148"),
+        _direct_rolling_claim("rolling_system.rear.hub.rotor_mount", "six_bolt"),
+        _rolling_claim("rolling_system.rear.hub.driver_interface", "hg"),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["rolling_system"] == {
+        "front": {},
+        "rear": {
+            "wheel": {"nominal_size": "29 in", "iso_bsd_mm": 622},
+            "rim": {"internal_width_mm": 30},
+            "hub": {
+                "manufacturer": "DT Swiss",
+                "model": "350",
+                "axle_type": "thru_axle",
+                "axle_standard": "12x148",
+                "rotor_mount": "six_bolt",
+                "driver_interface": "hg",
+            },
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("rolling_system.front.hub.driver_interface", "hg"),
+        ("rolling_system.rear.hub.driver_interface", "hg"),
+        ("rolling_system.rear.wheel.nominal_size", "29 in"),
+    ],
+)
+async def test_rolling_claims_without_permitted_direct_evidence_fail_validation(
+    field_path: str,
+    value: object,
+) -> None:
+    """Front-only driver and apparent-scale dimensions cannot mutate a profile."""
+
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_rolling_claim(field_path, value),
+            "evidence_basis": "direct_visual",
+            "observed_text": None,
+            "evidence_cues": ["Shimano drivetrain branding is visible."],
+        },
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.technical_profile["rolling_system"] == {
+        "front": {},
+        "rear": {},
+    }
+
+
+async def test_marking_based_rolling_claim_requires_observed_text() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_rolling_claim("rolling_system.rear.rim.internal_width_mm", 30),
+            "observed_text": None,
+        },
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+
+
 async def test_bootstrap_policy_resolves_installed_brake_component_roles() -> None:
     store = _Store()
     output = _valid_single_claim_output()
@@ -1170,4 +1335,27 @@ def _brake_claim(
         "artifact_ids": ["art_rear"],
         "observed_text": "160" if evidence_basis == "readable_marking" else None,
         "evidence_cues": ["Installed rear brake detail is clearly visible."],
+    }
+
+
+def _rolling_claim(field_path: str, value: object) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": "readable_marking",
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": str(value),
+        "evidence_cues": ["Readable marking is visible on the installed rear tire."],
+    }
+
+
+def _direct_rolling_claim(field_path: str, value: object) -> dict[str, object]:
+    return {
+        **_rolling_claim(field_path, value),
+        "evidence_basis": "direct_visual",
+        "observed_text": None,
+        "evidence_cues": ["The installed rear hub interface is clearly visible."],
     }

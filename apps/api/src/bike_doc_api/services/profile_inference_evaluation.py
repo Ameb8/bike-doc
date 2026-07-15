@@ -21,7 +21,7 @@ from pydantic import ValidationError
 
 from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.schemas.profile_inference import (
-    BRAKE_INFERENCE_FIELD_PATHS,
+    PROFILE_INFERENCE_FIELD_PATHS,
     ProfileInferenceOutput,
 )
 from bike_doc_api.services.profile_inference_resolution import (
@@ -292,7 +292,7 @@ def _invalid_case(
 def _validated_claims(
     case: dict[str, Any], output: ProfileInferenceOutput
 ) -> list[Any]:
-    allowed = set(case.get("allowed_field_paths", BRAKE_INFERENCE_FIELD_PATHS))
+    allowed = set(case.get("allowed_field_paths", PROFILE_INFERENCE_FIELD_PATHS))
     abstentions = {item.field_path for item in output.abstentions}
     if output.claims and (
         not output.scene.contains_bicycle
@@ -323,6 +323,16 @@ def _validated_claims(
         field = get_canonical_field(claim.field_path, claim.value)
         if claim.evidence_basis not in field.permitted_evidence_bases:
             raise ValueError(f"evidence basis is not allowed: {claim.field_path}")
+        if (
+            field.requires_readable_marking
+            and claim.evidence_basis == "readable_marking"
+            and not (
+                isinstance(claim.observed_text, str) and claim.observed_text.strip()
+            )
+        ):
+            raise ValueError(
+                f"readable-marking claim requires observed text: {claim.field_path}"
+            )
         input_ids = set(case.get("input", {}).get("artifact_ids", ["image"]))
         if not set(claim.artifact_ids).issubset(input_ids):
             raise ValueError(

@@ -7,7 +7,7 @@ from math import isfinite
 from typing import Any, Literal
 
 FieldValueKind = Literal["string", "integer", "number", "boolean", "enum"]
-FIELD_REGISTRY_VERSION = "bike_profile_registry.v1"
+FIELD_REGISTRY_VERSION = "bike_profile_registry.v2"
 
 
 class FieldRegistryValidationError(ValueError):
@@ -464,6 +464,7 @@ def _build_registry() -> dict[str, CanonicalField]:
             scope=position,
             evidence=frozenset({"readable_marking"}),
             marking=True,
+            auto_fill=True,
             bundle="exact_dimension",
         )
         registry[f"{prefix}.wheel.iso_bsd_mm"] = _field(
@@ -472,6 +473,7 @@ def _build_registry() -> dict[str, CanonicalField]:
             scope=position,
             evidence=frozenset({"readable_marking"}),
             marking=True,
+            auto_fill=True,
             bundle="exact_dimension",
         )
         registry[f"{prefix}.rim.internal_width_mm"] = _field(
@@ -480,6 +482,7 @@ def _build_registry() -> dict[str, CanonicalField]:
             scope=position,
             evidence=frozenset({"readable_marking"}),
             marking=True,
+            auto_fill=True,
             bundle="exact_dimension",
         )
         registry[f"{prefix}.tire.marked_size"] = _field(
@@ -498,6 +501,7 @@ def _build_registry() -> dict[str, CanonicalField]:
                 scope=position,
                 evidence=frozenset({"readable_marking"}),
                 marking=True,
+                auto_fill=True,
                 bundle="exact_dimension",
             )
         registry[f"{prefix}.tire.setup"] = _enum(
@@ -511,12 +515,14 @@ def _build_registry() -> dict[str, CanonicalField]:
             scope=position,
             evidence=frozenset({"readable_marking"}),
             marking=True,
+            auto_fill=True,
             bundle="readable_identity",
         )
         registry[f"{prefix}.hub.axle_type"] = _enum(
             f"{prefix}.hub.axle_type",
             {"quick_release", "thru_axle", "bolt_on", "solid_axle", "other"},
             scope=position,
+            auto_fill=True,
             bundle="installed_mechanism",
         )
         registry[f"{prefix}.hub.axle_standard"] = _field(
@@ -525,12 +531,14 @@ def _build_registry() -> dict[str, CanonicalField]:
             scope=position,
             evidence=frozenset({"readable_marking"}),
             marking=True,
+            auto_fill=True,
             bundle="exact_dimension",
         )
         registry[f"{prefix}.hub.rotor_mount"] = _enum(
             f"{prefix}.hub.rotor_mount",
             {"six_bolt", "centerlock", "none", "other"},
             scope=position,
+            auto_fill=True,
             bundle="installed_mechanism",
         )
         if position == "rear":
@@ -538,7 +546,10 @@ def _build_registry() -> dict[str, CanonicalField]:
                 f"{prefix}.hub.driver_interface",
                 driver_interfaces,
                 scope=position,
-                bundle="installed_mechanism",
+                evidence=frozenset({"readable_marking"}),
+                marking=True,
+                auto_fill=True,
+                bundle="readable_identity",
             )
 
     registry["suspension.fork.type"] = _enum(

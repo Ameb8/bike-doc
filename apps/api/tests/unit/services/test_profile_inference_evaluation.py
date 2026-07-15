@@ -22,6 +22,16 @@ DATASET_PATH = (
     / "rear-brake-shadow-v1.json"
 )
 PREDICTIONS_PATH = DATASET_PATH.with_name("rear-brake-shadow-v1.responses.json")
+ROLLING_DATASET_PATH = (
+    REPOSITORY_ROOT
+    / "evals"
+    / "bike-doc"
+    / "profile-inference"
+    / "rolling-system-v1.json"
+)
+ROLLING_PREDICTIONS_PATH = ROLLING_DATASET_PATH.with_name(
+    "rolling-system-v1.responses.json",
+)
 
 
 @pytest.mark.asyncio
@@ -57,6 +67,30 @@ async def test_evaluation_reports_field_evidence_and_resolution_quality() -> Non
     )
     assert position_case["actions"] == {"brakes.rear.mechanism": "applied"}
     assert position_case["profile_corruption_failures"] == ["position"]
+
+
+@pytest.mark.asyncio
+async def test_rolling_evaluation_covers_positioned_markings_and_safe_abstention() -> (
+    None
+):
+    report = await evaluate_dataset(
+        load_json(ROLLING_DATASET_PATH),
+        load_predictions(load_json(ROLLING_PREDICTIONS_PATH)),
+    )
+
+    assert report["case_count"] == 6
+    assert report["metrics"]["front_rear_position_accuracy"] == 1.0
+    assert report["metrics"]["auto_fill_precision"] == 1.0
+    assert report["metrics"]["profile_corruption_failures"] == {}
+    tubeless_case = next(
+        case
+        for case in report["cases"]
+        if case["case_id"] == "tubeless_ready_but_setup_ambiguous"
+    )
+    assert tubeless_case["actions"] == {
+        "rolling_system.rear.tire.setup": "pending",
+        "rolling_system.rear.tire.tubeless_ready": "applied",
+    }
 
 
 def test_missing_baseline_is_explicit_and_version_changes_require_comparison() -> None:

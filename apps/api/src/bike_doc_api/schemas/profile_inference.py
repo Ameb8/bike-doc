@@ -15,6 +15,15 @@ BRAKE_INFERENCE_FIELD_PATHS = frozenset(
     if path.startswith(("brakes.front.", "brakes.rear."))
     and field.volatility_class != "derived"
 )
+ROLLING_SYSTEM_INFERENCE_FIELD_PATHS = frozenset(
+    path
+    for path, field in CANONICAL_FIELD_REGISTRY.items()
+    if path.startswith(("rolling_system.front.", "rolling_system.rear."))
+    and field.volatility_class != "derived"
+)
+PROFILE_INFERENCE_FIELD_PATHS = (
+    BRAKE_INFERENCE_FIELD_PATHS | ROLLING_SYSTEM_INFERENCE_FIELD_PATHS
+)
 
 
 class ProfileInferenceScene(BaseModel):
@@ -123,5 +132,5 @@ class ProfileInferenceRequest(BaseModel):
     images: list[InferenceImage] = Field(min_length=1)
     schema_version: Literal["bike_profile_inference.v1"] = "bike_profile_inference.v1"
     allowed_field_paths: list[str] = Field(
-        default_factory=lambda: sorted(BRAKE_INFERENCE_FIELD_PATHS),
+        default_factory=lambda: sorted(PROFILE_INFERENCE_FIELD_PATHS),
     )

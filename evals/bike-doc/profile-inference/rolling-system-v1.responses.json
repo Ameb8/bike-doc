@@ -1,0 +1,36 @@
+{
+  "response_schema_version": "bike_profile_inference_eval_result.v1",
+  "source": "recorded-deterministic-fixture",
+  "cases": [
+    {"case_id": "readable_rear_sidewall", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99}, "claims": [
+      {"field_path": "rolling_system.rear.tire.manufacturer", "value": "Maxxis", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-sidewall"], "observed_text": "MAXXIS", "evidence_cues": ["Rear sidewall branding is readable."]},
+      {"field_path": "rolling_system.rear.tire.model", "value": "Minion DHF", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-sidewall"], "observed_text": "MINION DHF", "evidence_cues": ["Rear sidewall model is readable."]},
+      {"field_path": "rolling_system.rear.tire.marked_size", "value": "29 x 2.40", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-sidewall"], "observed_text": "29 x 2.40", "evidence_cues": ["Rear sidewall size is readable."]},
+      {"field_path": "rolling_system.rear.tire.iso_width_mm", "value": 61, "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-sidewall"], "observed_text": "61-622", "evidence_cues": ["Rear ISO marking is readable."]},
+      {"field_path": "rolling_system.rear.tire.iso_bsd_mm", "value": 622, "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-sidewall"], "observed_text": "61-622", "evidence_cues": ["Rear ISO marking is readable."]}
+    ], "abstentions": []}},
+    {"case_id": "rear_wheel_rim_hub_markings", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99}, "claims": [
+      {"field_path": "rolling_system.rear.wheel.nominal_size", "value": "29 in", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "observed_text": "29", "evidence_cues": ["Rear wheel marking is readable."]},
+      {"field_path": "rolling_system.rear.rim.internal_width_mm", "value": 30, "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "observed_text": "30 mm", "evidence_cues": ["Rim width marking is readable."]},
+      {"field_path": "rolling_system.rear.hub.axle_type", "value": "thru_axle", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "evidence_cues": ["Installed rear through axle is visible."]},
+      {"field_path": "rolling_system.rear.hub.axle_standard", "value": "12x148", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "observed_text": "12x148", "evidence_cues": ["Axle marking is readable."]},
+      {"field_path": "rolling_system.rear.hub.rotor_mount", "value": "six_bolt", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "evidence_cues": ["Six rotor bolts are visible."]},
+      {"field_path": "rolling_system.rear.hub.driver_interface", "value": "hg", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-hub"], "observed_text": "HG", "evidence_cues": ["Rear driver interface marking is readable."]}
+    ], "abstentions": []}},
+    {"case_id": "mixed_front_rear_tires", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99}, "claims": [
+      {"field_path": "rolling_system.front.tire.marked_size", "value": "29 x 2.40", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-tires"], "observed_text": "29 x 2.40", "evidence_cues": ["Front sidewall is readable."]},
+      {"field_path": "rolling_system.rear.tire.marked_size", "value": "27.5 x 2.60", "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-tires"], "observed_text": "27.5 x 2.60", "evidence_cues": ["Rear sidewall is readable."]}
+    ], "abstentions": []}},
+    {"case_id": "tubeless_ready_but_setup_ambiguous", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99}, "claims": [
+      {"field_path": "rolling_system.rear.tire.tubeless_ready", "value": true, "subject_relation": "installed_on_target_bike", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["tr-sidewall"], "observed_text": "Tubeless Ready", "evidence_cues": ["Capability marking is readable."]},
+      {"field_path": "rolling_system.rear.tire.setup", "value": "tubeless", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["tr-sidewall"], "evidence_cues": ["Current setup is not directly established."]}
+    ], "abstentions": []}},
+    {"case_id": "loose_replacement_tire", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "loose_component", "confidence_score": 0.99}, "claims": [
+      {"field_path": "rolling_system.rear.tire.marked_size", "value": "29 x 2.40", "subject_relation": "loose_component", "evidence_basis": "readable_marking", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["loose-tire"], "observed_text": "29 x 2.40", "evidence_cues": ["Loose tire sidewall is readable."]}
+    ], "abstentions": []}},
+    {"case_id": "no_readable_marking", "extraction": {"schema_version": "bike_profile_inference.v1", "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.92}, "claims": [], "abstentions": [
+      {"field_path": "rolling_system.rear.wheel.nominal_size", "reason": "marking_not_readable"},
+      {"field_path": "rolling_system.rear.rim.internal_width_mm", "reason": "marking_not_readable"}
+    ]}}
+  ]
+}

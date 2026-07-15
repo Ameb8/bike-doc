@@ -525,6 +525,88 @@ async def test_legacy_read_omits_aggregate_for_unknown_positioned_brakes() -> No
     assert unknown.brake_type is None
 
 
+async def test_legacy_rolling_summaries_omit_disputed_positioned_values() -> None:
+    bike = _bike()
+    bike.technical_profile = {
+        **empty_technical_profile(),
+        "rolling_system": {
+            "front": {
+                "wheel": {"nominal_size": "29 in"},
+                "tire": {"marked_size": "29 x 2.40"},
+            },
+            "rear": {
+                "wheel": {"nominal_size": "29 in"},
+                "tire": {"marked_size": "29 x 2.40"},
+            },
+        },
+    }
+    repository = FakeBikeRepository([bike])
+    observed_at = datetime(2026, 7, 15, tzinfo=UTC)
+    repository.resolutions[(bike.id, "rolling_system.rear.wheel.nominal_size")] = (
+        BikeFieldResolution(
+            bike_id=bike.id,
+            field_path="rolling_system.rear.wheel.nominal_size",
+            current_value="29 in",
+            resolution_state="disputed",
+            effective_confidence="medium",
+            observed_at=observed_at,
+            resolved_at=observed_at,
+        )
+    )
+    repository.resolutions[(bike.id, "rolling_system.rear.tire.marked_size")] = (
+        BikeFieldResolution(
+            bike_id=bike.id,
+            field_path="rolling_system.rear.tire.marked_size",
+            current_value="29 x 2.40",
+            resolution_state="disputed",
+            effective_confidence="medium",
+            observed_at=observed_at,
+            resolved_at=observed_at,
+        )
+    )
+    service = ResolvedBikeProfileService(repository)
+
+    result = await service.get_bike(current_user=_user(), bike_id=bike.id)
+
+    assert result.wheel_size is None
+    assert result.tire_size is None
+
+
+@pytest.mark.parametrize(
+    ("front", "rear", "expected"),
+    [
+        ("29 in", "29 in", "29 in"),
+        ("29 in", "27.5 in", None),
+        (None, "29 in", None),
+    ],
+)
+async def test_legacy_rolling_summaries_require_matching_known_positions(
+    front: str | None,
+    rear: str | None,
+    expected: str | None,
+) -> None:
+    bike = _bike()
+    bike.technical_profile = {
+        **empty_technical_profile(),
+        "rolling_system": {
+            "front": {
+                "wheel": {"nominal_size": front},
+                "tire": {"marked_size": front},
+            },
+            "rear": {
+                "wheel": {"nominal_size": rear},
+                "tire": {"marked_size": rear},
+            },
+        },
+    }
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
+
+    result = await service.get_bike(current_user=_user(), bike_id=bike.id)
+
+    assert result.wheel_size == expected
+    assert result.tire_size == expected
+
+
 async def test_legacy_read_derives_rim_only_when_both_positioned_ends_agree() -> None:
     bike = _bike()
     bike.technical_profile = {

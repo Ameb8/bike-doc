@@ -1,0 +1,121 @@
+{
+  "schema_version": "bike_profile_inference_eval.v2",
+  "dataset_version": "rolling-system-v1.0.0",
+  "tracer": "front-rear-rolling-system.v1",
+  "description": "Labeled rolling-system evidence cases. Image references are supplied by the runner; this dataset contains no production media.",
+  "policy": "bootstrap-v1",
+  "versions": {
+    "extractor_version": "front-rear-rolling-system.v1",
+    "output_schema_version": "bike_profile_inference.v1",
+    "prompt_version": "front-rear-rolling-system-prompt.v1",
+    "model_version": "recorded-response",
+    "preprocessing_version": "image-preprocessing.v1",
+    "registry_version": "bike_profile.v2",
+    "resolver_policy_version": "bootstrap-v1"
+  },
+  "cases": [
+    {
+      "id": "readable_rear_sidewall",
+      "label": "readable_sidewall_rear_only",
+      "input": {"artifact_ids": ["rear-sidewall"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "rolling_system.rear.tire.manufacturer", "value": "Maxxis", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.model", "value": "Minion DHF", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.marked_size", "value": "29 x 2.40", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.iso_width_mm", "value": 61, "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.iso_bsd_mm", "value": 622, "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [
+        {"field_path": "rolling_system.rear.rim.internal_width_mm", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.rear.tire.manufacturer", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.model", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.marked_size", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.iso_width_mm", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.iso_bsd_mm", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "rear_wheel_rim_hub_markings",
+      "label": "wheel_rim_axle_hub",
+      "input": {"artifact_ids": ["rear-hub"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "rolling_system.rear.wheel.nominal_size", "value": "29 in", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.rim.internal_width_mm", "value": 30, "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.hub.axle_type", "value": "thru_axle", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "rolling_system.rear.hub.axle_standard", "value": "12x148", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.hub.rotor_mount", "value": "six_bolt", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "rolling_system.rear.hub.driver_interface", "value": "hg", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.rear.wheel.nominal_size", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.rim.internal_width_mm", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.hub.axle_type", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.hub.axle_standard", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.hub.rotor_mount", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.hub.driver_interface", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "mixed_front_rear_tires",
+      "label": "mixed_sizes",
+      "input": {"artifact_ids": ["mixed-tires"]},
+      "expected_claims": [
+        {"field_path": "rolling_system.front.tire.marked_size", "value": "29 x 2.40", "position": "front", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.marked_size", "value": "27.5 x 2.60", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.front.tire.marked_size", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.marked_size", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "tubeless_ready_but_setup_ambiguous",
+      "label": "tubeless_ambiguity",
+      "input": {"artifact_ids": ["tr-sidewall"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "rolling_system.rear.tire.tubeless_ready", "value": true, "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.tire.setup", "value": "tubeless", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.rear.tire.tubeless_ready", "expected_action": "applied", "conflict": false},
+        {"field_path": "rolling_system.rear.tire.setup", "expected_action": "pending", "conflict": false}
+      ]
+    },
+    {
+      "id": "loose_replacement_tire",
+      "label": "loose_part",
+      "input": {"artifact_ids": ["loose-tire"]},
+      "expected_scene": {"position": "rear", "installedness": "loose"},
+      "expected_claims": [
+        {"field_path": "rolling_system.rear.tire.marked_size", "value": "29 x 2.40", "position": "rear", "installedness": "loose", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.rear.tire.marked_size", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "no_readable_marking",
+      "label": "no_marking",
+      "input": {"artifact_ids": ["unreadable-wheel"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "rolling_system.rear.wheel.nominal_size", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "rolling_system.rear.rim.internal_width_mm", "position": "rear", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "rolling_system.rear.wheel.nominal_size", "expected_action": "abstained", "conflict": false},
+        {"field_path": "rolling_system.rear.rim.internal_width_mm", "expected_action": "abstained", "conflict": false}
+      ]
+    }
+  ]
+}

@@ -220,16 +220,16 @@ class ResolvedBikeProfileService:
                 bike_ids=[bike.id for bike in bikes],
             )
         )
-        return BikeProfileList(
-            items=[
+        items: list[BikeProfile] = []
+        for bike in bikes:
+            items.append(
                 _public_profile_from_model(
                     bike,
                     has_repair_sessions=bike.id in bike_ids_with_repair_sessions,
+                    disputed_field_paths=await self._disputed_field_paths(bike.id),
                 )
-                for bike in bikes
-            ],
-            next_cursor=None,
-        )
+            )
+        return BikeProfileList(items=items, next_cursor=None)
 
     async def create_bike(
         self,
@@ -292,6 +292,7 @@ class ResolvedBikeProfileService:
         return _public_profile_from_model(
             bike,
             has_repair_sessions=bike.id in bike_ids_with_repair_sessions,
+            disputed_field_paths=await self._disputed_field_paths(bike.id),
         )
 
     async def update_bike(
@@ -341,6 +342,7 @@ class ResolvedBikeProfileService:
         return _public_profile_from_model(
             updated,
             has_repair_sessions=updated.id in bike_ids_with_repair_sessions,
+            disputed_field_paths=await self._disputed_field_paths(updated.id),
         )
 
     async def _apply_manual_technical_fields(
@@ -612,8 +614,15 @@ class ResolvedBikeProfileService:
     ) -> DiagnosticBikeProfileProjection:
         """Build compact agent context without exposing the claim ledger."""
 
-        legacy = _public_profile_from_model(bike)
         resolutions = await self._bikes.list_resolutions(bike_id=bike.id)
+        legacy = _public_profile_from_model(
+            bike,
+            disputed_field_paths=frozenset(
+                resolution.field_path
+                for resolution in resolutions
+                if resolution.resolution_state == "disputed"
+            ),
+        )
         field_states: dict[str, dict[str, Any]] = {}
         conflicts: list[dict[str, Any]] = []
         for resolution in resolutions:
@@ -672,6 +681,15 @@ class ResolvedBikeProfileService:
             },
             field_states=field_states,
             conflicts=conflicts,
+        )
+
+    async def _disputed_field_paths(self, bike_id: str) -> frozenset[str]:
+        """Return fields whose unresolved conflict makes a legacy summary unsafe."""
+
+        return frozenset(
+            resolution.field_path
+            for resolution in await self._bikes.list_resolutions(bike_id=bike_id)
+            if resolution.resolution_state == "disputed"
         )
 
     async def _get_owned_bike(
@@ -736,6 +754,7 @@ def _public_profile_from_model(
     bike: BikeProfileModel,
     *,
     has_repair_sessions: bool = False,
+    disputed_field_paths: frozenset[str] = frozenset(),
 ) -> BikeProfile:
     """Project the current resolved profile into the legacy public contract."""
 
@@ -767,12 +786,14 @@ def _public_profile_from_model(
         "rolling_system.front.wheel.nominal_size",
         "rolling_system.rear.wheel.nominal_size",
         bike.wheel_size,
+        disputed_field_paths,
     )
     tire_size = _matching_positioned_value(
         bike,
         "rolling_system.front.tire.marked_size",
         "rolling_system.rear.tire.marked_size",
         bike.tire_size,
+        disputed_field_paths,
     )
 
     return BikeProfile(
@@ -810,7 +831,10 @@ def _matching_positioned_value(
     front_path: str,
     rear_path: str,
     legacy_value: str | None,
+    disputed_field_paths: frozenset[str],
 ) -> str | None:
+    if front_path in disputed_field_paths or rear_path in disputed_field_paths:
+        return None
     front_exists = has_technical_value_path(bike.technical_profile, front_path)
     rear_exists = has_technical_value_path(bike.technical_profile, rear_path)
     if not front_exists and not rear_exists:

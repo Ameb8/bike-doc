@@ -67,6 +67,11 @@ tasks:
     cmds:
       - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/rear-brake-shadow-v1.json --predictions evals/bike-doc/profile-inference/rear-brake-shadow-v1.responses.json --baseline evals/bike-doc/profile-inference/rear-brake-shadow-v1.baseline.json --output /tmp/bike-doc-rear-brake-evaluation.json
 
+  eval:rolling-system:
+    desc: Evaluate recorded positioned rolling-system inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/rolling-system-v1.json --predictions evals/bike-doc/profile-inference/rolling-system-v1.responses.json --baseline evals/bike-doc/profile-inference/rolling-system-v1.baseline.json --output /tmp/bike-doc-rolling-system-evaluation.json
+
   ci:
     desc: Run the non-Docker CI verification suite.
     cmds:

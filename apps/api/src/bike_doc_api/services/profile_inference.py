@@ -16,8 +16,8 @@ from bike_doc_api.models.bike import BikeFactClaim, BikeProfile
 from bike_doc_api.models.profile_inference import ProfileInferenceRun
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
 from bike_doc_api.schemas.profile_inference import (
-    BRAKE_INFERENCE_FIELD_PATHS,
     INFERENCE_SCHEMA_VERSION,
+    PROFILE_INFERENCE_FIELD_PATHS,
     InferenceImage,
     ProfileInferenceClaim,
     ProfileInferenceOutput,
@@ -879,8 +879,8 @@ def _validated_tracer_claims(
         raise ValueError("scene cannot support installed target-bike claims")
     abstained_paths: set[str] = set()
     for abstention in output.abstentions:
-        if abstention.field_path not in BRAKE_INFERENCE_FIELD_PATHS:
-            raise ValueError("abstention is outside the brake inference registry")
+        if abstention.field_path not in PROFILE_INFERENCE_FIELD_PATHS:
+            raise ValueError("abstention is outside the profile inference registry")
         if abstention.field_path in abstained_paths:
             raise ValueError("abstention field path is repeated")
         abstained_paths.add(abstention.field_path)
@@ -888,8 +888,8 @@ def _validated_tracer_claims(
     claims: list[ProfileInferenceClaim] = []
     values_by_path: dict[str, Any] = {}
     for claim in output.claims:
-        if claim.field_path not in BRAKE_INFERENCE_FIELD_PATHS:
-            raise ValueError("claim is outside the brake inference registry")
+        if claim.field_path not in PROFILE_INFERENCE_FIELD_PATHS:
+            raise ValueError("claim is outside the profile inference registry")
         if claim.subject_relation != output.scene.target_relation:
             raise ValueError("claim subject relation does not match the scene")
         claim.value = normalize_canonical_value(claim.field_path, claim.value)
@@ -898,6 +898,14 @@ def _validated_tracer_claims(
             claim.evidence_basis not in field.permitted_evidence_bases
         ):
             raise ValueError("claim field scope or evidence basis is invalid")
+        if (
+            field.requires_readable_marking
+            and claim.evidence_basis == "readable_marking"
+            and not (
+                isinstance(claim.observed_text, str) and claim.observed_text.strip()
+            )
+        ):
+            raise ValueError("readable-marking claims require observed text")
         if not set(claim.artifact_ids).issubset(valid_artifact_ids):
             raise ValueError("claim references an artifact outside this run")
         if claim.field_path in values_by_path:
