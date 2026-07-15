@@ -1,0 +1,59 @@
+evals/bike-doc/profile-inference/drivetrain-topology-v1.json
+  s_a2fe93c1498852::t_61dc54991257bc 1-94
+apps/api/src/bike_doc_api/providers/profile_inference/gemini.py
+  s_a2fe93c1498852::t_8816bc3eac012f 17,20-29,126-129,145-156
+apps/api/src/bike_doc_api/services/profile_resolution.py
+  s_a2fe93c1498852::t_f9aeab9505262e 220-234
+evals/bike-doc/profile-inference/drivetrain-topology-v1.responses.json
+  s_a2fe93c1498852::t_61dc54991257bc 1-68
+apps/api/tests/unit/services/test_bike_service.py
+  s_a2fe93c1498852::t_08408b423b63d5 672-679,706-710
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_a2fe93c1498852::t_80bf074c5904f0 321
+  s_a2fe93c1498852::t_e37e3268dd8638 388-475
+  s_a2fe93c1498852::t_114c4fa8819b6a 476-478
+  s_a2fe93c1498852::t_d9805dff03f8e6 322-387,479-495
+  s_a2fe93c1498852::t_89b1046046a11f 1516-1529
+Taskfile.yml
+  s_a2fe93c1498852::t_b508b13d741a47 75-79
+.env.example
+  s_a2fe93c1498852::t_3153f554f7aa26 67
+apps/api/tests/unit/providers/test_profile_inference.py
+  s_a2fe93c1498852::t_ab61df5965d8db 1-73
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_a2fe93c1498852::t_c5e90bad6a1d7f 897
+apps/api/src/bike_doc_api/core/config.py
+  s_a2fe93c1498852::t_3153f554f7aa26 109
+apps/api/src/bike_doc_api/schemas/profile_inference.py
+  s_a2fe93c1498852::t_c5e90bad6a1d7f 24-44,46-48
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_a2fe93c1498852::t_11d4ccb2b4e5a9 35-40,102-113
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_a2fe93c1498852::t_998dc9f543caec 356-359,365-368
+apps/api/tests/unit/services/test_profile_registry.py
+  s_a2fe93c1498852::t_f990ab775c622f 7-11,101-116,118-120,122-163
+  s_a2fe93c1498852::t_9d3decf8e1dbd3 117,121
+evals/bike-doc/profile-inference/drivetrain-topology-v1.baseline.json
+  s_a2fe93c1498852::t_7356eb1e7b5d96 1-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "7e223984cb1981e9da1359b57b3f17881cf1294e",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_a2fe93c1498852": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6702-f6ba-7fe0-8423-d5c77e56493f",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
