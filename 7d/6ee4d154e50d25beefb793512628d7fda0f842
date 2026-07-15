@@ -1,0 +1,73 @@
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_8093e175846d4d::t_88b637d77c6457 637
+  s_8093e175846d4d::t_8f514e838860d4 879-881,907-909,946
+  s_8093e175846d4d::t_1a00bb6c7e1f44 22-24,77-94,876-878,882-906,910-945,947
+  s_8093e175846d4d::t_b6e6a151ecf3fe 635,638
+apps/api/src/bike_doc_api/adk/background.py
+  s_8093e175846d4d::t_0e6291ca269003 190
+  s_8093e175846d4d::t_92f9ebb0f3dcf6 167,218
+apps/api/src/bike_doc_api/services/bikes.py
+  s_8093e175846d4d::t_b9144dbabac384 197,203,460,509,511,514-529
+  s_8093e175846d4d::t_41e810ecaa4e53 41-44
+  s_8093e175846d4d::t_97466062ecc8d5 461,480,507,510
+  s_8093e175846d4d::t_5166825444539c 512-513
+apps/api/src/bike_doc_api/core/config.py
+  s_8093e175846d4d::t_f00967419dc5ab 107
+apps/api/src/bike_doc_api/services/profile_inference.py
+  s_8093e175846d4d::t_f3e629af5bc2cd 9,43,45-46,49-53,178-179,193-194
+  s_8093e175846d4d::t_eeba37d618c27c 207,225-226,234,250,253-254,260,262,264-265,268,271-280,282-307,309-328,330-347,349-371,373-374,377,379-392,394-396,398-399,403-405,408-409,412-429,432-454
+  s_8093e175846d4d::t_a655d647c342ab 833-860,927-931,933
+  s_8093e175846d4d::t_0e6291ca269003 1,162
+  s_8093e175846d4d::t_24a763f5cbd688 393,410,430
+  s_8093e175846d4d::t_3fdb91281745ab 400,463,506
+  s_8093e175846d4d::t_41e810ecaa4e53 31-34
+  s_8093e175846d4d::t_14fa33a8a148a3 54
+  s_8093e175846d4d::t_9552c55a01bb9e 456-462,464-479,481-495,498-502,504-505,507-558,560-636,780,786,789-791,794-811
+  s_8093e175846d4d::t_2cbd7b820b97a6 480,657,673
+  s_8093e175846d4d::t_e6e627ca27495f 637-643
+  s_8093e175846d4d::t_8700e81f5682c6 402,407,411,431,644-651
+apps/api/tests/unit/services/test_bike_service.py
+  s_8093e175846d4d::t_d9df63d29d3f11 22-24,397-444
+apps/api/src/bike_doc_api/services/profile_inference_telemetry.py
+  s_8093e175846d4d::t_8f514e838860d4 137-175
+  s_8093e175846d4d::t_57ef89c4d97572 32,40,61,67,76,83,91-95,102,109
+  s_8093e175846d4d::t_404c3ced5cddb8 1-31,33-39,41-60,62-66,68-75,77-82,84-90,96-101,103-108,110-136,176-177
+apps/api/src/bike_doc_api/models/profile_inference.py
+  s_8093e175846d4d::t_db0e118a54ebf7 62
+  s_8093e175846d4d::t_924d7316641518 26-29,65,67-74
+apps/api/src/bike_doc_api/providers/profile_inference/gemini.py
+  s_8093e175846d4d::t_0e6291ca269003 91
+  s_8093e175846d4d::t_db64d5d5bbc908 53-54,105,171-189
+apps/api/src/bike_doc_api/services/profile_inference_resolution.py
+  s_8093e175846d4d::t_bec7fd85e4bdec 216-222,228-229,253,312-314,316-317,369-371,373-374,410-419
+  s_8093e175846d4d::t_122e7749f33581 399-404
+  s_8093e175846d4d::t_65801350a44f8c 289,315,372
+.env.example
+  s_8093e175846d4d::t_daf7685bd0b769 66
+apps/api/src/bike_doc_api/db/migrations/versions/2026_07_15_0004_profile_inference_lifecycle_safety.py
+  s_8093e175846d4d::t_61fda4466860d2 1-16,21,24-25,28-29,32-36,39-40,43-45,48-54,58-59,63-70,75-76,79-80,83-85,88-94
+  s_8093e175846d4d::t_8f514e838860d4 20
+  s_8093e175846d4d::t_5166825444539c 17-19,22-23,26-27,30-31,37-38,41-42,46-47,71-74,77-78,81-82,86-87
+  s_8093e175846d4d::t_dcbb7b38c72157 55-57,60-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "7d6ee4d154e50d25beefb793512628d7fda0f842",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_8093e175846d4d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f64ad-5605-7261-b7f1-c7163a031722",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
