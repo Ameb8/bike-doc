@@ -6,6 +6,8 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
+from bike_doc_api.services.profile_registry import CANONICAL_FIELD_REGISTRY
+
 
 @dataclass(frozen=True, slots=True)
 class LegacyBikeProfileValues:
@@ -126,8 +128,39 @@ def with_technical_value(
             cursor[part] = child
         cursor = child
     cursor[parts[-1]] = value
+    if field_path.endswith(".presence") and value == "absent":
+        _clear_component_leaves(result, field_path.removesuffix(".presence"))
+        cursor = result
+        for part in parts[:-1]:
+            cursor = cursor[part]
+        cursor[parts[-1]] = value
+    if field_path.endswith(".mechanism") and value != "disc":
+        position = parts[1]
+        _clear_component_leaves(result, f"brakes.{position}.rotor")
     validate_technical_projection(result)
     return result
+
+
+def _clear_component_leaves(projection: dict[str, Any], component_path: str) -> None:
+    """Remove incompatible current leaves while retaining the component container."""
+
+    prefix = f"{component_path}."
+    for field_path in CANONICAL_FIELD_REGISTRY:
+        if field_path.startswith(prefix):
+            _remove_technical_value(projection, field_path)
+
+
+def _remove_technical_value(projection: dict[str, Any], field_path: str) -> None:
+    """Remove one projection leaf without treating an unknown leaf as an error."""
+
+    cursor: Any = projection
+    parts = field_path.split(".")
+    for part in parts[:-1]:
+        if not isinstance(cursor, dict):
+            return
+        cursor = cursor.get(part)
+    if isinstance(cursor, dict):
+        cursor.pop(parts[-1], None)
 
 
 def validate_technical_projection(projection: dict[str, Any]) -> None:

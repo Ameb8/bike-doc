@@ -27,6 +27,7 @@ class CanonicalField:
     image_auto_fill: bool
     image_auto_supersedes: frozenset[str]
     requires_readable_marking: bool = False
+    requires_direct_evidence: bool = False
     requires_counted_evidence: bool = False
     derived_rule: str | None = None
     policy_bundle: str = "inference_only_pending"
@@ -121,6 +122,7 @@ def _field(
     auto_fill: bool = False,
     supersedes: frozenset[str] = frozenset(),
     marking: bool = False,
+    direct: bool = False,
     counted: bool = False,
     derived: str | None = None,
     bundle: str = "inference_only_pending",
@@ -136,6 +138,7 @@ def _field(
         image_auto_fill=auto_fill,
         image_auto_supersedes=supersedes,
         requires_readable_marking=marking,
+        requires_direct_evidence=direct,
         requires_counted_evidence=counted,
         derived_rule=derived,
         policy_bundle=bundle,
@@ -170,7 +173,7 @@ def _component_fields(
             f"{prefix}.{field_name}",
             "string",
             scope=scope,
-            evidence=frozenset({"readable_marking"}),
+            evidence=frozenset({"readable_marking", "derived_visual"}),
             auto_fill=True,
             supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
             marking=True,
@@ -306,13 +309,17 @@ def _build_registry() -> dict[str, CanonicalField]:
                 "other",
             },
             scope=position,
+            evidence=frozenset({"direct_visual", "derived_visual"}),
+            auto_fill=True,
+            direct=True,
             bundle="installed_mechanism",
         )
         registry[f"{prefix}.brake_unit.pad_family"] = _field(
             f"{prefix}.brake_unit.pad_family",
             "string",
             scope=position,
-            evidence=frozenset({"readable_marking"}),
+            evidence=frozenset({"readable_marking", "derived_visual"}),
+            auto_fill=True,
             marking=True,
             bundle="readable_identity",
         )
@@ -322,7 +329,8 @@ def _build_registry() -> dict[str, CanonicalField]:
             "number",
             scope=position,
             consequence="safety",
-            evidence=frozenset({"readable_marking"}),
+            evidence=frozenset({"readable_marking", "derived_visual"}),
+            auto_fill=True,
             marking=True,
             bundle="exact_dimension",
         )

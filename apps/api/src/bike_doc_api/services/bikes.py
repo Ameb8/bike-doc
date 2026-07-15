@@ -837,22 +837,13 @@ def _legacy_brake_type(bike: BikeProfileModel) -> str | None:
             return "mechanical_disc"
         if front_actuation == rear_actuation == "hydraulic":
             return "hydraulic_disc"
-    if front_mechanism == rear_mechanism == "rim_other":
+    if {
+        front_mechanism,
+        rear_mechanism,
+    }.issubset(
+        {"rim_caliper", "rim_cantilever", "rim_v_brake", "rim_u_brake", "rim_other"}
+    ):
         return "rim"
     if has_technical_value_path(bike.technical_profile, "brakes.legacy_summary"):
         return technical_value(bike.technical_profile, "brakes.legacy_summary")
-    if (
-        rear_mechanism == "coaster"
-        and rear_actuation == "none"
-        and front_mechanism is None
-        and front_actuation is None
-    ):
-        return "coaster"
-    if (
-        front_mechanism is None
-        and rear_mechanism is None
-        and front_actuation is None
-        and rear_actuation is None
-    ):
-        return "unknown"
     return None

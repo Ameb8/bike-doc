@@ -1,4 +1,4 @@
-"""Deterministic tests for the rear-brake evaluation boundary."""
+"""Deterministic tests for the positioned-brake evaluation boundary."""
 
 from __future__ import annotations
 
@@ -31,22 +31,24 @@ async def test_evaluation_reports_field_evidence_and_resolution_quality() -> Non
 
     report = await evaluate_dataset(dataset, predictions)
 
-    assert report["case_count"] == 13
+    assert report["case_count"] == 14
     assert {
         (item["field_path"], item["evidence_class"])
         for item in report["field_evidence_metrics"]
     } == {
+        ("brakes.front.mechanism", "direct_visual"),
+        ("brakes.front.actuation", "direct_visual"),
         ("brakes.rear.mechanism", "direct_visual"),
         ("brakes.rear.actuation", "direct_visual"),
     }
     assert report["metrics"]["conflict_accuracy"] == 1.0
-    assert report["metrics"]["auto_fill_precision"] == 0.6
+    assert report["metrics"]["auto_fill_precision"] == 0.888889
     assert report["metrics"]["auto_fill_coverage"] == 1.0
     assert report["metrics"]["auto_overwrite_coverage"] == 1.0
-    assert report["metrics"]["profile_corruption_failures"] == {"position": 2}
+    assert report["metrics"]["profile_corruption_failures"] == {"position": 1}
     assert report["metrics"]["expected_profile_corruption_failures"] == {
         "installedness": 4,
-        "position": 2,
+        "position": 1,
     }
     position_case = next(
         case

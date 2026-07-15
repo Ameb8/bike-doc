@@ -318,6 +318,168 @@ async def test_bootstrap_policy_auto_fills_clear_installed_rear_hydraulic_disc()
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_bootstrap_policy_resolves_a_front_brake_without_populating_rear() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.front.mechanism"
+    output["claims"][0]["value"] = "rim_v_brake"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["brakes"]["front"] == {
+        "mechanism": "rim_v_brake",
+    }
+    assert store.bike.technical_profile["brakes"]["rear"] == {}
+
+
+async def test_bootstrap_policy_resolves_installed_brake_component_roles() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _brake_claim("brakes.rear.mechanism", "disc", "direct_visual"),
+        _brake_claim("brakes.rear.control.presence", "present", "direct_visual"),
+        _brake_claim("brakes.rear.control.manufacturer", "Shimano", "readable_marking"),
+        _brake_claim("brakes.rear.brake_unit.presence", "present", "direct_visual"),
+        _brake_claim(
+            "brakes.rear.brake_unit.mount_standard", "flat_mount", "direct_visual"
+        ),
+        _brake_claim("brakes.rear.brake_unit.pad_family", "K03S", "readable_marking"),
+        _brake_claim("brakes.rear.rotor.presence", "present", "direct_visual"),
+        _brake_claim("brakes.rear.rotor.diameter_mm", 160, "readable_marking"),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["brakes"]["rear"] == {
+        "mechanism": "disc",
+        "control": {"presence": "present", "manufacturer": "Shimano"},
+        "brake_unit": {
+            "presence": "present",
+            "mount_standard": "flat_mount",
+            "pad_family": "K03S",
+        },
+        "rotor": {"presence": "present", "diameter_mm": 160},
+    }
+
+
+async def test_non_disc_resolution_retires_current_rotor_resolution() -> None:
+    store = _Store()
+    observed_at = datetime(2026, 7, 10, tzinfo=UTC)
+    rotor_claim = BikeFactClaim(
+        id="bfc_rotor",
+        bike_id=store.bike.id,
+        field_path="brakes.front.rotor.presence",
+        value="present",
+        source_type="manual_profile_edit",
+        source_ref={"type": "bike_profile", "id": store.bike.id},
+        evidence_refs=[],
+        observed_at=observed_at,
+        disposition="applied",
+    )
+    store.claims.append(rotor_claim)
+    store.resolutions[(store.bike.id, rotor_claim.field_path)] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path=rotor_claim.field_path,
+        current_value="present",
+        resolution_state="resolved",
+        current_claim_id=rotor_claim.id,
+        effective_confidence="high",
+        source_type="manual_profile_edit",
+        observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+    store.bike.technical_profile["brakes"]["front"] = {
+        "mechanism": "disc",
+        "rotor": {"presence": "present"},
+    }
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.front.mechanism"
+    output["claims"][0]["value"] = "rim_caliper"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    rotor_resolution = store.resolutions[(store.bike.id, rotor_claim.field_path)]
+    assert store.bike.technical_profile["brakes"]["front"]["rotor"] == {}
+    assert rotor_claim.disposition == "superseded"
+    assert rotor_resolution.current_value is None
+    assert rotor_resolution.resolution_state == "unknown"
+
+
+async def test_visual_similarity_and_apparent_scale_stay_pending() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _brake_claim("brakes.rear.mechanism", "disc", "direct_visual"),
+        _brake_claim("brakes.rear.brake_unit.model", "BR-MT200", "derived_visual"),
+        _brake_claim(
+            "brakes.rear.brake_unit.mount_standard",
+            "flat_mount",
+            "derived_visual",
+        ),
+        _brake_claim("brakes.rear.rotor.diameter_mm", 160, "derived_visual"),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["brakes"]["rear"] == {"mechanism": "disc"}
+    assert [claim.disposition for claim in store.claims] == [
+        "applied",
+        "pending",
+        "pending",
+        "pending",
+    ]
+
+
+async def test_rotor_facts_stay_pending_until_that_end_resolves_as_disc() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.front.rotor.presence"
+    output["claims"][0]["value"] = "present"
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.claims[0].disposition == "pending"
+    assert store.claims[0].disposition_reason == "disc_mechanism_not_resolved"
+    assert store.bike.technical_profile["brakes"]["front"] == {}
+
+
+async def test_front_coaster_claim_is_rejected_before_profile_mutation() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"][0]["field_path"] = "brakes.front.mechanism"
+    output["claims"][0]["value"] = "coaster"
+
+    outcome = await _service(
+        store, _Extractor(output)
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.technical_profile["brakes"]["front"] == {}
+
+
 async def test_newer_installed_evidence_supersedes_older_manual_rear_brake() -> None:
     store = _Store()
     older = datetime(2026, 7, 10, tzinfo=UTC)
@@ -697,7 +859,6 @@ async def test_schema_invalid_output_fails_without_claims() -> None:
 @pytest.mark.parametrize(
     "claim_overrides",
     [
-        {"field_path": "brakes.front.mechanism"},
         {"field_path": "brakes.rear.unknown"},
         {"artifact_ids": ["art_not_in_turn"]},
     ],
@@ -992,3 +1153,21 @@ def _valid_single_claim_output() -> dict[str, object]:
             "abstentions": [],
         },
     )
+
+
+def _brake_claim(
+    field_path: str,
+    value: object,
+    evidence_basis: str,
+) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": evidence_basis,
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": "160" if evidence_basis == "readable_marking" else None,
+        "evidence_cues": ["Installed rear brake detail is clearly visible."],
+    }

@@ -500,9 +500,7 @@ async def test_legacy_read_hides_mixed_positioned_brakes() -> None:
     assert result.brake_type is None
 
 
-async def test_legacy_read_preserves_coaster_and_explicit_unknown_brake_values() -> (
-    None
-):
+async def test_legacy_read_omits_aggregate_for_unknown_positioned_brakes() -> None:
     bike = _bike()
     bike.technical_profile = {
         "schema_version": "bike_profile.v2",
@@ -514,7 +512,7 @@ async def test_legacy_read_preserves_coaster_and_explicit_unknown_brake_values()
     service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
 
     coaster = await service.get_bike(current_user=_user(), bike_id=bike.id)
-    assert coaster.brake_type == "coaster"
+    assert coaster.brake_type is None
 
     bike.technical_profile = {
         "schema_version": "bike_profile.v2",
@@ -524,7 +522,23 @@ async def test_legacy_read_preserves_coaster_and_explicit_unknown_brake_values()
         },
     }
     unknown = await service.get_bike(current_user=_user(), bike_id=bike.id)
-    assert unknown.brake_type == "unknown"
+    assert unknown.brake_type is None
+
+
+async def test_legacy_read_derives_rim_only_when_both_positioned_ends_agree() -> None:
+    bike = _bike()
+    bike.technical_profile = {
+        "schema_version": "bike_profile.v2",
+        "brakes": {
+            "front": {"mechanism": "rim_caliper"},
+            "rear": {"mechanism": "rim_v_brake"},
+        },
+    }
+    service = ResolvedBikeProfileService(FakeBikeRepository([bike]))
+
+    result = await service.get_bike(current_user=_user(), bike_id=bike.id)
+
+    assert result.brake_type == "rim"
 
 
 async def test_delete_bike_soft_deletes_profile() -> None:

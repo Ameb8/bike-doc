@@ -1,16 +1,16 @@
 {
   "schema_version": "bike_profile_inference_eval.v2",
-  "dataset_version": "rear-brake-v1.0.0",
-  "tracer": "rear-brake-shadow.v1",
-  "description": "Held-out labels for rear-brake extraction and deterministic resolution. Image references are supplied by the runner; this file contains no production media.",
+  "dataset_version": "front-rear-brake-v1.0.0",
+  "tracer": "front-rear-brake.v1",
+  "description": "Held-out labels for independent front/rear brake extraction and deterministic resolution. Image references are supplied by the runner; this file contains no production media.",
   "policy": "bootstrap-v1",
   "versions": {
-    "extractor_version": "rear-brake-shadow.v1",
+    "extractor_version": "front-rear-brake.v1",
     "output_schema_version": "bike_profile_inference.v1",
-    "prompt_version": "rear-brake-prompt.v1",
+    "prompt_version": "front-rear-brake-prompt.v1",
     "model_version": "recorded-response",
     "preprocessing_version": "image-preprocessing.v1",
-    "registry_version": "bike_profile_registry.v1",
+    "registry_version": "bike_profile.v2",
     "resolver_policy_version": "bootstrap-v1"
   },
   "cases": [
@@ -31,17 +31,15 @@
     },
     {
       "id": "front_brake_only",
-      "label": "front_only_position_rejection",
+      "label": "front_only_positioned_assembly",
       "input": {"artifact_ids": ["front-only"]},
       "expected_scene": {"position": "front", "installedness": "installed"},
-      "expected_claims": [],
-      "expected_abstentions": [
-        {"field_path": "brakes.rear.mechanism", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"},
-        {"field_path": "brakes.rear.actuation", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"}
+      "expected_claims": [
+        {"field_path": "brakes.front.mechanism", "value": "disc", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"}
       ],
+      "expected_abstentions": [],
       "expected_outcomes": [
-        {"field_path": "brakes.rear.mechanism", "expected_action": "rejected", "conflict": false, "profile_corruption_failures": ["position"]},
-        {"field_path": "brakes.rear.actuation", "expected_action": "abstained", "conflict": false}
+        {"field_path": "brakes.front.mechanism", "expected_action": "applied", "conflict": false}
       ]
     },
     {
@@ -198,6 +196,25 @@
       ],
       "expected_outcomes": [
         {"field_path": "brakes.rear.mechanism", "expected_action": "rejected", "conflict": false, "profile_corruption_failures": ["position"]}
+      ]
+    },
+    {
+      "id": "mixed_front_mechanical_rear_hydraulic_disc",
+      "label": "mixed_positioned_assemblies",
+      "input": {"artifact_ids": ["mixed-brakes"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.front.mechanism", "value": "disc", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.front.actuation", "value": "mechanical", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.front.mechanism", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.front.actuation", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.rear.mechanism", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "applied", "conflict": false}
       ]
     }
   ]

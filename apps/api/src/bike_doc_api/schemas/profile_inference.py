@@ -6,9 +6,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from bike_doc_api.services.profile_registry import CANONICAL_FIELD_REGISTRY
+
 INFERENCE_SCHEMA_VERSION = "bike_profile_inference.v1"
-REAR_BRAKE_TRACER_FIELDS = frozenset(
-    {"brakes.rear.mechanism", "brakes.rear.actuation"},
+BRAKE_INFERENCE_FIELD_PATHS = frozenset(
+    path
+    for path, field in CANONICAL_FIELD_REGISTRY.items()
+    if path.startswith(("brakes.front.", "brakes.rear."))
+    and field.volatility_class != "derived"
 )
 
 
@@ -118,5 +123,5 @@ class ProfileInferenceRequest(BaseModel):
     images: list[InferenceImage] = Field(min_length=1)
     schema_version: Literal["bike_profile_inference.v1"] = "bike_profile_inference.v1"
     allowed_field_paths: list[str] = Field(
-        default_factory=lambda: sorted(REAR_BRAKE_TRACER_FIELDS),
+        default_factory=lambda: sorted(BRAKE_INFERENCE_FIELD_PATHS),
     )

@@ -117,23 +117,45 @@ def test_canonical_field_registry_rejects_unknown_and_invalid_values() -> None:
         get_canonical_field("rolling_system.front.tire.iso_width_mm", 0)
 
 
-def test_projection_rejects_component_absence_with_specifications() -> None:
+def test_component_absence_clears_identity_and_specification_leaves() -> None:
     projection = with_technical_value(
         None,
         field_path="brakes.rear.brake_unit.manufacturer",
         value="Shimano",
     )
 
-    with pytest.raises(ValueError, match="presence=absent"):
-        with_technical_value(
-            projection,
-            field_path="brakes.rear.brake_unit.presence",
-            value="absent",
-        )
+    component_absent = with_technical_value(
+        projection,
+        field_path="brakes.rear.brake_unit.presence",
+        value="absent",
+    )
 
-    with pytest.raises(ValueError, match="presence=absent"):
-        with_technical_value(
-            projection,
-            field_path="brakes.rear.presence",
-            value="absent",
-        )
+    assert component_absent["brakes"]["rear"]["brake_unit"] == {
+        "presence": "absent",
+    }
+
+
+def test_non_disc_mechanism_clears_current_rotor_facts() -> None:
+    projection = with_technical_value(
+        None,
+        field_path="brakes.front.mechanism",
+        value="disc",
+    )
+    projection = with_technical_value(
+        projection,
+        field_path="brakes.front.rotor.presence",
+        value="present",
+    )
+    projection = with_technical_value(
+        projection,
+        field_path="brakes.front.rotor.diameter_mm",
+        value=160,
+    )
+
+    rim_projection = with_technical_value(
+        projection,
+        field_path="brakes.front.mechanism",
+        value="rim_caliper",
+    )
+
+    assert rim_projection["brakes"]["front"]["rotor"] == {}

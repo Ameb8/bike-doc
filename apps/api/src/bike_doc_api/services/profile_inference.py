@@ -16,8 +16,8 @@ from bike_doc_api.models.bike import BikeFactClaim, BikeProfile
 from bike_doc_api.models.profile_inference import ProfileInferenceRun
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
 from bike_doc_api.schemas.profile_inference import (
+    BRAKE_INFERENCE_FIELD_PATHS,
     INFERENCE_SCHEMA_VERSION,
-    REAR_BRAKE_TRACER_FIELDS,
     InferenceImage,
     ProfileInferenceClaim,
     ProfileInferenceOutput,
@@ -879,8 +879,8 @@ def _validated_tracer_claims(
         raise ValueError("scene cannot support installed target-bike claims")
     abstained_paths: set[str] = set()
     for abstention in output.abstentions:
-        if abstention.field_path not in REAR_BRAKE_TRACER_FIELDS:
-            raise ValueError("abstention is outside the rear-brake tracer")
+        if abstention.field_path not in BRAKE_INFERENCE_FIELD_PATHS:
+            raise ValueError("abstention is outside the brake inference registry")
         if abstention.field_path in abstained_paths:
             raise ValueError("abstention field path is repeated")
         abstained_paths.add(abstention.field_path)
@@ -888,15 +888,14 @@ def _validated_tracer_claims(
     claims: list[ProfileInferenceClaim] = []
     values_by_path: dict[str, Any] = {}
     for claim in output.claims:
-        if claim.field_path not in REAR_BRAKE_TRACER_FIELDS:
-            raise ValueError("claim is outside the rear-brake tracer")
+        if claim.field_path not in BRAKE_INFERENCE_FIELD_PATHS:
+            raise ValueError("claim is outside the brake inference registry")
         if claim.subject_relation != output.scene.target_relation:
             raise ValueError("claim subject relation does not match the scene")
         claim.value = normalize_canonical_value(claim.field_path, claim.value)
         field = get_canonical_field(claim.field_path, claim.value)
-        if (
-            field.scope != "rear"
-            or claim.evidence_basis not in field.permitted_evidence_bases
+        if field.scope not in {"front", "rear"} or (
+            claim.evidence_basis not in field.permitted_evidence_bases
         ):
             raise ValueError("claim field scope or evidence basis is invalid")
         if not set(claim.artifact_ids).issubset(valid_artifact_ids):
@@ -908,11 +907,15 @@ def _validated_tracer_claims(
         values_by_path[claim.field_path] = claim.value
         claims.append(claim)
 
-    mechanism = values_by_path.get("brakes.rear.mechanism")
-    actuation = values_by_path.get("brakes.rear.actuation")
-    if mechanism == "coaster" and actuation not in {None, "none"}:
+    front_mechanism = values_by_path.get("brakes.front.mechanism")
+    front_actuation = values_by_path.get("brakes.front.actuation")
+    rear_mechanism = values_by_path.get("brakes.rear.mechanism")
+    rear_actuation = values_by_path.get("brakes.rear.actuation")
+    if front_mechanism == "coaster" or front_actuation == "none":
+        raise ValueError("only a rear coaster brake may use coaster/none semantics")
+    if rear_mechanism == "coaster" and rear_actuation not in {None, "none"}:
         raise ValueError("coaster brakes can only use none actuation")
-    if actuation == "none" and mechanism not in {None, "coaster"}:
+    if rear_actuation == "none" and rear_mechanism not in {None, "coaster"}:
         raise ValueError("none actuation requires a coaster mechanism")
     return claims
 

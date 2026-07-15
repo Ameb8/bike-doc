@@ -21,7 +21,7 @@ from pydantic import ValidationError
 
 from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.schemas.profile_inference import (
-    REAR_BRAKE_TRACER_FIELDS,
+    BRAKE_INFERENCE_FIELD_PATHS,
     ProfileInferenceOutput,
 )
 from bike_doc_api.services.profile_inference_resolution import (
@@ -292,7 +292,7 @@ def _invalid_case(
 def _validated_claims(
     case: dict[str, Any], output: ProfileInferenceOutput
 ) -> list[Any]:
-    allowed = set(case.get("allowed_field_paths", REAR_BRAKE_TRACER_FIELDS))
+    allowed = set(case.get("allowed_field_paths", BRAKE_INFERENCE_FIELD_PATHS))
     abstentions = {item.field_path for item in output.abstentions}
     if output.claims and (
         not output.scene.contains_bicycle

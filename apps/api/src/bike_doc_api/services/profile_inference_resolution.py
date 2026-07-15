@@ -10,11 +10,15 @@ from typing import Any, Protocol
 
 from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.services.profile_registry import (
+    CANONICAL_FIELD_REGISTRY,
     FieldRegistryValidationError,
     get_canonical_field,
     get_canonical_field_definition,
 )
-from bike_doc_api.services.profile_resolution import with_technical_value
+from bike_doc_api.services.profile_resolution import (
+    technical_value,
+    with_technical_value,
+)
 
 
 class ProfileResolutionConflictError(RuntimeError):
@@ -86,13 +90,30 @@ class ProfileResolverPolicy:
     def bootstrap_v1(cls) -> ProfileResolverPolicy:
         """Return the explicit non-production bootstrap field-policy bundle."""
 
-        policy = ActiveFieldPolicy(0.92, 0.97)
+        bundle_thresholds = {
+            "visual_descriptive": (0.90, None),
+            "installed_mechanism": (0.92, 0.97),
+            "readable_identity": (0.90, 0.95),
+            "counted_spec": (0.95, 0.98),
+            "exact_dimension": (0.95, 0.98),
+        }
+        policies: dict[tuple[str, str], ActiveFieldPolicy] = {}
+        from bike_doc_api.services.profile_registry import CANONICAL_FIELD_REGISTRY
+
+        for field_path, field in CANONICAL_FIELD_REGISTRY.items():
+            if not field_path.startswith(("brakes.front.", "brakes.rear.")):
+                continue
+            thresholds = bundle_thresholds.get(field.policy_bundle)
+            if not field.image_auto_fill or thresholds is None:
+                continue
+            policy = ActiveFieldPolicy(*thresholds)
+            for evidence_basis in field.permitted_evidence_bases:
+                if evidence_basis == "derived_visual":
+                    continue
+                policies[field_path, evidence_basis] = policy
         return cls(
             mode=PolicyMode.PROVISIONAL,
-            policies={
-                ("brakes.rear.mechanism", "direct_visual"): policy,
-                ("brakes.rear.actuation", "direct_visual"): policy,
-            },
+            policies=policies,
         )
 
     @property
@@ -110,10 +131,19 @@ class ProfileResolverPolicy:
             return None
         if self.mode is PolicyMode.SHADOW:
             return None
-        if self.mode is PolicyMode.PROVISIONAL:
-            field = get_canonical_field_definition(claim.field_path)
-            if field.policy_bundle != "installed_mechanism":
-                return None
+        field = get_canonical_field_definition(claim.field_path)
+        if (
+            field.requires_readable_marking
+            and claim.evidence_basis != "readable_marking"
+        ):
+            return None
+        if field.requires_direct_evidence and claim.evidence_basis != "direct_visual":
+            return None
+        if field.requires_counted_evidence and claim.evidence_basis not in {
+            "counted_visual",
+            "readable_marking",
+        }:
+            return None
         policy = self.policies.get((claim.field_path, claim.evidence_basis))
         if policy is None or (
             self.mode is PolicyMode.EVALUATED and not policy.is_promoted
@@ -157,6 +187,24 @@ class ProfileResolverPolicy:
                 raise ValueError(
                     f"evidence class {configured.evidence_class!r} is not permitted "
                     f"for {configured.field_path}",
+                )
+            if field.requires_readable_marking and (
+                configured.evidence_class != "readable_marking"
+            ):
+                raise ValueError(
+                    f"{configured.field_path} requires readable-marking evidence",
+                )
+            if field.requires_direct_evidence and (
+                configured.evidence_class != "direct_visual"
+            ):
+                raise ValueError(
+                    f"{configured.field_path} requires direct-visual evidence",
+                )
+            if field.requires_counted_evidence and (
+                configured.evidence_class not in {"counted_visual", "readable_marking"}
+            ):
+                raise ValueError(
+                    f"{configured.field_path} requires counted or readable evidence",
                 )
             if not field.image_auto_fill:
                 raise ValueError(
@@ -252,10 +300,21 @@ class ProfileInferenceResolver:
         changed = False
         mutations: list[ProfileMutation] = []
         now = datetime.now(UTC)
-        for claim in claims:
+        for claim in sorted(claims, key=_resolution_order):
             if not _is_valid_image_claim(claim):
                 claim.disposition = "rejected"
                 claim.disposition_reason = "invalid_field_scope_or_evidence"
+                continue
+            if (
+                _requires_resolved_disc_mechanism(claim)
+                and technical_value(
+                    bike.technical_profile,
+                    f"brakes.{claim.field_path.split('.')[1]}.mechanism",
+                )
+                != "disc"
+            ):
+                claim.disposition = "pending"
+                claim.disposition_reason = "disc_mechanism_not_resolved"
                 continue
             resolution = await self._bikes.get_resolution(
                 bike_id=bike.id,
@@ -303,11 +362,19 @@ class ProfileInferenceResolver:
                 resolution.source_type = claim.source_type
                 resolution.observed_at = claim.observed_at
                 resolution.resolved_at = now
-                bike.technical_profile = with_technical_value(
+                next_projection = with_technical_value(
                     bike.technical_profile,
                     field_path=claim.field_path,
                     value=claim.value,
                 )
+                await _retire_invalidated_resolutions(
+                    repository=self._bikes,
+                    bike=bike,
+                    previous_projection=bike.technical_profile,
+                    next_projection=next_projection,
+                    retained_field_path=claim.field_path,
+                )
+                bike.technical_profile = next_projection
                 await self._bikes.save_resolution(resolution)
                 mutations.append(
                     ProfileMutation(
@@ -360,11 +427,19 @@ class ProfileInferenceResolver:
                 resolution.source_type = claim.source_type
                 resolution.observed_at = claim.observed_at
                 resolution.resolved_at = now
-                bike.technical_profile = with_technical_value(
+                next_projection = with_technical_value(
                     bike.technical_profile,
                     field_path=claim.field_path,
                     value=claim.value,
                 )
+                await _retire_invalidated_resolutions(
+                    repository=self._bikes,
+                    bike=bike,
+                    previous_projection=bike.technical_profile,
+                    next_projection=next_projection,
+                    retained_field_path=claim.field_path,
+                )
+                bike.technical_profile = next_projection
                 await self._bikes.save_resolution(resolution)
                 mutations.append(
                     ProfileMutation(
@@ -454,6 +529,43 @@ async def _supersede_current_claim(
         current.disposition_reason = "superseded_by_newer_installed_evidence"
 
 
+async def _retire_invalidated_resolutions(
+    *,
+    repository: BikeResolutionRepositoryProtocol,
+    bike: BikeProfile,
+    previous_projection: dict[str, Any],
+    next_projection: dict[str, Any],
+    retained_field_path: str,
+) -> None:
+    """Retire facts removed by a reusable projection presence invariant."""
+
+    for field_path in CANONICAL_FIELD_REGISTRY:
+        if field_path == retained_field_path:
+            continue
+        if (
+            technical_value(previous_projection, field_path) is None
+            or technical_value(next_projection, field_path) is not None
+        ):
+            continue
+        resolution = await repository.get_resolution(
+            bike_id=bike.id,
+            field_path=field_path,
+        )
+        if resolution is None or resolution.current_value is None:
+            continue
+        await _supersede_current_claim(repository, resolution)
+        resolution.current_value = None
+        resolution.current_claim_id = None
+        resolution.supporting_claim_ids = []
+        resolution.conflicting_claim_ids = []
+        resolution.resolution_state = "unknown"
+        resolution.effective_confidence = "unknown"
+        resolution.source_type = None
+        resolution.observed_at = None
+        resolution.resolved_at = datetime.now(UTC)
+        await repository.save_resolution(resolution)
+
+
 def _can_supersede_current(
     claim: BikeFactClaim,
     resolution: BikeFieldResolution,
@@ -540,14 +652,16 @@ async def recompute_derived_brake_summary(
         resolution is not None and resolution.resolution_state == "disputed"
         for resolution in component_resolutions
     )
-    if fm == rm == "disc" and fa == ra == "mechanical":
+    if disputed:
+        summary = None
+    elif fm == rm == "disc" and fa == ra == "mechanical":
         summary = "mechanical_disc"
     elif fm == rm == "disc" and fa == ra == "hydraulic":
         summary = "hydraulic_disc"
-    elif fm == rm == "rim_other":
+    elif {fm, rm}.issubset(
+        {"rim_caliper", "rim_cantilever", "rim_v_brake", "rim_u_brake", "rim_other"}
+    ):
         summary = "rim"
-    elif rm == "coaster" and ra == "none" and fm is None and fa is None:
-        summary = "coaster"
     elif all(value is not None for value in (fm, rm)):
         disputed = True
 
@@ -699,3 +813,21 @@ def _pending_reason(
     if claim.evidence_basis != "direct_visual":
         return "evidence_not_direct_visual"
     return "below_auto_fill_threshold"
+
+
+def _resolution_order(claim: BikeFactClaim) -> tuple[int, str]:
+    """Resolve assembly mechanism before facts that depend on it."""
+
+    if claim.field_path.endswith(".mechanism"):
+        return (0, claim.field_path)
+    if ".rotor." in claim.field_path:
+        return (2, claim.field_path)
+    return (1, claim.field_path)
+
+
+def _requires_resolved_disc_mechanism(claim: BikeFactClaim) -> bool:
+    """Return whether a rotor fact must wait for its positioned disc mechanism."""
+
+    return ".rotor." in claim.field_path and not (
+        claim.field_path.endswith(".presence") and claim.value == "absent"
+    )
