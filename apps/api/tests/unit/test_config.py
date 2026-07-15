@@ -127,6 +127,43 @@ def test_bootstrap_profile_policy_is_explicit_and_non_production_only() -> None:
         )
 
 
+def test_profile_inference_deployment_mode_explicitly_supports_shadow() -> None:
+    settings = Settings(
+        environment="test",
+        profile_inference_policy_mode="shadow",
+    )
+
+    assert settings.profile_inference_policy_mode == "shadow"
+
+
+def test_profile_inference_policy_settings_require_separate_ordered_thresholds() -> (
+    None
+):
+    with pytest.raises(ValidationError, match="greater than or equal"):
+        Settings(
+            environment="test",
+            profile_inference_policies=[
+                {
+                    "field_path": "brakes.rear.mechanism",
+                    "evidence_class": "direct_visual",
+                    "calibration_key": "rear-brake.v1",
+                    "policy_version": "policy.v1",
+                    "auto_fill_threshold": 0.98,
+                    "auto_overwrite_threshold": 0.97,
+                },
+            ],
+        )
+
+
+def test_profile_inference_policy_mode_rejects_conflicting_legacy_alias() -> None:
+    with pytest.raises(ValidationError, match="conflicts"):
+        Settings(
+            environment="test",
+            profile_inference_policy_mode="shadow",
+            profile_inference_resolver_policy="bootstrap-v1",
+        )
+
+
 def test_settings_accept_valid_diagnostic_runtime_settings() -> None:
     settings = Settings(
         environment="test",

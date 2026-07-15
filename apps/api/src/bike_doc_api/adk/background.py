@@ -220,10 +220,9 @@ def _build_profile_inference_service(
         extractor=extractor,
         extractor_version=settings.profile_inference_extractor_version,
         running_lease_seconds=settings.profile_inference_timeout_seconds + 30.0,
-        resolver_policy=(
-            ProfileResolverPolicy.bootstrap_v1()
-            if settings.profile_inference_resolver_policy == "bootstrap-v1"
-            else ProfileResolverPolicy.production()
+        resolver_policy=ProfileResolverPolicy.from_deployment(
+            mode=settings.profile_inference_policy_mode,
+            policies=settings.profile_inference_policies,
         ),
         commit=session.commit,
         rollback=session.rollback,

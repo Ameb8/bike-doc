@@ -9,10 +9,63 @@ from pathlib import Path
 from typing import Literal
 
 import google.auth
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+class ProfileInferenceFieldPolicySettings(BaseModel):
+    """Deployment data for one canonical field/evidence policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_path: str = Field(min_length=1)
+    evidence_class: str = Field(min_length=1)
+    calibration_key: str = Field(min_length=1)
+    policy_version: str = Field(min_length=1)
+    auto_fill_threshold: float = Field(ge=0.0, le=1.0)
+    auto_overwrite_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    precision_gate_passed: bool = False
+    accepted_baseline_version: str | None = None
+    regression_evidence_passed: bool = False
+    promoted: bool = False
+
+    @field_validator(
+        "field_path", "evidence_class", "calibration_key", "policy_version"
+    )
+    @classmethod
+    def validate_identifiers(cls, value: str) -> str:
+        """Reject whitespace-only deployment identifiers."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("profile inference policy identifiers must not be blank")
+        return normalized
+
+    @field_validator("accepted_baseline_version")
+    @classmethod
+    def validate_baseline_version(cls, value: str | None) -> str | None:
+        """Normalize the optional accepted evaluation baseline identifier."""
+
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> "ProfileInferenceFieldPolicySettings":
+        """Keep overwrite at least as selective as fill when configured."""
+
+        if (
+            self.auto_overwrite_threshold is not None
+            and self.auto_overwrite_threshold < self.auto_fill_threshold
+        ):
+            raise ValueError(
+                "auto_overwrite_threshold must be greater than or equal to "
+                "auto_fill_threshold",
+            )
+        return self
 
 
 class Settings(BaseSettings):
@@ -55,9 +108,17 @@ class Settings(BaseSettings):
         default="rear-brake-shadow.v1",
         min_length=1,
     )
-    profile_inference_resolver_policy: Literal["production", "bootstrap-v1"] = (
-        "production"
+    profile_inference_policy_mode: Literal[
+        "shadow", "bootstrap-v1", "evaluated", "production"
+    ] = "shadow"
+    profile_inference_policies: list[ProfileInferenceFieldPolicySettings] = Field(
+        default_factory=list,
     )
+    # Kept as a compatibility alias for deployments created by the tracer
+    # rollout. New deployments should use profile_inference_policy_mode.
+    profile_inference_resolver_policy: (
+        Literal["production", "shadow", "bootstrap-v1", "evaluated"] | None
+    ) = None
     price_lookup_provider: Literal["unavailable", "gemini_grounded"] = "unavailable"
     price_lookup_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     price_lookup_model: str = Field(default="gemini-2.5-flash", min_length=1)
@@ -267,9 +328,30 @@ class Settings(BaseSettings):
             raise ValueError(
                 "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
             )
+        if self.profile_inference_resolver_policy is not None:
+            legacy_mode = {
+                "production": "evaluated",
+                "shadow": "shadow",
+                "bootstrap-v1": "bootstrap-v1",
+                "evaluated": "evaluated",
+            }[self.profile_inference_resolver_policy]
+            if (
+                "profile_inference_policy_mode" in self.model_fields_set
+                and (
+                    "evaluated"
+                    if self.profile_inference_policy_mode == "production"
+                    else self.profile_inference_policy_mode
+                )
+                != legacy_mode
+            ):
+                raise ValueError(
+                    "profile inference policy mode conflicts with its "
+                    "compatibility alias"
+                )
+            self.profile_inference_policy_mode = legacy_mode  # type: ignore[assignment]
         if (
             environment == "production"
-            and self.profile_inference_resolver_policy == "bootstrap-v1"
+            and self.profile_inference_policy_mode == "bootstrap-v1"
         ):
             raise ValueError(
                 "bootstrap-v1 profile inference policy is not permitted in production"

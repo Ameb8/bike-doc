@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from bike_doc_api.core.config import ProfileInferenceFieldPolicySettings
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
@@ -263,6 +264,21 @@ async def test_rear_brake_claims_are_persisted_as_pending_shadow_evidence() -> N
     assert not hasattr(request, "diagnostic_history")
 
 
+async def test_explicit_shadow_policy_marks_outcome_shadow_and_never_mutates() -> None:
+    store = _Store()
+
+    outcome = await _service(
+        store,
+        _Extractor(),
+        policy=ProfileResolverPolicy.shadow(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.policy_mode == "shadow"
+    assert {claim.disposition_reason for claim in store.claims} == {"shadow_policy"}
+    assert store.bike.profile_revision == 0
+    assert store.bike.technical_profile["brakes"]["rear"] == {}
+
+
 async def test_bootstrap_policy_auto_fills_clear_installed_rear_hydraulic_disc() -> (
     None
 ):
@@ -469,6 +485,47 @@ async def test_evaluated_production_policy_can_enable_one_promoted_field_class()
     assert store.claims[0].disposition == "applied"
     resolution = store.resolutions[("bike_rear", "brakes.rear.mechanism")]
     assert resolution.effective_confidence == "medium"
+
+
+async def test_evaluated_deployment_promotes_only_field_classes_with_passed_gates() -> (
+    None
+):
+    store = _Store()
+    policy = ProfileResolverPolicy.from_deployment(
+        mode="evaluated",
+        policies=[
+            ProfileInferenceFieldPolicySettings(
+                field_path="brakes.rear.mechanism",
+                evidence_class="direct_visual",
+                calibration_key="rear-brake-mechanism.v1",
+                policy_version="rear-brake-policy.v1",
+                auto_fill_threshold=0.96,
+                precision_gate_passed=True,
+                accepted_baseline_version="rear-brake-v1.0.0",
+                regression_evidence_passed=True,
+                promoted=True,
+            ),
+            ProfileInferenceFieldPolicySettings(
+                field_path="brakes.rear.actuation",
+                evidence_class="direct_visual",
+                calibration_key="rear-brake-actuation.v1",
+                policy_version="rear-brake-policy.v1",
+                auto_fill_threshold=0.96,
+                precision_gate_passed=False,
+                promoted=True,
+            ),
+        ],
+    )
+
+    await _service(
+        store, _Extractor(), policy=policy
+    ).process_submitted_profile_evidence(
+        "turn_rear",
+    )
+
+    assert store.claims[0].disposition == "applied"
+    assert store.claims[1].disposition == "pending"
+    assert store.claims[1].disposition_reason == "no_active_field_policy"
 
 
 @pytest.mark.parametrize(

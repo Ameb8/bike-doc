@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.services.profile_registry import (
@@ -23,6 +24,7 @@ class ProfileResolutionConflictError(RuntimeError):
 class PolicyMode(StrEnum):
     """Deployment mode for automatic image-claim resolution."""
 
+    SHADOW = "shadow"
     EVALUATED = "evaluated"
     PROVISIONAL = "provisional"
 
@@ -33,6 +35,23 @@ class ActiveFieldPolicy:
 
     auto_fill_threshold: float
     auto_overwrite_threshold: float | None = None
+    calibration_key: str = "bootstrap-v1"
+    policy_version: str = "bootstrap-v1"
+    precision_gate_passed: bool = True
+    accepted_baseline_version: str | None = "programmatic"
+    regression_evidence_passed: bool = True
+    promoted: bool = True
+
+    @property
+    def is_promoted(self) -> bool:
+        """Return whether evaluation evidence authorizes production mutation."""
+
+        return (
+            self.promoted
+            and self.precision_gate_passed
+            and self.accepted_baseline_version is not None
+            and self.regression_evidence_passed
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +66,12 @@ class ProfileResolverPolicy:
         """Return production policy with no unpromoted field classes enabled."""
 
         return cls(mode=PolicyMode.EVALUATED, policies={})
+
+    @classmethod
+    def shadow(cls) -> ProfileResolverPolicy:
+        """Return the explicit policy that records evidence without mutation."""
+
+        return cls(mode=PolicyMode.SHADOW, policies={})
 
     @classmethod
     def evaluated(
@@ -74,6 +99,8 @@ class ProfileResolverPolicy:
     def outcome_mode(self) -> str:
         """Return compact telemetry terminology required by the spec."""
 
+        if self.mode is PolicyMode.SHADOW:
+            return "shadow"
         return "provisional" if self.mode is PolicyMode.PROVISIONAL else "evaluated"
 
     def active_policy_for(self, claim: BikeFactClaim) -> ActiveFieldPolicy | None:
@@ -81,11 +108,81 @@ class ProfileResolverPolicy:
 
         if claim.evidence_basis is None:
             return None
+        if self.mode is PolicyMode.SHADOW:
+            return None
         if self.mode is PolicyMode.PROVISIONAL:
             field = get_canonical_field_definition(claim.field_path)
             if field.policy_bundle != "installed_mechanism":
                 return None
-        return self.policies.get((claim.field_path, claim.evidence_basis))
+        policy = self.policies.get((claim.field_path, claim.evidence_basis))
+        if policy is None or (
+            self.mode is PolicyMode.EVALUATED and not policy.is_promoted
+        ):
+            return None
+        return policy
+
+    @classmethod
+    def from_deployment(
+        cls,
+        *,
+        mode: str,
+        policies: Iterable[Any] = (),
+    ) -> ProfileResolverPolicy:
+        """Build a resolver policy from typed deployment settings.
+
+        Unqualified evaluated entries stay out of the active map. This makes a
+        missing or failed gate safe by construction: claims remain evidence,
+        while a separately qualified field/evidence class may still mutate.
+        """
+
+        if mode == "shadow":
+            return cls.shadow()
+        if mode == "bootstrap-v1":
+            return cls.bootstrap_v1()
+        if mode not in {"evaluated", "production"}:
+            raise ValueError(f"unknown profile inference policy mode: {mode}")
+
+        active: dict[tuple[str, str], ActiveFieldPolicy] = {}
+        seen: set[tuple[str, str]] = set()
+        for configured in policies:
+            field = get_canonical_field_definition(configured.field_path)
+            key = (configured.field_path, configured.evidence_class)
+            if key in seen:
+                raise ValueError(
+                    "duplicate profile inference policy for "
+                    f"{configured.field_path}/{configured.evidence_class}",
+                )
+            seen.add(key)
+            if configured.evidence_class not in field.permitted_evidence_bases:
+                raise ValueError(
+                    f"evidence class {configured.evidence_class!r} is not permitted "
+                    f"for {configured.field_path}",
+                )
+            if not field.image_auto_fill:
+                raise ValueError(
+                    f"image inference cannot promote {configured.field_path}",
+                )
+            if not configured.promoted:
+                continue
+            if not configured.precision_gate_passed:
+                continue
+            if configured.accepted_baseline_version is None:
+                continue
+            if not configured.regression_evidence_passed:
+                continue
+            active[(configured.field_path, configured.evidence_class)] = (
+                ActiveFieldPolicy(
+                    auto_fill_threshold=configured.auto_fill_threshold,
+                    auto_overwrite_threshold=configured.auto_overwrite_threshold,
+                    calibration_key=configured.calibration_key,
+                    policy_version=configured.policy_version,
+                    precision_gate_passed=configured.precision_gate_passed,
+                    accepted_baseline_version=configured.accepted_baseline_version,
+                    regression_evidence_passed=configured.regression_evidence_passed,
+                    promoted=configured.promoted,
+                )
+            )
+        return cls.evaluated(active)
 
 
 class BikeResolutionRepositoryProtocol(Protocol):
@@ -145,7 +242,7 @@ class ProfileInferenceResolver:
         changed = False
         now = datetime.now(UTC)
         for claim in claims:
-            if not _is_valid_rear_brake_tracer_claim(claim):
+            if not _is_valid_image_claim(claim):
                 claim.disposition = "rejected"
                 claim.disposition_reason = "invalid_field_scope_or_evidence"
                 continue
@@ -162,6 +259,10 @@ class ProfileInferenceResolver:
                     effective_confidence="unknown",
                 )
             policy = self._policy.active_policy_for(claim)
+            if self._policy.mode is PolicyMode.SHADOW:
+                claim.disposition = "pending"
+                claim.disposition_reason = "shadow_policy"
+                continue
             if claim_is_blocked_by_clear_barrier(claim, resolution):
                 claim.disposition = "pending"
                 claim.disposition_reason = "observed_before_manual_clear_barrier"
@@ -509,13 +610,13 @@ def _is_eligible_installed_claim(
     return (
         policy is not None
         and claim.scope_assumption == "installed_on_target_bike"
-        and claim.evidence_basis == "direct_visual"
+        and claim.evidence_basis is not None
         and claim.visibility == "clear"
         and claim.model_score is not None
     )
 
 
-def _is_valid_rear_brake_tracer_claim(claim: BikeFactClaim) -> bool:
+def _is_valid_image_claim(claim: BikeFactClaim) -> bool:
     """Defend the resolver against invalid claims persisted by another caller."""
 
     try:
@@ -523,8 +624,8 @@ def _is_valid_rear_brake_tracer_claim(claim: BikeFactClaim) -> bool:
     except FieldRegistryValidationError:
         return False
     return (
-        field.scope == "rear"
-        and field.field_path in {"brakes.rear.mechanism", "brakes.rear.actuation"}
+        field.image_auto_fill
+        and field.volatility_class not in {"derived", "user_managed"}
         and claim.evidence_basis in field.permitted_evidence_bases
         and bool(claim.evidence_refs)
     )
