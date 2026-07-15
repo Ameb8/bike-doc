@@ -669,6 +669,14 @@ async def test_delete_bike_requires_ownership() -> None:
 
 async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() -> None:
     bike = _bike()
+    bike.technical_profile = {
+        **empty_technical_profile(),
+        "drivetrain": {
+            "architecture": "derailleur",
+            "drive_medium": "chain",
+            "front_derailleur": {"presence": "absent"},
+        },
+    }
     repair_session = RepairSessionModel(
         id="rs_diagnostic",
         user_id=bike.user_id,
@@ -695,6 +703,11 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
     assert result.bike_profile.brake_type == "mechanical_disc"
     assert result.bike_profile.schema_version == "bike_profile.v2"
     assert result.bike_profile.profile["profile_revision"] == 0
+    assert result.bike_profile.profile["drivetrain"] == {
+        "architecture": "derailleur",
+        "drive_medium": "chain",
+        "front_derailleur": {"presence": "absent"},
+    }
     assert result.bike_profile.field_states == {}
     assert result.user_skill_level == "beginner"
 

@@ -32,6 +32,12 @@ ROLLING_DATASET_PATH = (
 ROLLING_PREDICTIONS_PATH = ROLLING_DATASET_PATH.with_name(
     "rolling-system-v1.responses.json",
 )
+DRIVETRAIN_DATASET_PATH = ROLLING_DATASET_PATH.with_name(
+    "drivetrain-topology-v1.json",
+)
+DRIVETRAIN_PREDICTIONS_PATH = DRIVETRAIN_DATASET_PATH.with_name(
+    "drivetrain-topology-v1.responses.json",
+)
 
 
 @pytest.mark.asyncio
@@ -91,6 +97,20 @@ async def test_rolling_evaluation_covers_positioned_markings_and_safe_abstention
         "rolling_system.rear.tire.setup": "pending",
         "rolling_system.rear.tire.tubeless_ready": "applied",
     }
+
+
+@pytest.mark.asyncio
+async def test_drivetrain_evaluation_covers_topology_and_installedness() -> None:
+    report = await evaluate_dataset(
+        load_json(DRIVETRAIN_DATASET_PATH),
+        load_predictions(load_json(DRIVETRAIN_PREDICTIONS_PATH)),
+    )
+
+    assert report["case_count"] == 5
+    assert report["metrics"]["abstention_correctness"] == 1.0
+    assert report["metrics"]["installedness_accuracy"] == 1.0
+    assert report["metrics"]["auto_fill_precision"] == 1.0
+    assert report["metrics"]["profile_corruption_failures"] == {}
 
 
 def test_missing_baseline_is_explicit_and_version_changes_require_comparison() -> None:

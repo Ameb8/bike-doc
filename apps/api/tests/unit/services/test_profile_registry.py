@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from bike_doc_api.schemas.profile_inference import ROLLING_SYSTEM_INFERENCE_FIELD_PATHS
+from bike_doc_api.schemas.profile_inference import (
+    DRIVETRAIN_INFERENCE_FIELD_PATHS,
+    PROFILE_INFERENCE_FIELD_PATHS,
+    ROLLING_SYSTEM_INFERENCE_FIELD_PATHS,
+)
 from bike_doc_api.services.profile_registry import (
     CANONICAL_FIELD_REGISTRY,
     FieldRegistryValidationError,
@@ -94,3 +98,66 @@ def test_tire_absence_removes_compatible_identity_and_specification_leaves() -> 
     }
     assert technical_value(absent, "rolling_system.front.tire") is None
     assert technical_value(absent, "rolling_system.rear.rim") is None
+
+
+def test_drivetrain_inference_registry_is_topology_only() -> None:
+    components = (
+        "front_shifter",
+        "rear_shifter",
+        "front_derailleur",
+        "rear_derailleur",
+        "crankset",
+        "rear_cluster",
+        "chain",
+        "belt",
+        "gear_unit",
+        "bottom_bracket",
+    )
+
+    assert {
+        "drivetrain.architecture",
+        "drivetrain.drive_medium",
+        *(f"drivetrain.{component}.presence" for component in components),
+    } == DRIVETRAIN_INFERENCE_FIELD_PATHS
+    assert "drivetrain.front_chainring_count" not in PROFILE_INFERENCE_FIELD_PATHS
+    assert "drivetrain.rear_speed_count" not in PROFILE_INFERENCE_FIELD_PATHS
+    assert "drivetrain.legacy_description" not in PROFILE_INFERENCE_FIELD_PATHS
+    assert all(
+        CANONICAL_FIELD_REGISTRY[path].image_auto_fill
+        for path in DRIVETRAIN_INFERENCE_FIELD_PATHS
+    )
+
+
+@pytest.mark.parametrize(
+    "component",
+    [
+        "front_shifter",
+        "rear_shifter",
+        "front_derailleur",
+        "rear_derailleur",
+        "crankset",
+        "rear_cluster",
+        "chain",
+        "belt",
+        "gear_unit",
+        "bottom_bracket",
+    ],
+)
+def test_absent_drivetrain_component_requires_empty_component_leaves(
+    component: str,
+) -> None:
+    projection = with_technical_value(
+        empty_technical_projection(),
+        field_path=f"drivetrain.{component}.model",
+        value="Example",
+    )
+
+    absent = with_technical_value(
+        projection,
+        field_path=f"drivetrain.{component}.presence",
+        value="absent",
+    )
+
+    assert technical_value(absent, f"drivetrain.{component}") == {
+        "presence": "absent",
+    }

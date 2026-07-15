@@ -894,7 +894,7 @@ def _validated_tracer_claims(
             raise ValueError("claim subject relation does not match the scene")
         claim.value = normalize_canonical_value(claim.field_path, claim.value)
         field = get_canonical_field(claim.field_path, claim.value)
-        if field.scope not in {"front", "rear"} or (
+        if field.scope not in {"whole_bike", "front", "rear"} or (
             claim.evidence_basis not in field.permitted_evidence_bases
         ):
             raise ValueError("claim field scope or evidence basis is invalid")

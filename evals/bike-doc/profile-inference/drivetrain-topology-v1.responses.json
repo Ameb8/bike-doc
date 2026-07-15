@@ -1,0 +1,68 @@
+{
+  "cases": [
+    {
+      "case_id": "clear_1x_chain_derailleur",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "drivetrain.architecture", "value": "derailleur", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["chain-derailleur"], "observed_text": null, "evidence_cues": ["The derailleur and chain are visibly installed."]},
+          {"field_path": "drivetrain.drive_medium", "value": "chain", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["chain-derailleur"], "observed_text": null, "evidence_cues": ["A chain is visibly engaged with the drivetrain."]},
+          {"field_path": "drivetrain.front_derailleur.presence", "value": "absent", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["chain-derailleur"], "observed_text": null, "evidence_cues": ["No front derailleur is installed at the single chainring."]}
+        ],
+        "abstentions": []
+      }
+    },
+    {
+      "case_id": "clear_belt_internal_gear",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "drivetrain.architecture", "value": "internal_gear_hub", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["belt-internal"], "observed_text": null, "evidence_cues": ["An internal gear unit is installed at the rear hub."]},
+          {"field_path": "drivetrain.drive_medium", "value": "belt", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["belt-internal"], "observed_text": null, "evidence_cues": ["A belt is visibly installed between the crank and rear hub."]},
+          {"field_path": "drivetrain.chain.presence", "value": "absent", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["belt-internal"], "observed_text": null, "evidence_cues": ["No chain is installed."]},
+          {"field_path": "drivetrain.belt.presence", "value": "present", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["belt-internal"], "observed_text": null, "evidence_cues": ["The belt is visibly installed."]},
+          {"field_path": "drivetrain.gear_unit.presence", "value": "present", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["belt-internal"], "observed_text": null, "evidence_cues": ["The internal gear unit is visibly installed."]}
+        ],
+        "abstentions": []
+      }
+    },
+    {
+      "case_id": "occluded_drivetrain",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "ambiguous", "confidence_score": 0.55},
+        "claims": [],
+        "abstentions": [
+          {"field_path": "drivetrain.architecture", "reason": "drivetrain_occluded"},
+          {"field_path": "drivetrain.drive_medium", "reason": "drive_medium_occluded"},
+          {"field_path": "drivetrain.front_derailleur.presence", "reason": "component_occluded"}
+        ]
+      }
+    },
+    {
+      "case_id": "loose_replacement_chain",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "loose_component", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "drivetrain.chain.presence", "value": "present", "subject_relation": "loose_component", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["loose-chain"], "observed_text": null, "evidence_cues": ["The replacement chain is loose beside the bicycle."]}
+        ],
+        "abstentions": []
+      }
+    },
+    {
+      "case_id": "multiple_bikes_drivetrain",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": true, "target_relation": "ambiguous", "confidence_score": 0.4},
+        "claims": [],
+        "abstentions": [
+          {"field_path": "drivetrain.architecture", "reason": "multiple_bikes"},
+          {"field_path": "drivetrain.drive_medium", "reason": "multiple_bikes"}
+        ]
+      }
+    }
+  ]
+}

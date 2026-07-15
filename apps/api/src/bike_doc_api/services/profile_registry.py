@@ -353,11 +353,19 @@ def _build_registry() -> dict[str, CanonicalField]:
             "continuously_variable",
             "other",
         },
+        auto_fill=True,
+        supersedes=frozenset(
+            {"image_inference", "legacy_profile_migration", "manual_profile_edit"}
+        ),
         bundle="installed_mechanism",
     )
     registry["drivetrain.drive_medium"] = _enum(
         "drivetrain.drive_medium",
         {"chain", "belt", "shaft", "other"},
+        auto_fill=True,
+        supersedes=frozenset(
+            {"image_inference", "legacy_profile_migration", "manual_profile_edit"}
+        ),
         bundle="installed_mechanism",
     )
     for path in ("drivetrain.front_chainring_count", "drivetrain.rear_speed_count"):

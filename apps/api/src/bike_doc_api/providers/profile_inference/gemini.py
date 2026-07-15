@@ -14,12 +14,19 @@ from bike_doc_api.schemas.profile_inference import (
     ProfileInferenceOutput,
     ProfileInferenceRequest,
 )
+from bike_doc_api.services.profile_registry import get_canonical_field_definition
 
 _SYSTEM_INSTRUCTION = """
-You extract only durable rear-brake configuration evidence from user-submitted
-bicycle images. Return one JSON object matching the provided schema exactly.
-You may emit claims only for the allowed field paths. Abstain whenever the rear
-brake, its installedness, or its actuation cannot be directly supported.
+You extract only durable installed bicycle configuration evidence from
+user-submitted bicycle images. For drivetrain evidence, extract only the
+installed topology: drivetrain.architecture, drivetrain.drive_medium, and the
+presence of the listed canonical drivetrain component roles. Do not infer
+counts, tooth values, manufacturer/model, interfaces, or dimensions.
+Return one JSON object matching the provided schema exactly. You may emit
+claims only for the allowed field paths. Abstain whenever installedness,
+position/scope, or visibility cannot be directly supported.
+Loose components, packaging, reference images, another bike, and ambiguous
+target relations must not be described as installed on the target bike.
 Never return diagnostics, condition assessments, repair advice, personal data,
 or hidden reasoning. The caption can clarify installedness but cannot create a
 claim without visual image evidence.
@@ -116,25 +123,10 @@ def _contents(request: ProfileInferenceRequest) -> list[Any]:
         "schema_version": request.schema_version,
         "field_registry": {
             "allowed_field_paths": request.allowed_field_paths,
-            "brakes.rear.mechanism": [
-                "disc",
-                "rim_caliper",
-                "rim_cantilever",
-                "rim_v_brake",
-                "rim_u_brake",
-                "rim_other",
-                "coaster",
-                "drum",
-                "roller",
-                "other",
-            ],
-            "brakes.rear.actuation": [
-                "mechanical",
-                "hydraulic",
-                "electronic",
-                "none",
-                "other",
-            ],
+            "fields": {
+                field_path: _field_contract(field_path)
+                for field_path in request.allowed_field_paths
+            },
         },
         "images": [
             {"artifact_id": image.artifact_id, "mime_type": image.mime_type}
@@ -148,6 +140,20 @@ def _contents(request: ProfileInferenceRequest) -> list[Any]:
             for image in request.images
         ],
     ]
+
+
+def _field_contract(field_path: str) -> dict[str, Any]:
+    """Expose only registry facts needed to constrain structured extraction."""
+
+    field = get_canonical_field_definition(field_path)
+    contract: dict[str, Any] = {
+        "value_kind": field.value_kind,
+        "scope": field.scope,
+        "permitted_evidence_bases": sorted(field.permitted_evidence_bases),
+    }
+    if field.enum_values:
+        contract["allowed_values"] = sorted(field.enum_values)
+    return contract
 
 
 def _raw_response_object(response: Any) -> dict[str, Any]:

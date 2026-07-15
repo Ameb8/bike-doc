@@ -217,6 +217,21 @@ _PRESENCE_COMPONENT_PATHS = (
         for position in ("front", "rear")
         for component in ("wheel", "rim", "tire", "hub")
     ),
+    *(
+        f"drivetrain.{component}"
+        for component in (
+            "front_shifter",
+            "rear_shifter",
+            "front_derailleur",
+            "rear_derailleur",
+            "crankset",
+            "rear_cluster",
+            "chain",
+            "belt",
+            "gear_unit",
+            "bottom_bracket",
+        )
+    ),
     "suspension.rear_shock",
     "seating.seatpost",
     "electric_assist",

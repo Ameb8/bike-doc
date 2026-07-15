@@ -72,6 +72,11 @@ tasks:
     cmds:
       - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/rolling-system-v1.json --predictions evals/bike-doc/profile-inference/rolling-system-v1.responses.json --baseline evals/bike-doc/profile-inference/rolling-system-v1.baseline.json --output /tmp/bike-doc-rolling-system-evaluation.json
 
+  eval:drivetrain-topology:
+    desc: Evaluate recorded installed drivetrain topology inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-topology-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-topology-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-topology-v1.baseline.json --output /tmp/bike-doc-drivetrain-topology-evaluation.json
+
   ci:
     desc: Run the non-Docker CI verification suite.
     cmds:

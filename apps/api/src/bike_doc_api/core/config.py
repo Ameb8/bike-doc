@@ -106,7 +106,7 @@ class Settings(BaseSettings):
     profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)
     profile_inference_max_attempts: int = Field(default=3, ge=1, le=5)
     profile_inference_extractor_version: str = Field(
-        default="rear-brake-shadow.v1",
+        default="drivetrain-topology.v1",
         min_length=1,
     )
     profile_inference_policy_mode: Literal[

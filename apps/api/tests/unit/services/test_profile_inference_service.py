@@ -318,6 +318,181 @@ async def test_bootstrap_policy_auto_fills_clear_installed_rear_hydraulic_disc()
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_bootstrap_policy_resolves_installed_derailleur_topology() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.architecture", "derailleur"),
+        _drivetrain_claim("drivetrain.drive_medium", "chain"),
+        _drivetrain_claim("drivetrain.rear_shifter.presence", "present"),
+        _drivetrain_claim("drivetrain.front_shifter.presence", "present"),
+        _drivetrain_claim("drivetrain.front_derailleur.presence", "absent"),
+        _drivetrain_claim("drivetrain.rear_derailleur.presence", "present"),
+        _drivetrain_claim("drivetrain.crankset.presence", "present"),
+        _drivetrain_claim("drivetrain.rear_cluster.presence", "present"),
+        _drivetrain_claim("drivetrain.chain.presence", "present"),
+        _drivetrain_claim("drivetrain.belt.presence", "absent"),
+        _drivetrain_claim("drivetrain.gear_unit.presence", "absent"),
+        _drivetrain_claim("drivetrain.bottom_bracket.presence", "present"),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["drivetrain"] == {
+        "architecture": "derailleur",
+        "drive_medium": "chain",
+        "front_shifter": {"presence": "present"},
+        "rear_shifter": {"presence": "present"},
+        "front_derailleur": {"presence": "absent"},
+        "rear_derailleur": {"presence": "present"},
+        "crankset": {"presence": "present"},
+        "rear_cluster": {"presence": "present"},
+        "chain": {"presence": "present"},
+        "belt": {"presence": "absent"},
+        "gear_unit": {"presence": "absent"},
+        "bottom_bracket": {"presence": "present"},
+    }
+    assert {claim.disposition for claim in store.claims} == {"applied"}
+
+
+async def test_absent_drivetrain_component_clears_existing_identity_and_specs() -> None:
+    store = _Store()
+    store.bike.technical_profile["drivetrain"] = {
+        "front_derailleur": {
+            "presence": "present",
+            "manufacturer": "Shimano",
+            "model": "105",
+        },
+    }
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.front_derailleur.presence", "absent"),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"]["front_derailleur"] == {
+        "presence": "absent",
+    }
+
+
+async def test_bootstrap_policy_resolves_belt_internal_gear_topology() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.architecture", "internal_gear_hub"),
+        _drivetrain_claim("drivetrain.drive_medium", "belt"),
+        _drivetrain_claim("drivetrain.front_shifter.presence", "absent"),
+        _drivetrain_claim("drivetrain.rear_shifter.presence", "present"),
+        _drivetrain_claim("drivetrain.front_derailleur.presence", "absent"),
+        _drivetrain_claim("drivetrain.rear_derailleur.presence", "absent"),
+        _drivetrain_claim("drivetrain.crankset.presence", "present"),
+        _drivetrain_claim("drivetrain.rear_cluster.presence", "absent"),
+        _drivetrain_claim("drivetrain.chain.presence", "absent"),
+        _drivetrain_claim("drivetrain.belt.presence", "present"),
+        _drivetrain_claim("drivetrain.gear_unit.presence", "present"),
+        _drivetrain_claim("drivetrain.bottom_bracket.presence", "present"),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"]["architecture"] == (
+        "internal_gear_hub"
+    )
+    assert store.bike.technical_profile["drivetrain"]["drive_medium"] == "belt"
+    assert store.bike.technical_profile["drivetrain"]["chain"] == {
+        "presence": "absent",
+    }
+    assert store.bike.technical_profile["drivetrain"]["belt"] == {
+        "presence": "present",
+    }
+    assert store.bike.technical_profile["drivetrain"]["gear_unit"] == {
+        "presence": "present",
+    }
+
+
+@pytest.mark.parametrize(
+    ("subject_relation", "visibility"),
+    [
+        ("loose_component", "clear"),
+        ("packaging_or_reference", "clear"),
+        ("installed_on_target_bike", "partial"),
+    ],
+)
+async def test_non_clear_or_non_installed_drivetrain_claim_does_not_mutate_profile(
+    subject_relation: str,
+    visibility: str,
+) -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    claim = _drivetrain_claim("drivetrain.drive_medium", "chain")
+    claim["subject_relation"] = subject_relation
+    claim["visibility"] = visibility
+    output["scene"]["target_relation"] = subject_relation
+    output["claims"] = [claim]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["drivetrain"] == {}
+    assert store.claims[0].disposition == "pending"
+
+
+async def test_null_drivetrain_presence_is_rejected_instead_of_meaning_absent() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.front_derailleur.presence", None),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.technical_profile["drivetrain"] == {}
+
+
+async def test_drivetrain_counts_and_legacy_description_are_not_inference_targets() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.rear_speed_count", 10),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.technical_profile["drivetrain"] == {}
+
+
 async def test_bootstrap_policy_resolves_a_front_brake_without_populating_rear() -> (
     None
 ):
@@ -1335,6 +1510,20 @@ def _brake_claim(
         "artifact_ids": ["art_rear"],
         "observed_text": "160" if evidence_basis == "readable_marking" else None,
         "evidence_cues": ["Installed rear brake detail is clearly visible."],
+    }
+
+
+def _drivetrain_claim(field_path: str, value: object) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": "direct_visual",
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": None,
+        "evidence_cues": ["The drivetrain component is visibly installed."],
     }
 
 

@@ -21,8 +21,31 @@ ROLLING_SYSTEM_INFERENCE_FIELD_PATHS = frozenset(
     if path.startswith(("rolling_system.front.", "rolling_system.rear."))
     and field.volatility_class != "derived"
 )
+DRIVETRAIN_INFERENCE_FIELD_PATHS = frozenset(
+    {
+        "drivetrain.architecture",
+        "drivetrain.drive_medium",
+        *(
+            f"drivetrain.{component}.presence"
+            for component in (
+                "front_shifter",
+                "rear_shifter",
+                "front_derailleur",
+                "rear_derailleur",
+                "crankset",
+                "rear_cluster",
+                "chain",
+                "belt",
+                "gear_unit",
+                "bottom_bracket",
+            )
+        ),
+    },
+)
 PROFILE_INFERENCE_FIELD_PATHS = (
-    BRAKE_INFERENCE_FIELD_PATHS | ROLLING_SYSTEM_INFERENCE_FIELD_PATHS
+    BRAKE_INFERENCE_FIELD_PATHS
+    | ROLLING_SYSTEM_INFERENCE_FIELD_PATHS
+    | DRIVETRAIN_INFERENCE_FIELD_PATHS
 )
 
 
