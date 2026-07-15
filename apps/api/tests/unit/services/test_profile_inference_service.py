@@ -19,6 +19,9 @@ from bike_doc_api.services.profile_inference_resolution import (
     ActiveFieldPolicy,
     ProfileResolverPolicy,
 )
+from bike_doc_api.services.profile_inference_telemetry import (
+    RecordingProfileInferenceTelemetry,
+)
 
 
 class _Extractor:
@@ -69,6 +72,24 @@ class _Extractor:
             ],
             "abstentions": [],
         }
+
+
+class _SequenceExtractor:
+    """Deterministic provider fake for controlled retry tests."""
+
+    provider = "fake"
+
+    def __init__(self, outcomes: list[object]) -> None:
+        self.outcomes = outcomes
+        self.requests: list[object] = []
+
+    async def extract(self, request: object) -> dict[str, object]:
+        self.requests.append(request)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        assert isinstance(outcome, dict)
+        return outcome
 
 
 class _Store:
@@ -611,10 +632,10 @@ async def test_resolution_failure_rolls_back_profile_changes() -> None:
         rollback=rollback,
     )
 
-    with pytest.raises(RuntimeError, match="resolution write failed"):
-        await service.process_submitted_profile_evidence("turn_rear")
+    outcome = await service.process_submitted_profile_evidence("turn_rear")
 
-    assert rollbacks == 1
+    assert rollbacks == 3
+    assert outcome.status is ProfileInferenceStatus.EXHAUSTED
     assert store.claims == []
     assert store.resolutions == {}
     assert store.bike.technical_profile["brakes"]["rear"] == {}
@@ -850,6 +871,80 @@ async def test_retryable_failure_replay_does_not_duplicate_evidence() -> None:
     assert len(store.runs) == 1
     assert len(store.claims) == 2
     assert len(successful.requests) == 1
+
+
+async def test_provider_retry_is_bounded_and_records_privacy_safe_lifecycle() -> None:
+    store = _Store()
+    telemetry = RecordingProfileInferenceTelemetry()
+    extractor = _SequenceExtractor(
+        [RuntimeError("provider unavailable"), _valid_single_claim_output()]
+    )
+    service = ProfileInferenceService(
+        turns=store,
+        repair_sessions=store,
+        bikes=store,
+        artifacts=store,
+        runs=store,
+        storage=store,
+        extractor=extractor,
+        extractor_version="rear-brake-shadow.v1",
+        max_attempts=2,
+        resolver_policy=ProfileResolverPolicy.bootstrap_v1(),
+        telemetry=telemetry,
+    )
+
+    outcome = await service.process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.runs[0].lifecycle_outcomes == [
+        "started",
+        "retryable_failure",
+        "retried",
+        "completed",
+    ]
+    assert len(extractor.requests) == 2
+    assert store.bike.technical_profile["brakes"]["rear"]["mechanism"] == "disc"
+    event_names = [
+        record.name for record in telemetry.records if record.kind == "event"
+    ]
+    assert "profile_inference_run_retried" in event_names
+    assert "profile_inference_run_completed" in event_names
+    serialized = repr(telemetry.records)
+    assert "provider unavailable" not in serialized
+    assert "rear.jpg" not in serialized
+    assert "A rotor" not in serialized
+
+
+async def test_provider_exhaustion_preserves_profile_and_is_operational_only() -> None:
+    store = _Store()
+    telemetry = RecordingProfileInferenceTelemetry()
+    extractor = _SequenceExtractor(
+        [RuntimeError("one"), RuntimeError("two"), RuntimeError("three")],
+    )
+    service = ProfileInferenceService(
+        turns=store,
+        repair_sessions=store,
+        bikes=store,
+        artifacts=store,
+        runs=store,
+        storage=store,
+        extractor=extractor,
+        extractor_version="rear-brake-shadow.v1",
+        max_attempts=3,
+        telemetry=telemetry,
+    )
+
+    outcome = await service.process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.EXHAUSTED
+    assert store.runs[0].status == "exhausted"
+    assert store.runs[0].attempt_count == 3
+    assert store.runs[0].retry_count == 2
+    assert store.claims == []
+    assert store.bike.profile_revision == 0
+    assert any(
+        record.name == "profile_inference_run_exhausted" for record in telemetry.records
+    )
 
 
 def _service(

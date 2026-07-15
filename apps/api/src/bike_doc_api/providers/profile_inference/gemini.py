@@ -50,6 +50,8 @@ class GeminiProfileInferenceExtractor:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._generate_content = generate_content
+        self.provider = "gemini"
+        self.last_usage: dict[str, int | float] | None = None
 
     @classmethod
     def from_google_ai(
@@ -86,6 +88,7 @@ class GeminiProfileInferenceExtractor:
     async def extract(self, request: ProfileInferenceRequest) -> dict[str, Any]:
         """Issue exactly one structured call with no profile or diagnostic history."""
 
+        self.last_usage = None
         response = await asyncio.wait_for(
             self._generate_content(
                 model=self._model,
@@ -99,6 +102,7 @@ class GeminiProfileInferenceExtractor:
             ),
             timeout=self._timeout_seconds,
         )
+        self.last_usage = _usage_metadata(response)
         return _raw_response_object(response)
 
 
@@ -164,3 +168,22 @@ def _raw_response_object(response: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("profile inference must return a JSON object")
     return data
+
+
+def _usage_metadata(response: Any) -> dict[str, int | float] | None:
+    """Extract only numeric provider usage fields for operational metrics."""
+
+    usage = getattr(response, "usage_metadata", None)
+    if usage is None:
+        return None
+    values: dict[str, int | float] = {}
+    for source, target in (
+        ("prompt_token_count", "input_tokens"),
+        ("candidates_token_count", "output_tokens"),
+        ("total_token_count", "total_tokens"),
+        ("cost_usd", "cost_usd"),
+    ):
+        value = getattr(usage, source, None)
+        if isinstance(value, (int, float)):
+            values[target] = value
+    return values or None

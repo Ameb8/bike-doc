@@ -38,6 +38,10 @@ from bike_doc_api.schemas.common import RepairSessionPhase
 from bike_doc_api.services.profile_inference_resolution import (
     recompute_derived_brake_summary,
 )
+from bike_doc_api.services.profile_inference_telemetry import (
+    ProfileInferenceTelemetry,
+    default_profile_inference_telemetry,
+)
 from bike_doc_api.services.profile_registry import (
     get_canonical_field_definition,
     normalize_canonical_value,
@@ -190,11 +194,13 @@ class ResolvedBikeProfileService:
         *,
         repair_sessions: DiagnosticRepairSessionRepositoryProtocol | None = None,
         phase_sessions: DiagnosticPhaseSessionRepositoryProtocol | None = None,
+        telemetry: ProfileInferenceTelemetry | None = None,
         commit: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._bikes = bikes
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
+        self._telemetry = telemetry or default_profile_inference_telemetry()
         self._commit = commit
 
     async def list_bikes(
@@ -451,6 +457,8 @@ class ResolvedBikeProfileService:
                     resolution_state="unknown",
                     effective_confidence="unknown",
                 )
+            previous_source = resolution.source_type
+            claim_changed = False
             if new_claim.source_type == "manual_profile_clear":
                 if resolution.resolution_state == "cleared":
                     claim.disposition = "supporting"
@@ -469,6 +477,7 @@ class ResolvedBikeProfileService:
                 resolution.manual_clear_barrier_at = timestamp
                 bike.technical_profile = candidate_projection
                 changed = True
+                claim_changed = True
             elif (
                 resolution.current_value == new_claim.value
                 and resolution.resolution_state == "resolved"
@@ -495,7 +504,29 @@ class ResolvedBikeProfileService:
                 resolution.resolved_at = timestamp
                 bike.technical_profile = candidate_projection
                 changed = True
+                claim_changed = True
             await self._bikes.save_resolution(resolution)
+            if (
+                claim_changed
+                and previous_source == "image_inference"
+                and new_claim.source_type
+                in {"manual_profile_edit", "manual_profile_clear"}
+            ):
+                source_transition = f"image_inference->{new_claim.source_type}"
+                self._telemetry.event(
+                    "profile_inference_manual_correction",
+                    fields={
+                        "field_path": new_claim.field_path,
+                        "source_transition": source_transition,
+                    },
+                )
+                self._telemetry.metric(
+                    "profile_inference_manual_corrections_total",
+                    dimensions={
+                        "field_path": new_claim.field_path,
+                        "source_transition": source_transition,
+                    },
+                )
         if await recompute_derived_brake_summary(bikes=self._bikes, bike=bike):
             changed = True
         if changed:

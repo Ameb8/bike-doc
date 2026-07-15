@@ -19,6 +19,9 @@ from bike_doc_api.models.repair_session import RepairSession as RepairSessionMod
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.bike import BikeProfileCreate, BikeProfilePatch
 from bike_doc_api.services.bikes import ResolvedBikeProfileService
+from bike_doc_api.services.profile_inference_telemetry import (
+    RecordingProfileInferenceTelemetry,
+)
 
 
 class FakeBikeRepository:
@@ -389,6 +392,56 @@ async def test_internal_v2_manual_write_and_clear_use_the_same_claim_ledger() ->
     assert resolution.resolution_state == "cleared"
     assert resolution.manual_clear_barrier_at is not None
     assert bike.profile_revision == 2
+
+
+async def test_manual_correction_of_inferred_value_emits_safe_telemetry() -> None:
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    inferred = BikeFactClaim(
+        id="bfc_inferred",
+        bike_id=bike.id,
+        field_path="brakes.rear.actuation",
+        value="hydraulic",
+        source_type="image_inference",
+        source_ref={"type": "profile_inference_run", "id": "pir_test"},
+        evidence_refs=[{"type": "artifact", "id": "art_test"}],
+        observed_at=datetime(2026, 1, 2, tzinfo=UTC),
+        disposition="applied",
+    )
+    repo.claims.append(inferred)
+    repo.resolutions[(bike.id, inferred.field_path)] = BikeFieldResolution(
+        bike_id=bike.id,
+        field_path=inferred.field_path,
+        current_value=inferred.value,
+        resolution_state="resolved",
+        current_claim_id=inferred.id,
+        effective_confidence="medium",
+        source_type="image_inference",
+        observed_at=inferred.observed_at,
+        resolved_at=inferred.observed_at,
+    )
+    telemetry = RecordingProfileInferenceTelemetry()
+    service = ResolvedBikeProfileService(repo, telemetry=telemetry)
+
+    await service.set_manual_technical_value(
+        current_user=_user(),
+        bike_id=bike.id,
+        field_path="brakes.rear.actuation",
+        value="mechanical",
+    )
+
+    events = [
+        record
+        for record in telemetry.records
+        if record.name == "profile_inference_manual_correction"
+    ]
+    assert len(events) == 1
+    assert events[0].fields == {
+        "field_path": "brakes.rear.actuation",
+        "source_transition": "image_inference->manual_profile_edit",
+    }
+    assert "pir_test" not in repr(telemetry.records)
+    assert "art_test" not in repr(telemetry.records)
 
 
 async def test_duplicate_manual_evidence_does_not_change_profile_revision() -> None:

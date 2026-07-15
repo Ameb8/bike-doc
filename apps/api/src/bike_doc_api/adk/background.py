@@ -164,7 +164,7 @@ async def execute_diagnostic_turn_background(
 
 
 async def execute_profile_inference_background(turn_id: str) -> None:
-    """Run shadow profile inference without affecting diagnostic turn processing."""
+    """Run profile inference without affecting diagnostic turn processing."""
 
     settings = get_settings()
     async for session in get_session_for_database_url(settings.database_url):
@@ -177,8 +177,6 @@ async def execute_profile_inference_background(turn_id: str) -> None:
             logger.info(
                 "profile_inference_background_finished",
                 extra={
-                    "turn_id": turn_id,
-                    "run_id": outcome.run_id,
                     "status": outcome.status.value,
                     "claim_count": outcome.claim_count,
                     "policy_mode": outcome.policy_mode,
@@ -189,10 +187,7 @@ async def execute_profile_inference_background(turn_id: str) -> None:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception(
-                "profile_inference_background_failed",
-                extra={"turn_id": turn_id},
-            )
+            logger.error("profile_inference_background_failed")
         return
 
 
@@ -220,6 +215,7 @@ def _build_profile_inference_service(
         extractor=extractor,
         extractor_version=settings.profile_inference_extractor_version,
         running_lease_seconds=settings.profile_inference_timeout_seconds + 30.0,
+        max_attempts=settings.profile_inference_max_attempts,
         resolver_policy=ProfileResolverPolicy.from_deployment(
             mode=settings.profile_inference_policy_mode,
             policies=settings.profile_inference_policies,

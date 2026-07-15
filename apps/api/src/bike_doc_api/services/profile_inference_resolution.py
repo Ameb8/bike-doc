@@ -213,10 +213,20 @@ class BikeResolutionRepositoryProtocol(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileMutation:
+    """Stable profile mutation dimensions for operational telemetry."""
+
+    field_path: str
+    source_transition: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProfileResolutionResult:
     """Observable resolver result without exposing private evidence details."""
 
     changed: bool
+    disposition_counts: dict[str, int]
+    mutations: tuple[ProfileMutation, ...] = ()
 
 
 class ProfileInferenceResolver:
@@ -240,6 +250,7 @@ class ProfileInferenceResolver:
         """Resolve claims against latest state and mutate once when state changes."""
 
         changed = False
+        mutations: list[ProfileMutation] = []
         now = datetime.now(UTC)
         for claim in claims:
             if not _is_valid_image_claim(claim):
@@ -275,6 +286,7 @@ class ProfileInferenceResolver:
 
             assert policy is not None
             confidence = _effective_confidence(claim.model_score, policy)
+            previous_source = resolution.source_type or "unknown"
             current_is_unknown = resolution.current_value is None and (
                 resolution.resolution_state in {"unknown", "cleared"}
             )
@@ -297,6 +309,12 @@ class ProfileInferenceResolver:
                     value=claim.value,
                 )
                 await self._bikes.save_resolution(resolution)
+                mutations.append(
+                    ProfileMutation(
+                        field_path=claim.field_path,
+                        source_transition=f"{previous_source}->{claim.source_type}",
+                    ),
+                )
                 changed = True
                 continue
 
@@ -348,6 +366,12 @@ class ProfileInferenceResolver:
                     value=claim.value,
                 )
                 await self._bikes.save_resolution(resolution)
+                mutations.append(
+                    ProfileMutation(
+                        field_path=claim.field_path,
+                        source_transition=f"{previous_source}->{claim.source_type}",
+                    ),
+                )
                 changed = True
                 continue
 
@@ -372,12 +396,27 @@ class ProfileInferenceResolver:
             bike=bike,
         ):
             changed = True
+            mutations.append(
+                ProfileMutation(
+                    field_path="brakes.legacy_summary",
+                    source_transition="derived_resolution->derived_resolution",
+                ),
+            )
 
         if changed:
             bike.profile_revision = (bike.profile_revision or 0) + 1
             bike.updated_at = now
             await self._bikes.save(bike)
-        return ProfileResolutionResult(changed=changed)
+        disposition_counts: dict[str, int] = {}
+        for claim in claims:
+            disposition_counts[claim.disposition] = (
+                disposition_counts.get(claim.disposition, 0) + 1
+            )
+        return ProfileResolutionResult(
+            changed=changed,
+            disposition_counts=disposition_counts,
+            mutations=tuple(mutations),
+        )
 
 
 def claim_is_blocked_by_clear_barrier(

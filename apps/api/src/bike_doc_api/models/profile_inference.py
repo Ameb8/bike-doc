@@ -23,7 +23,10 @@ class ProfileInferenceRun(Base):
     __table_args__ = (
         CheckConstraint("id LIKE 'pir_%'", name="ck_profile_inference_runs_id_prefix"),
         CheckConstraint(
-            "status IN ('running', 'completed', 'abstained', 'retryable', 'failed')",
+            "status IN ("
+            "'started', 'completed', 'abstained', 'retryable_failure', "
+            "'terminal_failure', 'exhausted'"
+            ")",
             name="ck_profile_inference_runs_status",
         ),
         Index(
@@ -56,10 +59,19 @@ class ProfileInferenceRun(Base):
     inference_schema_version: Mapped[str] = mapped_column(Text, nullable=False)
     extractor_version: Mapped[str] = mapped_column(Text, nullable=False)
     input_artifact_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="running")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="started")
     claim_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     failure_code: Mapped[str | None] = mapped_column(Text)
+    failure_class: Mapped[str | None] = mapped_column(Text)
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    lifecycle_outcomes: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: ["started"],
+        server_default=text("'[\"started\"]'::jsonb"),
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=text("now()")
     )
