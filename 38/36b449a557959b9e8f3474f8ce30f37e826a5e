@@ -1,0 +1,27 @@
+apps/api/src/bike_doc_api/providers/profile_inference/gemini.py
+  s_d22e44b08e2278::t_8dc3fd33ab6857 22-34
+apps/api/tests/unit/providers/test_profile_inference.py
+  s_d22e44b08e2278::t_8dc3fd33ab6857 145-155,157-160
+  s_d22e44b08e2278::t_378656e98ea7bf 156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3836b449a557959b9e8f3474f8ce30f37e826a5e",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_d22e44b08e2278": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f69ae-0546-74d2-96ff-3bbd2ee272b2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
