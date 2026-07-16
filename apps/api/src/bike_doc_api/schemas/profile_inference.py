@@ -25,6 +25,10 @@ DRIVETRAIN_INFERENCE_FIELD_PATHS = frozenset(
     {
         "drivetrain.architecture",
         "drivetrain.drive_medium",
+        "drivetrain.front_shifter.actuation",
+        "drivetrain.rear_shifter.actuation",
+        "drivetrain.rear_derailleur.mount_type",
+        "drivetrain.rear_cluster.cluster_type",
         *(
             f"drivetrain.{component}.presence"
             for component in (
@@ -39,6 +43,22 @@ DRIVETRAIN_INFERENCE_FIELD_PATHS = frozenset(
                 "gear_unit",
                 "bottom_bracket",
             )
+        ),
+        *(
+            f"drivetrain.{component}.{identity_field}"
+            for component in (
+                "front_shifter",
+                "rear_shifter",
+                "front_derailleur",
+                "rear_derailleur",
+                "crankset",
+                "rear_cluster",
+                "chain",
+                "belt",
+                "gear_unit",
+                "bottom_bracket",
+            )
+            for identity_field in ("manufacturer", "model")
         ),
     },
 )

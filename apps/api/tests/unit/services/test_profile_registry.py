@@ -100,7 +100,7 @@ def test_tire_absence_removes_compatible_identity_and_specification_leaves() -> 
     assert technical_value(absent, "rolling_system.rear.rim") is None
 
 
-def test_drivetrain_inference_registry_is_topology_only() -> None:
+def test_drivetrain_inference_registry_includes_roles_but_not_derived_specs() -> None:
     components = (
         "front_shifter",
         "rear_shifter",
@@ -114,11 +114,22 @@ def test_drivetrain_inference_registry_is_topology_only() -> None:
         "bottom_bracket",
     )
 
-    assert {
+    expected = {
         "drivetrain.architecture",
         "drivetrain.drive_medium",
         *(f"drivetrain.{component}.presence" for component in components),
-    } == DRIVETRAIN_INFERENCE_FIELD_PATHS
+        *(
+            f"drivetrain.{component}.{field}"
+            for component in components
+            for field in ("manufacturer", "model")
+        ),
+        "drivetrain.front_shifter.actuation",
+        "drivetrain.rear_shifter.actuation",
+        "drivetrain.rear_derailleur.mount_type",
+        "drivetrain.rear_cluster.cluster_type",
+    }
+
+    assert expected == DRIVETRAIN_INFERENCE_FIELD_PATHS
     assert "drivetrain.front_chainring_count" not in PROFILE_INFERENCE_FIELD_PATHS
     assert "drivetrain.rear_speed_count" not in PROFILE_INFERENCE_FIELD_PATHS
     assert "drivetrain.legacy_description" not in PROFILE_INFERENCE_FIELD_PATHS
@@ -126,6 +137,26 @@ def test_drivetrain_inference_registry_is_topology_only() -> None:
         CANONICAL_FIELD_REGISTRY[path].image_auto_fill
         for path in DRIVETRAIN_INFERENCE_FIELD_PATHS
     )
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "drivetrain.front_shifter.actuation",
+        "drivetrain.rear_shifter.actuation",
+        "drivetrain.rear_derailleur.mount_type",
+        "drivetrain.rear_cluster.cluster_type",
+    ],
+)
+def test_drivetrain_role_configuration_requires_clear_direct_evidence(
+    field_path: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert field.permitted_evidence_bases == frozenset({"direct_visual"})
+    assert field.requires_direct_evidence is True
+    assert field.image_auto_fill is True
+    assert field.policy_bundle == "installed_mechanism"
 
 
 @pytest.mark.parametrize(

@@ -38,6 +38,12 @@ DRIVETRAIN_DATASET_PATH = ROLLING_DATASET_PATH.with_name(
 DRIVETRAIN_PREDICTIONS_PATH = DRIVETRAIN_DATASET_PATH.with_name(
     "drivetrain-topology-v1.responses.json",
 )
+DRIVETRAIN_ROLES_DATASET_PATH = ROLLING_DATASET_PATH.with_name(
+    "drivetrain-roles-v1.json",
+)
+DRIVETRAIN_ROLES_PREDICTIONS_PATH = DRIVETRAIN_ROLES_DATASET_PATH.with_name(
+    "drivetrain-roles-v1.responses.json",
+)
 
 
 @pytest.mark.asyncio
@@ -111,6 +117,36 @@ async def test_drivetrain_evaluation_covers_topology_and_installedness() -> None
     assert report["metrics"]["installedness_accuracy"] == 1.0
     assert report["metrics"]["auto_fill_precision"] == 1.0
     assert report["metrics"]["profile_corruption_failures"] == {}
+
+
+@pytest.mark.asyncio
+async def test_drivetrain_roles_evaluation_covers_claims_and_abstention() -> None:
+    report = await evaluate_dataset(
+        load_json(DRIVETRAIN_ROLES_DATASET_PATH),
+        load_predictions(load_json(DRIVETRAIN_ROLES_PREDICTIONS_PATH)),
+    )
+
+    assert report["case_count"] == 11
+    assert report["metrics"]["abstention_correctness"] == 1.0
+    assert report["metrics"]["installedness_accuracy"] == 1.0
+    assert report["metrics"]["auto_fill_precision"] == 1.0
+    assert report["metrics"]["conflict_accuracy"] == 1.0
+    assert report["metrics"]["profile_corruption_failures"] == {}
+    assert {
+        item["field_path"]
+        for item in report["field_evidence_metrics"]
+        if item["field_path"].startswith("drivetrain.")
+    } == {
+        "drivetrain.front_shifter.presence",
+        "drivetrain.front_shifter.actuation",
+        "drivetrain.rear_shifter.presence",
+        "drivetrain.rear_shifter.actuation",
+        "drivetrain.rear_derailleur.presence",
+        "drivetrain.rear_derailleur.mount_type",
+        "drivetrain.rear_shifter.manufacturer",
+        "drivetrain.rear_shifter.model",
+        "drivetrain.rear_cluster.cluster_type",
+    }
 
 
 def test_missing_baseline_is_explicit_and_version_changes_require_comparison() -> None:

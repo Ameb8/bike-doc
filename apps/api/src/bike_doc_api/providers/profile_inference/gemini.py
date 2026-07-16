@@ -18,10 +18,17 @@ from bike_doc_api.services.profile_registry import get_canonical_field_definitio
 
 _SYSTEM_INSTRUCTION = """
 You extract only durable installed bicycle configuration evidence from
-user-submitted bicycle images. For drivetrain evidence, extract only the
-installed topology: drivetrain.architecture, drivetrain.drive_medium, and the
-presence of the listed canonical drivetrain component roles. Do not infer
-counts, tooth values, manufacturer/model, interfaces, or dimensions.
+user-submitted bicycle images. For drivetrain evidence, extract the installed
+topology, the manufacturer/model of a canonical drivetrain role when its logo
+or model marking is readable, and only these installed role facts:
+front_shifter.actuation, rear_shifter.actuation,
+rear_derailleur.mount_type, and rear_cluster.cluster_type. These fields must
+be scoped to a clearly installed component on the target bike and directly
+visible with clear visibility. A logo may support manufacturer, but exact model
+identity requires a readable model marking or another explicitly registered
+direct cue; visual family resemblance is an abstention/pending cue. Do not
+infer counts, tooth values, compatibility, driver interfaces, bottom-bracket
+specifications, or other drivetrain fields.
 Return one JSON object matching the provided schema exactly. You may emit
 claims only for the allowed field paths. Abstain whenever installedness,
 position/scope, or visibility cannot be directly supported.
@@ -150,6 +157,9 @@ def _field_contract(field_path: str) -> dict[str, Any]:
         "value_kind": field.value_kind,
         "scope": field.scope,
         "permitted_evidence_bases": sorted(field.permitted_evidence_bases),
+        "requires_readable_marking": field.requires_readable_marking,
+        "requires_direct_evidence": field.requires_direct_evidence,
+        "requires_counted_evidence": field.requires_counted_evidence,
     }
     if field.enum_values:
         contract["allowed_values"] = sorted(field.enum_values)

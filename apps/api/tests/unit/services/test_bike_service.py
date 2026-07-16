@@ -674,6 +674,26 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
         "drivetrain": {
             "architecture": "derailleur",
             "drive_medium": "chain",
+            "front_shifter": {
+                "presence": "present",
+                "actuation": "mechanical",
+                "manufacturer": "Shimano",
+                "model": "105",
+            },
+            "rear_shifter": {
+                "presence": "present",
+                "actuation": "electronic",
+                "manufacturer": "SRAM",
+                "model": "Rival AXS",
+            },
+            "rear_derailleur": {
+                "presence": "present",
+                "mount_type": "full_mount",
+            },
+            "rear_cluster": {
+                "presence": "present",
+                "cluster_type": "cassette",
+            },
             "front_derailleur": {"presence": "absent"},
         },
     }
@@ -687,8 +707,20 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
         active_safety_flags=[],
         latest_event_sequence=0,
     )
+    repository = FakeBikeRepository([bike])
+    repository.resolutions[(bike.id, "drivetrain.rear_shifter.actuation")] = (
+        BikeFieldResolution(
+            bike_id=bike.id,
+            field_path="drivetrain.rear_shifter.actuation",
+            current_value="electronic",
+            resolution_state="resolved",
+            effective_confidence="medium",
+            source_type="image_inference",
+            observed_at=datetime(2026, 7, 12, tzinfo=UTC),
+        )
+    )
     service = ResolvedBikeProfileService(
-        FakeBikeRepository([bike]),
+        repository,
         repair_sessions=FakeDiagnosticRepairSessionRepository([repair_session]),
     )
 
@@ -706,9 +738,28 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
     assert result.bike_profile.profile["drivetrain"] == {
         "architecture": "derailleur",
         "drive_medium": "chain",
+        "front_shifter": {
+            "presence": "present",
+            "actuation": "mechanical",
+            "manufacturer": "Shimano",
+            "model": "105",
+        },
+        "rear_shifter": {
+            "presence": "present",
+            "actuation": "electronic",
+            "manufacturer": "SRAM",
+            "model": "Rival AXS",
+        },
+        "rear_derailleur": {"presence": "present", "mount_type": "full_mount"},
+        "rear_cluster": {"presence": "present", "cluster_type": "cassette"},
         "front_derailleur": {"presence": "absent"},
     }
-    assert result.bike_profile.field_states == {}
+    assert result.bike_profile.field_states["drivetrain.rear_shifter.actuation"] == {
+        "resolution_state": "resolved",
+        "effective_confidence": "medium",
+        "source_type": "image_inference",
+        "observed_at": datetime(2026, 7, 12, tzinfo=UTC),
+    }
     assert result.user_skill_level == "beginner"
 
 

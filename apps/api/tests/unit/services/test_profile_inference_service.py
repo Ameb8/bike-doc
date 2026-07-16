@@ -360,6 +360,66 @@ async def test_bootstrap_policy_resolves_installed_derailleur_topology() -> None
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_bootstrap_policy_resolves_installed_drivetrain_roles_and_identity() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.front_shifter.presence", "present"),
+        _drivetrain_configuration_claim(
+            "drivetrain.front_shifter.actuation", "mechanical"
+        ),
+        _drivetrain_identity_claim("drivetrain.front_shifter.manufacturer", "Shimano"),
+        _drivetrain_identity_claim("drivetrain.front_shifter.model", "105"),
+        _drivetrain_claim("drivetrain.rear_shifter.presence", "present"),
+        _drivetrain_configuration_claim(
+            "drivetrain.rear_shifter.actuation", "electronic"
+        ),
+        _drivetrain_identity_claim("drivetrain.rear_shifter.manufacturer", "SRAM"),
+        _drivetrain_identity_claim("drivetrain.rear_shifter.model", "Rival AXS"),
+        _drivetrain_claim("drivetrain.rear_derailleur.presence", "present"),
+        _drivetrain_configuration_claim(
+            "drivetrain.rear_derailleur.mount_type", "direct_mount"
+        ),
+        _drivetrain_claim("drivetrain.rear_cluster.presence", "present"),
+        _drivetrain_configuration_claim(
+            "drivetrain.rear_cluster.cluster_type", "cassette"
+        ),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["drivetrain"] == {
+        "front_shifter": {
+            "presence": "present",
+            "actuation": "mechanical",
+            "manufacturer": "Shimano",
+            "model": "105",
+        },
+        "rear_shifter": {
+            "presence": "present",
+            "actuation": "electronic",
+            "manufacturer": "SRAM",
+            "model": "Rival AXS",
+        },
+        "rear_derailleur": {
+            "presence": "present",
+            "mount_type": "direct_mount",
+        },
+        "rear_cluster": {
+            "presence": "present",
+            "cluster_type": "cassette",
+        },
+    }
+    assert {claim.disposition for claim in store.claims} == {"applied"}
+
+
 async def test_absent_drivetrain_component_clears_existing_identity_and_specs() -> None:
     store = _Store()
     store.bike.technical_profile["drivetrain"] = {
@@ -382,6 +442,86 @@ async def test_absent_drivetrain_component_clears_existing_identity_and_specs() 
 
     assert store.bike.technical_profile["drivetrain"]["front_derailleur"] == {
         "presence": "absent",
+    }
+
+
+async def test_absent_drivetrain_component_keeps_same_run_leaves_cleared() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.rear_derailleur.presence", "absent"),
+        _drivetrain_identity_claim("drivetrain.rear_derailleur.manufacturer", "SRAM"),
+        _drivetrain_configuration_claim(
+            "drivetrain.rear_derailleur.mount_type", "full_mount"
+        ),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"]["rear_derailleur"] == {
+        "presence": "absent",
+    }
+    assert {claim.field_path: claim.disposition_reason for claim in store.claims} == {
+        "drivetrain.rear_derailleur.presence": "auto_fill_policy_satisfied",
+        "drivetrain.rear_derailleur.manufacturer": "component_is_resolved_absent",
+        "drivetrain.rear_derailleur.mount_type": "component_is_resolved_absent",
+    }
+
+
+async def test_unreadable_drivetrain_identity_remains_pending() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_drivetrain_claim("drivetrain.rear_shifter.manufacturer", "Shimano"),
+            "evidence_basis": "derived_visual",
+            "evidence_cues": ["The component resembles a Shimano shifter."],
+        },
+        {
+            **_drivetrain_claim("drivetrain.rear_shifter.model", "105"),
+            "evidence_basis": "derived_visual",
+            "evidence_cues": ["The component resembles a 105 shifter."],
+        },
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"] == {}
+    assert {claim.disposition_reason for claim in store.claims} == {
+        "no_active_field_policy"
+    }
+
+
+@pytest.mark.parametrize("cluster_type", ["cassette", "freewheel", "single_sprocket"])
+async def test_installed_rear_cluster_classification_is_resolved(
+    cluster_type: str,
+) -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.rear_cluster.presence", "present"),
+        _drivetrain_configuration_claim(
+            "drivetrain.rear_cluster.cluster_type", cluster_type
+        ),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"]["rear_cluster"] == {
+        "presence": "present",
+        "cluster_type": cluster_type,
     }
 
 
@@ -1524,6 +1664,27 @@ def _drivetrain_claim(field_path: str, value: object) -> dict[str, object]:
         "artifact_ids": ["art_rear"],
         "observed_text": None,
         "evidence_cues": ["The drivetrain component is visibly installed."],
+    }
+
+
+def _drivetrain_configuration_claim(
+    field_path: str,
+    value: object,
+) -> dict[str, object]:
+    return {
+        **_drivetrain_claim(field_path, value),
+        "evidence_cues": [
+            "The installed drivetrain configuration is directly visible."
+        ],
+    }
+
+
+def _drivetrain_identity_claim(field_path: str, value: str) -> dict[str, object]:
+    return {
+        **_drivetrain_claim(field_path, value),
+        "evidence_basis": "readable_marking",
+        "observed_text": value,
+        "evidence_cues": ["The installed component marking is readable."],
     }
 
 

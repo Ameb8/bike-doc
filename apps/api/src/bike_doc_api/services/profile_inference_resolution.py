@@ -314,6 +314,10 @@ class ProfileInferenceResolver:
                 claim.disposition = "pending"
                 claim.disposition_reason = "disc_mechanism_not_resolved"
                 continue
+            if _component_presence_is_absent(bike.technical_profile, claim):
+                claim.disposition = "pending"
+                claim.disposition_reason = "component_is_resolved_absent"
+                continue
             resolution = await self._bikes.get_resolution(
                 bike_id=bike.id,
                 field_path=claim.field_path,
@@ -812,14 +816,51 @@ def _pending_reason(
     return "below_auto_fill_threshold"
 
 
+_DRIVETRAIN_COMPONENTS = frozenset(
+    {
+        "front_shifter",
+        "rear_shifter",
+        "front_derailleur",
+        "rear_derailleur",
+        "crankset",
+        "rear_cluster",
+        "chain",
+        "belt",
+        "gear_unit",
+        "bottom_bracket",
+    },
+)
+
+
+def _component_presence_is_absent(
+    projection: dict[str, Any],
+    claim: BikeFactClaim,
+) -> bool:
+    """Keep identity/configuration leaves cleared for absent drivetrain roles."""
+
+    parts = claim.field_path.split(".")
+    if (
+        len(parts) < 3
+        or parts[0] != "drivetrain"
+        or parts[1] not in _DRIVETRAIN_COMPONENTS
+        or parts[2] == "presence"
+    ):
+        return False
+    return technical_value(projection, f"drivetrain.{parts[1]}.presence") == "absent"
+
+
 def _resolution_order(claim: BikeFactClaim) -> tuple[int, str]:
     """Resolve assembly mechanism before facts that depend on it."""
 
-    if claim.field_path.endswith(".mechanism"):
+    if claim.field_path.startswith("drivetrain.") and claim.field_path.endswith(
+        ".presence"
+    ):
         return (0, claim.field_path)
+    if claim.field_path.endswith(".mechanism"):
+        return (1, claim.field_path)
     if ".rotor." in claim.field_path:
         return (2, claim.field_path)
-    return (1, claim.field_path)
+    return (3, claim.field_path)
 
 
 def _requires_resolved_disc_mechanism(claim: BikeFactClaim) -> bool:

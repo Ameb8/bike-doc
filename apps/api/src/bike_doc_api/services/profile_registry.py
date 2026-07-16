@@ -437,7 +437,38 @@ def _build_registry() -> dict[str, CanonicalField]:
         prefix = f"drivetrain.{component}"
         _component_fields(registry, prefix)
         for name, values in enum_fields.items():
-            registry[f"{prefix}.{name}"] = _enum(f"{prefix}.{name}", values)
+            registry[f"{prefix}.{name}"] = _enum(
+                f"{prefix}.{name}",
+                values,
+                evidence=frozenset({"direct_visual"})
+                if name
+                in {
+                    "actuation",
+                    "mount_type",
+                    "cluster_type",
+                }
+                else frozenset({"direct_visual", "derived_visual"}),
+                auto_fill=name
+                in {
+                    "actuation",
+                    "mount_type",
+                    "cluster_type",
+                },
+                direct=name
+                in {
+                    "actuation",
+                    "mount_type",
+                    "cluster_type",
+                },
+                bundle="installed_mechanism"
+                if name
+                in {
+                    "actuation",
+                    "mount_type",
+                    "cluster_type",
+                }
+                else "inference_only_pending",
+            )
         if component == "bottom_bracket":
             registry[f"{prefix}.interface"] = _field(
                 f"{prefix}.interface",
