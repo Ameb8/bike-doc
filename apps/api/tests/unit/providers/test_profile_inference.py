@@ -158,3 +158,48 @@ async def test_extractor_sends_drivetrain_roles_and_identity() -> None:
     assert "Do not infer counts, tooth values" not in instruction
     assert "drivetrain.front_chainring_count" in instruction
     assert "drivetrain.rear_speed_count" in instruction
+
+
+async def test_extractor_instruction_separates_identity_appearance_and_privacy() -> (
+    None
+):
+    captured: dict[str, object] = {}
+
+    async def generate_content(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            parsed={
+                "schema_version": "bike_profile_inference.v1",
+                "scene": {
+                    "contains_bicycle": True,
+                    "multiple_bicycles": False,
+                    "target_relation": "installed_on_target_bike",
+                    "confidence_score": 0.99,
+                },
+                "claims": [],
+                "abstentions": [],
+            },
+            usage_metadata=None,
+        )
+
+    extractor = GeminiProfileInferenceExtractor(
+        model="test-model",
+        timeout_seconds=1,
+        generate_content=generate_content,
+    )
+    await extractor.extract(
+        ProfileInferenceRequest(
+            bike_id="bike_test",
+            repair_session_id="rs_test",
+            images=[
+                InferenceImage(
+                    artifact_id="art_test", mime_type="image/jpeg", content=b"image"
+                )
+            ],
+        )
+    )
+
+    instruction = captured["config"].system_instruction  # type: ignore[index]
+    assert "visual look-alike must never be presented as exact identity" in instruction
+    assert "frame serial" in instruction
+    assert "VINs" in instruction

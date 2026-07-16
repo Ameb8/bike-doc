@@ -26,10 +26,17 @@ DRIVETRAIN_INFERENCE_FIELD_PATHS = frozenset(
     for path, field in CANONICAL_FIELD_REGISTRY.items()
     if path.startswith("drivetrain.") and field.volatility_class != "derived"
 )
+IDENTITY_AND_FRAME_INFERENCE_FIELD_PATHS = frozenset(
+    path
+    for path, field in CANONICAL_FIELD_REGISTRY.items()
+    if path.startswith(("identity.", "frame."))
+    and field.volatility_class not in {"derived", "user_managed"}
+)
 PROFILE_INFERENCE_FIELD_PATHS = (
     BRAKE_INFERENCE_FIELD_PATHS
     | ROLLING_SYSTEM_INFERENCE_FIELD_PATHS
     | DRIVETRAIN_INFERENCE_FIELD_PATHS
+    | IDENTITY_AND_FRAME_INFERENCE_FIELD_PATHS
 )
 
 

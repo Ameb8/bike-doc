@@ -318,6 +318,153 @@ async def test_bootstrap_policy_auto_fills_clear_installed_rear_hydraulic_disc()
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_readable_identity_and_frame_markings_fill_but_lookalikes_wait() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _identity_claim("identity.make", "Surly", observed_text="Surly"),
+        _identity_claim("frame.material", "steel", observed_text="4130 CroMoly"),
+        _identity_claim("frame.size_label", "54 cm", observed_text="54 cm"),
+        _identity_claim(
+            "identity.model",
+            "Straggler",
+            observed_text=None,
+            evidence_basis="derived_visual",
+        ),
+        _identity_claim(
+            "identity.bike_type",
+            "gravel",
+            observed_text=None,
+            evidence_basis="direct_visual",
+        ),
+        _identity_claim(
+            "frame.primary_color",
+            "blue",
+            observed_text=None,
+            evidence_basis="direct_visual",
+        ),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["identity"] == {
+        "make": "Surly",
+        "bike_type": "gravel",
+    }
+    assert store.bike.technical_profile["frame"] == {
+        "material": "steel",
+        "size_label": "54 cm",
+        "primary_color": "blue",
+    }
+    assert (
+        next(
+            claim for claim in store.claims if claim.field_path == "identity.model"
+        ).disposition
+        == "pending"
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "prohibited"),
+    [
+        ("value", "SN: AB12CD34EF56"),
+        ("observed_text", "VIN 1HGCM82633A004352"),
+        ("evidence_cues", "Owner: Jane Doe, 123 Main Street"),
+    ],
+)
+async def test_private_extractor_output_rejects_the_complete_run_before_persistence(
+    field: str,
+    prohibited: str,
+) -> None:
+    store = _Store()
+    telemetry = RecordingProfileInferenceTelemetry()
+    output = _valid_single_claim_output()
+    claim = output["claims"][0]
+    assert isinstance(claim, dict)
+    if field == "evidence_cues":
+        claim[field] = [prohibited]
+    else:
+        claim[field] = prohibited
+    service = ProfileInferenceService(
+        turns=store,
+        repair_sessions=store,
+        bikes=store,
+        artifacts=store,
+        runs=store,
+        storage=store,
+        extractor=_Extractor(output),
+        extractor_version="privacy-validation.v1",
+        telemetry=telemetry,
+    )
+
+    outcome = await service.process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.profile_revision == 0
+    assert prohibited not in repr(telemetry.records)
+
+
+async def test_image_disagreements_do_not_overwrite_manual_values() -> None:
+    store = _Store()
+    observed_at = store.turn.created_at - timedelta(days=1)
+    store.bike.technical_profile["identity"] = {
+        "make": "Surly",
+        "bike_type": "commuter",
+    }
+    store.resolutions[(store.bike.id, "identity.make")] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path="identity.make",
+        current_value="Surly",
+        resolution_state="resolved",
+        current_claim_id="bfc_manual_make",
+        effective_confidence="high",
+        source_type="manual_profile_edit",
+        observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+    store.resolutions[(store.bike.id, "identity.bike_type")] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path="identity.bike_type",
+        current_value="commuter",
+        resolution_state="resolved",
+        current_claim_id="bfc_manual_type",
+        effective_confidence="high",
+        source_type="manual_profile_edit",
+        observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _identity_claim("identity.make", "Trek", observed_text="Trek"),
+        _identity_claim(
+            "identity.bike_type",
+            "gravel",
+            observed_text=None,
+            evidence_basis="direct_visual",
+        ),
+    ]
+
+    await _service(
+        store, _Extractor(output), policy=ProfileResolverPolicy.bootstrap_v1()
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["identity"] == {
+        "make": "Surly",
+        "bike_type": "commuter",
+    }
+    assert {claim.disposition for claim in store.claims} == {"conflict"}
+    assert {
+        store.resolutions[(store.bike.id, field_path)].resolution_state
+        for field_path in ("identity.make", "identity.bike_type")
+    } == {"disputed"}
+
+
 async def test_bootstrap_policy_resolves_installed_derailleur_topology() -> None:
     store = _Store()
     output = _valid_single_claim_output()
@@ -1792,4 +1939,24 @@ def _direct_rolling_claim(field_path: str, value: object) -> dict[str, object]:
         "evidence_basis": "direct_visual",
         "observed_text": None,
         "evidence_cues": ["The installed rear hub interface is clearly visible."],
+    }
+
+
+def _identity_claim(
+    field_path: str,
+    value: object,
+    *,
+    observed_text: str | None,
+    evidence_basis: str = "readable_marking",
+) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": evidence_basis,
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": observed_text,
+        "evidence_cues": ["A readable frame marking is visible."],
     }

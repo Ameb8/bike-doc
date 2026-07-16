@@ -32,14 +32,20 @@ clear marking, and never estimate exact values from appearance or scale. Do not
 emit drivetrain.front_chainring_count, drivetrain.rear_speed_count, or
 drivetrain.legacy_description; those are backend-derived or compatibility-only
 fields.
+For identity and frame evidence, exact make, model, model year, material, and
+size require a clear readable marking (include the short exact marking as
+observed_text). A visual look-alike must never be presented as exact identity;
+abstain when it is the only evidence. You may use a clear direct whole-bike
+view for bike type and primary or secondary frame color only.
 Return one JSON object matching the provided schema exactly. You may emit
 claims only for the allowed field paths. Abstain whenever installedness,
 position/scope, or visibility cannot be directly supported.
 Loose components, packaging, reference images, another bike, and ambiguous
 target relations must not be described as installed on the target bike.
 Never return diagnostics, condition assessments, repair advice, personal data,
-or hidden reasoning. The caption can clarify installedness but cannot create a
-claim without visual image evidence.
+faces, owner identity, locations, addresses, license plates, frame serial
+numbers, VINs, or unrelated scene content. The caption can clarify
+installedness but cannot create a claim without visual image evidence.
 """.strip()
 
 

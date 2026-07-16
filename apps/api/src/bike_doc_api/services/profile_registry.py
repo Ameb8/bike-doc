@@ -184,7 +184,9 @@ def _component_fields(
 def _build_registry() -> dict[str, CanonicalField]:
     registry: dict[str, CanonicalField] = {}
     readable_identity: dict[str, Any] = {
-        "evidence": frozenset({"readable_marking"}),
+        # Similarity claims are retained for review, but the readable-marking
+        # requirement below keeps them out of automatic mutation.
+        "evidence": frozenset({"readable_marking", "derived_visual"}),
         "auto_fill": True,
         "supersedes": frozenset({"image_inference", "legacy_profile_migration"}),
         "marking": True,
@@ -232,8 +234,7 @@ def _build_registry() -> dict[str, CanonicalField]:
         "frame.material",
         {"aluminum", "steel", "carbon", "titanium", "other"},
         volatility="stable_identity",
-        evidence=frozenset({"readable_marking"}),
-        bundle="inference_only_pending",
+        **readable_identity,
     )
     for name in ("size_label", "primary_color", "secondary_color"):
         registry[f"frame.{name}"] = _field(
@@ -241,11 +242,16 @@ def _build_registry() -> dict[str, CanonicalField]:
             "string",
             volatility="stable_identity" if name == "size_label" else "descriptive",
             consequence="low",
-            auto_fill=name != "size_label",
+            auto_fill=True,
+            supersedes=(
+                frozenset({"image_inference", "legacy_profile_migration"})
+                if name == "size_label"
+                else frozenset()
+            ),
             bundle="readable_identity"
             if name == "size_label"
             else "visual_descriptive",
-            evidence=frozenset({"readable_marking"})
+            evidence=frozenset({"readable_marking", "derived_visual"})
             if name == "size_label"
             else frozenset({"direct_visual"}),
             marking=name == "size_label",

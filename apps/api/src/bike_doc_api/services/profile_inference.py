@@ -23,6 +23,9 @@ from bike_doc_api.schemas.profile_inference import (
     ProfileInferenceOutput,
     ProfileInferenceRequest,
 )
+from bike_doc_api.services.profile_inference_privacy import (
+    validate_privacy_safe_extractor_output,
+)
 from bike_doc_api.services.profile_inference_resolution import (
     ProfileInferenceResolver,
     ProfileResolutionConflictError,
@@ -348,6 +351,7 @@ class ProfileInferenceService:
 
             try:
                 output = ProfileInferenceOutput.model_validate(raw_output)
+                validate_privacy_safe_extractor_output(output)
                 claims = _validated_tracer_claims(output, artifacts)
             except (ValidationError, FieldRegistryValidationError, ValueError):
                 self._telemetry.event(

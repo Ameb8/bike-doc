@@ -24,6 +24,9 @@ from bike_doc_api.schemas.profile_inference import (
     PROFILE_INFERENCE_FIELD_PATHS,
     ProfileInferenceOutput,
 )
+from bike_doc_api.services.profile_inference_privacy import (
+    validate_privacy_safe_extractor_output,
+)
 from bike_doc_api.services.profile_inference_resolution import (
     ProfileInferenceResolver,
     ProfileResolverPolicy,
@@ -216,6 +219,7 @@ async def _evaluate_case(
 
     try:
         output = ProfileInferenceOutput.model_validate(output_raw)
+        validate_privacy_safe_extractor_output(output)
         claims = _validated_claims(case, output)
     except (ValidationError, FieldRegistryValidationError, ValueError) as exc:
         return _invalid_case(case, f"{type(exc).__name__}: {exc}", prediction)
