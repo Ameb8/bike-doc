@@ -1,0 +1,55 @@
+evals/bike-doc/profile-inference/drivetrain-roles-v1.responses.json
+  s_974ca7fdb24cdc::t_76609bda4d460e 1-28
+apps/api/src/bike_doc_api/providers/profile_inference/gemini.py
+  s_974ca7fdb24cdc::t_a3f2beea41f8c1 21-31
+  s_974ca7fdb24cdc::t_9b4bf76f001aa0 160-162
+apps/api/tests/unit/providers/test_profile_inference.py
+  s_974ca7fdb24cdc::t_dc67a098cf329a 76
+  s_974ca7fdb24cdc::t_24f7d45d5aed60 74-75,77-144
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_974ca7fdb24cdc::t_73edf4e4d8e142 129
+  s_974ca7fdb24cdc::t_ab0e0264dc97d8 41-46,122,124-128,130-149
+  s_974ca7fdb24cdc::t_dc67a098cf329a 123
+apps/api/src/bike_doc_api/schemas/profile_inference.py
+  s_974ca7fdb24cdc::t_a3f2beea41f8c1 28-31,47-61
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_974ca7fdb24cdc::t_fa77227c6b0c3d 449-467,469-497,501-527
+  s_974ca7fdb24cdc::t_40660a807a9de0 366-372,374-422
+  s_974ca7fdb24cdc::t_dc67a098cf329a 448
+  s_974ca7fdb24cdc::t_3dc110532b7b57 1670-1690
+  s_974ca7fdb24cdc::t_ebbf1ef6eefb86 363-365,373,468,498-500
+apps/api/tests/unit/services/test_profile_registry.py
+  s_974ca7fdb24cdc::t_f7a8197fd02062 103,117,121-132,142-159
+apps/api/src/bike_doc_api/services/profile_inference_resolution.py
+  s_974ca7fdb24cdc::t_c4d5e827a599fc 855-857
+  s_974ca7fdb24cdc::t_ebbf1ef6eefb86 849
+  s_974ca7fdb24cdc::t_2ba74f5af6c13e 317-320,819-848,859-860,863
+evals/bike-doc/profile-inference/drivetrain-roles-v1.json
+  s_974ca7fdb24cdc::t_76609bda4d460e 1-178
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_974ca7fdb24cdc::t_a3f2beea41f8c1 440-471
+apps/api/tests/unit/services/test_bike_service.py
+  s_974ca7fdb24cdc::t_a22d52c53b5474 710-721,723
+  s_974ca7fdb24cdc::t_6dd8b77129a808 677-696,741-754,757-761
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "4b7efa000c3ac36725f899bc72d73d053e66c93a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_974ca7fdb24cdc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f697c-097e-7042-8298-b3a2befc9e72",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
