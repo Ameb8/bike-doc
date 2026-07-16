@@ -613,13 +613,22 @@ async def test_null_drivetrain_presence_is_rejected_instead_of_meaning_absent() 
     assert store.bike.technical_profile["drivetrain"] == {}
 
 
-async def test_drivetrain_counts_and_legacy_description_are_not_inference_targets() -> (
-    None
-):
+@pytest.mark.parametrize(
+    ("field_path", "value"),
+    [
+        ("drivetrain.front_chainring_count", 2),
+        ("drivetrain.rear_speed_count", 10),
+        ("drivetrain.legacy_description", "Shimano 105"),
+    ],
+)
+async def test_derived_and_legacy_drivetrain_fields_are_not_inference_targets(
+    field_path: str,
+    value: object,
+) -> None:
     store = _Store()
     output = _valid_single_claim_output()
     output["claims"] = [
-        _drivetrain_claim("drivetrain.rear_speed_count", 10),
+        _drivetrain_claim(field_path, value),
     ]
 
     outcome = await _service(
@@ -631,6 +640,81 @@ async def test_drivetrain_counts_and_legacy_description_are_not_inference_target
     assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
     assert store.claims == []
     assert store.bike.technical_profile["drivetrain"] == {}
+
+
+async def test_resolved_crankset_count_derives_front_chainring_count() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_drivetrain_claim("drivetrain.crankset.chainring_count", 2),
+            "evidence_basis": "counted_visual",
+            "evidence_cues": ["Two installed chainrings are clearly counted."],
+        },
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"] == {
+        "crankset": {"chainring_count": 2},
+        "front_chainring_count": 2,
+    }
+    assert store.resolutions[
+        ("bike_rear", "drivetrain.front_chainring_count")
+    ].source_type == ("derived_resolution")
+
+
+async def test_apparent_drivetrain_count_is_rejected_before_claim_persistence() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _drivetrain_claim("drivetrain.rear_cluster.speed_count", 10),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.TERMINAL_FAILURE
+    assert store.claims == []
+    assert store.bike.technical_profile["drivetrain"] == {}
+
+
+async def test_disagreeing_resolved_rear_count_sources_leave_aggregate_disputed() -> (
+    None
+):
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_drivetrain_claim("drivetrain.rear_cluster.speed_count", 10),
+            "evidence_basis": "counted_visual",
+            "evidence_cues": ["Ten installed cassette sprockets are counted."],
+        },
+        {
+            **_drivetrain_claim("drivetrain.rear_shifter.speed_count", 11),
+            "evidence_basis": "readable_marking",
+            "observed_text": "11-speed",
+            "evidence_cues": ["The installed shifter's 11-speed marking is readable."],
+        },
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["drivetrain"]["rear_speed_count"] is None
+    resolution = store.resolutions[("bike_rear", "drivetrain.rear_speed_count")]
+    assert resolution.resolution_state == "disputed"
+    assert resolution.source_type == "derived_resolution"
 
 
 async def test_bootstrap_policy_resolves_a_front_brake_without_populating_rear() -> (

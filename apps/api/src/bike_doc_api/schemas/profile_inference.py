@@ -22,45 +22,9 @@ ROLLING_SYSTEM_INFERENCE_FIELD_PATHS = frozenset(
     and field.volatility_class != "derived"
 )
 DRIVETRAIN_INFERENCE_FIELD_PATHS = frozenset(
-    {
-        "drivetrain.architecture",
-        "drivetrain.drive_medium",
-        "drivetrain.front_shifter.actuation",
-        "drivetrain.rear_shifter.actuation",
-        "drivetrain.rear_derailleur.mount_type",
-        "drivetrain.rear_cluster.cluster_type",
-        *(
-            f"drivetrain.{component}.presence"
-            for component in (
-                "front_shifter",
-                "rear_shifter",
-                "front_derailleur",
-                "rear_derailleur",
-                "crankset",
-                "rear_cluster",
-                "chain",
-                "belt",
-                "gear_unit",
-                "bottom_bracket",
-            )
-        ),
-        *(
-            f"drivetrain.{component}.{identity_field}"
-            for component in (
-                "front_shifter",
-                "rear_shifter",
-                "front_derailleur",
-                "rear_derailleur",
-                "crankset",
-                "rear_cluster",
-                "chain",
-                "belt",
-                "gear_unit",
-                "bottom_bracket",
-            )
-            for identity_field in ("manufacturer", "model")
-        ),
-    },
+    path
+    for path, field in CANONICAL_FIELD_REGISTRY.items()
+    if path.startswith("drivetrain.") and field.volatility_class != "derived"
 )
 PROFILE_INFERENCE_FIELD_PATHS = (
     BRAKE_INFERENCE_FIELD_PATHS

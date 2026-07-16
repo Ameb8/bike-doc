@@ -479,6 +479,17 @@ class ProfileInferenceResolver:
                     source_transition="derived_resolution->derived_resolution",
                 ),
             )
+        for field_path in await recompute_derived_drivetrain_counts(
+            bikes=self._bikes,
+            bike=bike,
+        ):
+            changed = True
+            mutations.append(
+                ProfileMutation(
+                    field_path=field_path,
+                    source_transition="derived_resolution->derived_resolution",
+                ),
+            )
 
         if changed:
             bike.profile_revision = (bike.profile_revision or 0) + 1
@@ -752,6 +763,165 @@ async def recompute_derived_brake_summary(
         bike.technical_profile,
         field_path="brakes.legacy_summary",
         value=summary,
+    )
+    return True
+
+
+async def recompute_derived_drivetrain_counts(
+    *,
+    bikes: BikeResolutionRepositoryProtocol,
+    bike: BikeProfile,
+) -> tuple[str, ...]:
+    """Recompute drivetrain aggregates exclusively from resolved component facts."""
+
+    changed: list[str] = []
+    if await _recompute_derived_count(
+        bikes=bikes,
+        bike=bike,
+        derived_path="drivetrain.front_chainring_count",
+        source_paths=("drivetrain.crankset.chainring_count",),
+    ):
+        changed.append("drivetrain.front_chainring_count")
+    if await _recompute_derived_count(
+        bikes=bikes,
+        bike=bike,
+        derived_path="drivetrain.rear_speed_count",
+        source_paths=(
+            "drivetrain.rear_cluster.speed_count",
+            "drivetrain.rear_shifter.speed_count",
+            "drivetrain.gear_unit.speed_count",
+        ),
+    ):
+        changed.append("drivetrain.rear_speed_count")
+    return tuple(changed)
+
+
+async def _recompute_derived_count(
+    *,
+    bikes: BikeResolutionRepositoryProtocol,
+    bike: BikeProfile,
+    derived_path: str,
+    source_paths: tuple[str, ...],
+) -> bool:
+    """Project one count, retaining compact conflict context when sources disagree."""
+
+    sources = [
+        resolution
+        for path in source_paths
+        if (
+            resolution := await bikes.get_resolution(
+                bike_id=bike.id,
+                field_path=path,
+            )
+        )
+        is not None
+    ]
+    existing = await bikes.get_resolution(bike_id=bike.id, field_path=derived_path)
+    if not sources:
+        return False
+
+    conflict_ids = list(
+        dict.fromkeys(
+            claim_id
+            for resolution in sources
+            for claim_id in (
+                ([resolution.current_claim_id] if resolution.current_claim_id else [])
+                + list(resolution.conflicting_claim_ids or [])
+            )
+        )
+    )
+    disputed = any(resolution.resolution_state == "disputed" for resolution in sources)
+    values = {
+        resolution.current_value
+        for resolution in sources
+        if resolution.resolution_state == "resolved"
+        and resolution.current_value is not None
+    }
+    value = next(iter(values)) if len(values) == 1 and not disputed else None
+    disputed = disputed or len(values) > 1
+
+    if value is None:
+        next_state = "disputed" if disputed else "unknown"
+        next_conflicts = conflict_ids if disputed else []
+        if (
+            existing is not None
+            and existing.current_value is None
+            and existing.resolution_state == next_state
+            and (existing.conflicting_claim_ids or []) == next_conflicts
+        ):
+            return False
+        if existing is None:
+            existing = BikeFieldResolution(
+                bike_id=bike.id,
+                field_path=derived_path,
+                current_value=None,
+                resolution_state="unknown",
+                effective_confidence="unknown",
+            )
+        await _supersede_current_claim(bikes, existing)
+        existing.current_value = None
+        existing.current_claim_id = None
+        existing.supporting_claim_ids = []
+        existing.conflicting_claim_ids = next_conflicts
+        existing.resolution_state = next_state
+        existing.effective_confidence = "unknown"
+        existing.source_type = "derived_resolution"
+        existing.observed_at = None
+        existing.resolved_at = datetime.now(UTC)
+        await bikes.save_resolution(existing)
+        bike.technical_profile = with_technical_value(
+            bike.technical_profile,
+            field_path=derived_path,
+            value=None,
+        )
+        return True
+
+    if (
+        existing is not None
+        and existing.current_value == value
+        and existing.resolution_state == "resolved"
+    ):
+        return False
+    if existing is None:
+        existing = BikeFieldResolution(
+            bike_id=bike.id,
+            field_path=derived_path,
+            current_value=None,
+            resolution_state="unknown",
+            effective_confidence="unknown",
+        )
+    await _supersede_current_claim(bikes, existing)
+    observed_at = max(
+        (resolution.observed_at for resolution in sources if resolution.observed_at),
+        default=datetime.now(UTC),
+    )
+    derived_claim = await bikes.add_claim(
+        BikeFactClaim(
+            bike_id=bike.id,
+            field_path=derived_path,
+            value=value,
+            source_type="derived_resolution",
+            source_ref={"type": "resolved_drivetrain_components", "bike_id": bike.id},
+            evidence_refs=[],
+            observed_at=observed_at,
+            disposition="applied",
+            disposition_reason="derived_from_resolved_drivetrain_components",
+        ),
+    )
+    existing.current_value = value
+    existing.current_claim_id = derived_claim.id
+    existing.supporting_claim_ids = []
+    existing.conflicting_claim_ids = []
+    existing.resolution_state = "resolved"
+    existing.effective_confidence = "high"
+    existing.source_type = "derived_resolution"
+    existing.observed_at = observed_at
+    existing.resolved_at = datetime.now(UTC)
+    await bikes.save_resolution(existing)
+    bike.technical_profile = with_technical_value(
+        bike.technical_profile,
+        field_path=derived_path,
+        value=value,
     )
     return True
 

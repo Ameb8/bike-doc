@@ -125,8 +125,20 @@ def test_drivetrain_inference_registry_includes_roles_but_not_derived_specs() ->
         ),
         "drivetrain.front_shifter.actuation",
         "drivetrain.rear_shifter.actuation",
+        "drivetrain.front_shifter.speed_count",
+        "drivetrain.rear_shifter.speed_count",
         "drivetrain.rear_derailleur.mount_type",
         "drivetrain.rear_cluster.cluster_type",
+        "drivetrain.crankset.chainring_count",
+        "drivetrain.crankset.chainring_tooth_counts",
+        "drivetrain.rear_cluster.speed_count",
+        "drivetrain.rear_cluster.smallest_sprocket_teeth",
+        "drivetrain.rear_cluster.largest_sprocket_teeth",
+        "drivetrain.rear_cluster.driver_interface",
+        "drivetrain.chain.speed_compatibility",
+        "drivetrain.gear_unit.speed_count",
+        "drivetrain.bottom_bracket.interface",
+        "drivetrain.bottom_bracket.shell_width_mm",
     }
 
     assert expected == DRIVETRAIN_INFERENCE_FIELD_PATHS
@@ -137,6 +149,47 @@ def test_drivetrain_inference_registry_includes_roles_but_not_derived_specs() ->
         CANONICAL_FIELD_REGISTRY[path].image_auto_fill
         for path in DRIVETRAIN_INFERENCE_FIELD_PATHS
     )
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "drivetrain.crankset.chainring_count",
+        "drivetrain.crankset.chainring_tooth_counts",
+        "drivetrain.rear_cluster.speed_count",
+        "drivetrain.rear_cluster.smallest_sprocket_teeth",
+        "drivetrain.rear_cluster.largest_sprocket_teeth",
+        "drivetrain.front_shifter.speed_count",
+        "drivetrain.rear_shifter.speed_count",
+        "drivetrain.gear_unit.speed_count",
+        "drivetrain.chain.speed_compatibility",
+    ],
+)
+def test_counted_drivetrain_specs_require_counted_or_readable_evidence(
+    field_path: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert field.permitted_evidence_bases == frozenset(
+        {"counted_visual", "readable_marking"}
+    )
+    assert field.requires_counted_evidence is True
+    assert field.policy_bundle == "counted_spec"
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "drivetrain.rear_cluster.driver_interface",
+        "drivetrain.bottom_bracket.interface",
+        "drivetrain.bottom_bracket.shell_width_mm",
+    ],
+)
+def test_marked_drivetrain_specs_require_readable_markings(field_path: str) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert field.permitted_evidence_bases == frozenset({"readable_marking"})
+    assert field.requires_readable_marking is True
 
 
 @pytest.mark.parametrize(

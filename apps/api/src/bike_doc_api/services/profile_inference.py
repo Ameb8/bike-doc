@@ -898,12 +898,8 @@ def _validated_tracer_claims(
             claim.evidence_basis not in field.permitted_evidence_bases
         ):
             raise ValueError("claim field scope or evidence basis is invalid")
-        if (
-            field.requires_readable_marking
-            and claim.evidence_basis == "readable_marking"
-            and not (
-                isinstance(claim.observed_text, str) and claim.observed_text.strip()
-            )
+        if claim.evidence_basis == "readable_marking" and not (
+            isinstance(claim.observed_text, str) and claim.observed_text.strip()
         ):
             raise ValueError("readable-marking claims require observed text")
         if not set(claim.artifact_ids).issubset(valid_artifact_ids):

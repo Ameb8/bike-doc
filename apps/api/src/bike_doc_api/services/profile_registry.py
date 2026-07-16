@@ -437,29 +437,26 @@ def _build_registry() -> dict[str, CanonicalField]:
         prefix = f"drivetrain.{component}"
         _component_fields(registry, prefix)
         for name, values in enum_fields.items():
+            is_direct_configuration = name in {
+                "actuation",
+                "mount_type",
+                "cluster_type",
+            }
+            is_marked_specification = name == "driver_interface"
             registry[f"{prefix}.{name}"] = _enum(
                 f"{prefix}.{name}",
                 values,
-                evidence=frozenset({"direct_visual"})
-                if name
-                in {
-                    "actuation",
-                    "mount_type",
-                    "cluster_type",
-                }
-                else frozenset({"direct_visual", "derived_visual"}),
-                auto_fill=name
-                in {
-                    "actuation",
-                    "mount_type",
-                    "cluster_type",
-                },
-                direct=name
-                in {
-                    "actuation",
-                    "mount_type",
-                    "cluster_type",
-                },
+                evidence=(
+                    frozenset({"readable_marking"})
+                    if is_marked_specification
+                    else frozenset({"direct_visual"})
+                    if is_direct_configuration
+                    else frozenset({"direct_visual", "derived_visual"})
+                ),
+                auto_fill=is_direct_configuration or is_marked_specification,
+                supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
+                marking=is_marked_specification,
+                direct=is_direct_configuration,
                 bundle="installed_mechanism"
                 if name
                 in {
@@ -467,19 +464,44 @@ def _build_registry() -> dict[str, CanonicalField]:
                     "mount_type",
                     "cluster_type",
                 }
+                else "readable_identity"
+                if is_marked_specification
                 else "inference_only_pending",
             )
         if component == "bottom_bracket":
             registry[f"{prefix}.interface"] = _field(
                 f"{prefix}.interface",
                 "string",
+                evidence=frozenset({"readable_marking"}),
+                auto_fill=True,
+                supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
+                marking=True,
                 bundle="exact_dimension",
             )
         for name, kind in scalar_fields.items():
+            is_counted_specification = name in {
+                "speed_count",
+                "chainring_count",
+                "chainring_tooth_counts",
+                "smallest_sprocket_teeth",
+                "largest_sprocket_teeth",
+                "speed_compatibility",
+            }
             registry[f"{prefix}.{name}"] = _field(
                 f"{prefix}.{name}",
                 kind,
-                bundle="counted_spec" if kind == "integer" else "exact_dimension",
+                evidence=(
+                    frozenset({"counted_visual", "readable_marking"})
+                    if is_counted_specification
+                    else frozenset({"readable_marking"})
+                ),
+                auto_fill=True,
+                supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
+                marking=not is_counted_specification,
+                counted=is_counted_specification,
+                bundle="counted_spec"
+                if is_counted_specification
+                else "exact_dimension",
             )
 
     driver_interfaces = {

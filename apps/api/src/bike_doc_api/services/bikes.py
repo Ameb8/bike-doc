@@ -37,6 +37,7 @@ from bike_doc_api.schemas.bike import (
 from bike_doc_api.schemas.common import RepairSessionPhase
 from bike_doc_api.services.profile_inference_resolution import (
     recompute_derived_brake_summary,
+    recompute_derived_drivetrain_counts,
 )
 from bike_doc_api.services.profile_inference_telemetry import (
     ProfileInferenceTelemetry,
@@ -531,6 +532,8 @@ class ResolvedBikeProfileService:
                 )
         if await recompute_derived_brake_summary(bikes=self._bikes, bike=bike):
             changed = True
+        if await recompute_derived_drivetrain_counts(bikes=self._bikes, bike=bike):
+            changed = True
         if changed:
             bike.profile_revision = (bike.profile_revision or 0) + 1
             bike.updated_at = timestamp
@@ -772,7 +775,7 @@ def _public_profile_from_model(
         str | None,
         _projection_or_legacy(bike, "frame.material", bike.frame_material),
     )
-    drivetrain = cast(
+    drivetrain = _structured_drivetrain_summary(bike) or cast(
         str | None,
         _projection_or_legacy(
             bike,
@@ -870,4 +873,26 @@ def _legacy_brake_type(bike: BikeProfileModel) -> str | None:
         return "rim"
     if has_technical_value_path(bike.technical_profile, "brakes.legacy_summary"):
         return technical_value(bike.technical_profile, "brakes.legacy_summary")
+    return None
+
+
+def _structured_drivetrain_summary(bike: BikeProfileModel) -> str | None:
+    """Return a compatibility display summary without parsing legacy text."""
+
+    architecture = technical_value(bike.technical_profile, "drivetrain.architecture")
+    medium = technical_value(bike.technical_profile, "drivetrain.drive_medium")
+    front_count = technical_value(
+        bike.technical_profile,
+        "drivetrain.front_chainring_count",
+    )
+    rear_count = technical_value(
+        bike.technical_profile,
+        "drivetrain.rear_speed_count",
+    )
+    if not isinstance(architecture, str) or not isinstance(medium, str):
+        return None
+    if isinstance(front_count, int) and isinstance(rear_count, int):
+        return f"{front_count}x{rear_count} {medium} {architecture}"
+    if architecture in {"singlespeed_freewheel", "fixed_gear"}:
+        return f"{medium} {architecture}"
     return None
