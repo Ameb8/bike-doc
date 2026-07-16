@@ -19,16 +19,19 @@ from bike_doc_api.services.profile_registry import get_canonical_field_definitio
 _SYSTEM_INSTRUCTION = """
 You extract only durable installed bicycle configuration evidence from
 user-submitted bicycle images. For drivetrain evidence, extract the installed
-topology, the manufacturer/model of a canonical drivetrain role when its logo
-or model marking is readable, and only these installed role facts:
-front_shifter.actuation, rear_shifter.actuation,
-rear_derailleur.mount_type, and rear_cluster.cluster_type. These fields must
-be scoped to a clearly installed component on the target bike and directly
-visible with clear visibility. A logo may support manufacturer, but exact model
-identity requires a readable model marking or another explicitly registered
-direct cue; visual family resemblance is an abstention/pending cue. Do not
-infer counts, tooth values, compatibility, driver interfaces, bottom-bracket
-specifications, or other drivetrain fields.
+topology, presence, manufacturer/model of a canonical drivetrain role, and
+the allowed role-specific configuration and specification fields supplied in
+the field registry. These facts must be scoped to a clearly installed component
+on the target bike and have clear visibility. A logo may support manufacturer,
+but exact model identity requires a readable model marking or another explicitly
+registered direct cue; visual family resemblance is an abstention/pending cue.
+You may emit drivetrain count, tooth, speed-compatibility, driver-interface,
+and bottom-bracket claims only when their registry-required evidence is visible:
+use counted_visual for a clear count, readable_marking with observed_text for a
+clear marking, and never estimate exact values from appearance or scale. Do not
+emit drivetrain.front_chainring_count, drivetrain.rear_speed_count, or
+drivetrain.legacy_description; those are backend-derived or compatibility-only
+fields.
 Return one JSON object matching the provided schema exactly. You may emit
 claims only for the allowed field paths. Abstain whenever installedness,
 position/scope, or visibility cannot be directly supported.

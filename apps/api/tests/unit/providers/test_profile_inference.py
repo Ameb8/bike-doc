@@ -142,3 +142,19 @@ async def test_extractor_sends_drivetrain_roles_and_identity() -> None:
     assert fields["drivetrain.rear_cluster.cluster_type"][
         "permitted_evidence_bases"
     ] == ["direct_visual"]
+
+    assert fields["drivetrain.crankset.chainring_count"][
+        "permitted_evidence_bases"
+    ] == ["counted_visual", "readable_marking"]
+    assert fields["drivetrain.rear_cluster.driver_interface"][
+        "permitted_evidence_bases"
+    ] == ["readable_marking"]
+    assert fields["drivetrain.bottom_bracket.shell_width_mm"][
+        "permitted_evidence_bases"
+    ] == ["readable_marking"]
+
+    instruction = captured["config"].system_instruction
+    assert "You may emit drivetrain count, tooth, speed-compatibility" in instruction
+    assert "Do not infer counts, tooth values" not in instruction
+    assert "drivetrain.front_chainring_count" in instruction
+    assert "drivetrain.rear_speed_count" in instruction
