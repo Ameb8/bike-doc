@@ -77,6 +77,16 @@ tasks:
     cmds:
       - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-topology-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-topology-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-topology-v1.baseline.json --output /tmp/bike-doc-drivetrain-topology-evaluation.json
 
+  eval:drivetrain-roles:
+    desc: Evaluate recorded installed drivetrain role and identity inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-roles-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-roles-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-roles-v1.baseline.json --output /tmp/bike-doc-drivetrain-roles-evaluation.json
+
+  eval:drivetrain-specifications:
+    desc: Evaluate recorded counted and marked drivetrain specification inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-specifications-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-specifications-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-specifications-v1.baseline.json --output /tmp/bike-doc-drivetrain-specifications-evaluation.json
+
   ci:
     desc: Run the non-Docker CI verification suite.
     cmds:

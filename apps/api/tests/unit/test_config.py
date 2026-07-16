@@ -136,6 +136,14 @@ def test_profile_inference_deployment_mode_explicitly_supports_shadow() -> None:
     assert settings.profile_inference_policy_mode == "shadow"
 
 
+def test_profile_inference_default_extractor_version_covers_all_drivetrain_slices() -> (
+    None
+):
+    assert Settings().profile_inference_extractor_version == (
+        "drivetrain-specifications.v1"
+    )
+
+
 def test_profile_inference_policy_settings_require_separate_ordered_thresholds() -> (
     None
 ):

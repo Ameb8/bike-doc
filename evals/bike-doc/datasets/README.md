@@ -9,6 +9,21 @@ Profile-inference evaluation assets are under `../profile-inference`. They use
 a versioned label schema and are evaluated by the reusable runner, rather than
 by pytest assertions over provider responses.
 
+## Drivetrain Profile Inference
+
+Run all three drivetrain tracers before accepting a drivetrain extractor or
+registry change:
+
+```bash
+task eval:drivetrain-topology
+task eval:drivetrain-roles
+task eval:drivetrain-specifications
+```
+
+The specifications tracer covers counted chainring, sprocket, and speed facts;
+marked driver-interface and bottom-bracket facts; disagreement; loose parts;
+and abstention. Each tracer has a committed accepted baseline.
+
 ## Rear-brake profile inference
 
 Run the recorded deterministic response fixture and inspect the report with:

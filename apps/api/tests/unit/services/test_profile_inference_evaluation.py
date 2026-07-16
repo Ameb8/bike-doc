@@ -44,6 +44,14 @@ DRIVETRAIN_ROLES_DATASET_PATH = ROLLING_DATASET_PATH.with_name(
 DRIVETRAIN_ROLES_PREDICTIONS_PATH = DRIVETRAIN_ROLES_DATASET_PATH.with_name(
     "drivetrain-roles-v1.responses.json",
 )
+DRIVETRAIN_SPECIFICATIONS_DATASET_PATH = ROLLING_DATASET_PATH.with_name(
+    "drivetrain-specifications-v1.json",
+)
+DRIVETRAIN_SPECIFICATIONS_PREDICTIONS_PATH = (
+    DRIVETRAIN_SPECIFICATIONS_DATASET_PATH.with_name(
+        "drivetrain-specifications-v1.responses.json",
+    )
+)
 
 
 @pytest.mark.asyncio
@@ -146,6 +154,39 @@ async def test_drivetrain_roles_evaluation_covers_claims_and_abstention() -> Non
         "drivetrain.rear_shifter.manufacturer",
         "drivetrain.rear_shifter.model",
         "drivetrain.rear_cluster.cluster_type",
+    }
+
+
+@pytest.mark.asyncio
+async def test_drivetrain_specifications_evaluation_covers_counts_and_markings() -> (
+    None
+):
+    report = await evaluate_dataset(
+        load_json(DRIVETRAIN_SPECIFICATIONS_DATASET_PATH),
+        load_predictions(load_json(DRIVETRAIN_SPECIFICATIONS_PREDICTIONS_PATH)),
+    )
+
+    assert report["case_count"] == 8
+    assert report["metrics"]["abstention_correctness"] == 1.0
+    assert report["metrics"]["installedness_accuracy"] == 1.0
+    assert report["metrics"]["auto_fill_precision"] == 1.0
+    assert report["metrics"]["profile_corruption_failures"] == {}
+    assert {
+        item["field_path"]
+        for item in report["field_evidence_metrics"]
+        if item["field_path"].startswith("drivetrain.")
+    } == {
+        "drivetrain.crankset.chainring_count",
+        "drivetrain.crankset.chainring_tooth_counts",
+        "drivetrain.rear_cluster.speed_count",
+        "drivetrain.rear_cluster.smallest_sprocket_teeth",
+        "drivetrain.rear_cluster.largest_sprocket_teeth",
+        "drivetrain.rear_cluster.driver_interface",
+        "drivetrain.rear_shifter.speed_count",
+        "drivetrain.gear_unit.speed_count",
+        "drivetrain.chain.speed_compatibility",
+        "drivetrain.bottom_bracket.interface",
+        "drivetrain.bottom_bracket.shell_width_mm",
     }
 
 
