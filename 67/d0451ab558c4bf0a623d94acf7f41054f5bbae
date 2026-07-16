@@ -1,0 +1,42 @@
+evals/bike-doc/datasets/README.md
+  s_74811120e6cad9::t_73b23b572060b9 12-26
+evals/bike-doc/profile-inference/drivetrain-roles-v1.baseline.json
+  s_74811120e6cad9::t_78652b79fdd5e0 1-48
+evals/bike-doc/profile-inference/drivetrain-specifications-v1.baseline.json
+  s_74811120e6cad9::t_78652b79fdd5e0 1-48
+evals/bike-doc/profile-inference/drivetrain-specifications-v1.json
+  s_74811120e6cad9::t_06f286581e558d 1-136
+apps/api/src/bike_doc_api/core/config.py
+  s_74811120e6cad9::t_38fc7052378273 109
+.env.example
+  s_74811120e6cad9::t_38fc7052378273 67
+apps/api/tests/unit/test_config.py
+  s_74811120e6cad9::t_38fc7052378273 139-146
+Taskfile.yml
+  s_74811120e6cad9::t_38fc7052378273 80-89
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_74811120e6cad9::t_38fc7052378273 47-54,160-189
+evals/bike-doc/profile-inference/drivetrain-specifications-v1.responses.json
+  s_74811120e6cad9::t_06f286581e558d 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "67d0451ab558c4bf0a623d94acf7f41054f5bbae",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_74811120e6cad9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f69bd-fd64-7e43-98b1-928b75d18b3e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
