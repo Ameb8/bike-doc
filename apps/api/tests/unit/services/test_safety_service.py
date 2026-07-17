@@ -9,7 +9,10 @@ import pytest
 
 from bike_doc_api.core.errors import SafetyPolicyViolationError, ValidationAppError
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
-from bike_doc_api.services.safety import SafetyService
+from bike_doc_api.services.safety import (
+    SafetyService,
+    profile_field_requires_independent_evidence,
+)
 
 
 def _flag(**overrides: Any) -> dict[str, Any]:
@@ -79,6 +82,32 @@ def test_multiple_severities_use_highest_active_severity() -> None:
     )
 
     assert service.derive_safety_state(flags) == "shop_recommended"
+
+
+@pytest.mark.parametrize(
+    ("resolution_state", "source_type", "consequence_class", "expected"),
+    [
+        ("resolved", "image_inference", "safety", True),
+        ("resolved", "image_inference", "compatibility", True),
+        ("disputed", "manual_profile_edit", "safety", True),
+        ("resolved", "manual_profile_edit", "safety", False),
+        ("resolved", "image_inference", "low", False),
+    ],
+)
+def test_profile_inference_never_supplies_safety_or_compatibility_evidence_alone(
+    resolution_state: str,
+    source_type: str,
+    consequence_class: str,
+    expected: bool,
+) -> None:
+    assert (
+        profile_field_requires_independent_evidence(
+            resolution_state=resolution_state,
+            source_type=source_type,
+            consequence_class=consequence_class,
+        )
+        is expected
+    )
 
 
 def test_unknown_code_is_rejected() -> None:

@@ -59,6 +59,7 @@ class BikeProfileFieldState(BaseModel):
     source_type: str | None = None
     observed_at: datetime | None = None
     consequence_class: Literal["low", "compatibility", "safety"]
+    requires_independent_evidence: bool
 
 
 class BikeProfileConflict(BaseModel):

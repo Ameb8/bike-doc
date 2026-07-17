@@ -92,6 +92,11 @@ tasks:
     cmds:
       - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/electric-assist-v1.json --predictions evals/bike-doc/profile-inference/electric-assist-v1.responses.json --baseline evals/bike-doc/profile-inference/electric-assist-v1.baseline.json --output /tmp/bike-doc-electric-assist-evaluation.json
 
+  eval:suspension:
+    desc: Evaluate recorded suspension inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/suspension-v1.json --predictions evals/bike-doc/profile-inference/suspension-v1.responses.json --baseline evals/bike-doc/profile-inference/suspension-v1.baseline.json --output /tmp/bike-doc-suspension-evaluation.json
+
   ci:
     desc: Run the non-Docker CI verification suite.
     cmds:

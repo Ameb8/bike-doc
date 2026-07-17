@@ -126,6 +126,7 @@ def test_electric_motor_position_uses_clear_installed_mechanism_policy() -> None
     assert field.permitted_evidence_bases == frozenset({"direct_visual"})
     assert field.requires_direct_evidence is True
     assert field.image_auto_fill is True
+    assert "manual_profile_edit" in field.image_auto_supersedes
     assert field.policy_bundle == "installed_mechanism"
 
 

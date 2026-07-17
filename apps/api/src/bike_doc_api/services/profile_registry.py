@@ -711,6 +711,9 @@ def _build_registry() -> dict[str, CanonicalField]:
         {"front_hub", "rear_hub", "mid_drive", "other"},
         consequence="safety",
         auto_fill=True,
+        supersedes=frozenset(
+            {"image_inference", "legacy_profile_migration", "manual_profile_edit"}
+        ),
         direct=True,
         bundle="installed_mechanism",
     )

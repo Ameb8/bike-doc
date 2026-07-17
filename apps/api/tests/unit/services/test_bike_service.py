@@ -774,6 +774,7 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
         "source_type": "image_inference",
         "observed_at": datetime(2026, 7, 12, tzinfo=UTC),
         "consequence_class": "compatibility",
+        "requires_independent_evidence": True,
     }
     assert result.user_skill_level == "beginner"
 
@@ -864,6 +865,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
         "source_type": "image_inference",
         "observed_at": observed_at,
         "consequence_class": "safety",
+        "requires_independent_evidence": True,
     }
     assert result.bike_profile.conflicts == [
         {
@@ -886,6 +888,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
         "source_type",
         "confidence",
         "consequence",
+        "requires_independent_evidence",
     ),
     [
         (
@@ -895,6 +898,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "image_inference",
             "high",
             "compatibility",
+            True,
         ),
         (
             "suspension.fork.type",
@@ -903,6 +907,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "image_inference",
             "high",
             "compatibility",
+            True,
         ),
         (
             "electric_assist.motor.position",
@@ -911,6 +916,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "image_inference",
             "high",
             "safety",
+            True,
         ),
         (
             "electric_assist.battery.nominal_voltage_v",
@@ -919,6 +925,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "image_inference",
             "high",
             "safety",
+            True,
         ),
         (
             "brakes.front.mechanism",
@@ -927,6 +934,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "manual_profile_edit",
             "high",
             "safety",
+            False,
         ),
         (
             "rolling_system.rear.hub.axle_type",
@@ -935,6 +943,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             "image_inference",
             "high",
             "compatibility",
+            True,
         ),
         (
             "drivetrain.rear_cluster.driver_interface",
@@ -943,6 +952,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
             None,
             "unknown",
             "compatibility",
+            False,
         ),
     ],
 )
@@ -953,6 +963,7 @@ async def test_diagnostic_profile_context_keeps_safety_and_compatibility_metadat
     source_type: str | None,
     confidence: str,
     consequence: str,
+    requires_independent_evidence: bool,
 ) -> None:
     bike = _bike()
     repair_session = RepairSessionModel(
@@ -997,6 +1008,7 @@ async def test_diagnostic_profile_context_keeps_safety_and_compatibility_metadat
         "source_type": source_type,
         "observed_at": observed_at,
         "consequence_class": consequence,
+        "requires_independent_evidence": requires_independent_evidence,
     }
     serialized = str(result.bike_profile.field_states[field_path])
     assert "model_score" not in serialized

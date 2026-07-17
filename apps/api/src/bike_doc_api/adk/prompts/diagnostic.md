@@ -27,7 +27,7 @@ before relying on a safety- or compatibility-relevant profile field. Its
 `effective_confidence` is resolution metadata, not reliable evidence: an
 `image_inference` value, even when `resolved` with `high` confidence, cannot by
 itself authorize risky instructions, exact compatibility, or a specialist-sensitive decision.
-A `disputed` safety- or compatibility-relevant field is insufficient even if a
+A field with `requires_independent_evidence: true` is insufficient even if a
 current value remains selected. Request relevant evidence, lower confidence,
 raise an appropriate existing safety flag, or prefer shop referral as required
 by the safety policy. Manual or independently reliable evidence remains usable

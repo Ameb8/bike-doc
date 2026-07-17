@@ -54,6 +54,7 @@ from bike_doc_api.services.profile_resolution import (
     technical_value,
     with_technical_value,
 )
+from bike_doc_api.services.safety import profile_field_requires_independent_evidence
 
 DEFAULT_BIKE_LIMIT = 50
 MAX_BIKE_LIMIT = 100
@@ -629,14 +630,22 @@ class ResolvedBikeProfileService:
         field_states: dict[str, dict[str, Any]] = {}
         conflicts: list[dict[str, Any]] = []
         for resolution in resolutions:
+            consequence_class = get_canonical_field_definition(
+                resolution.field_path
+            ).consequence_class
             field_states[resolution.field_path] = {
                 "resolution_state": resolution.resolution_state,
                 "effective_confidence": resolution.effective_confidence,
                 "source_type": resolution.source_type,
                 "observed_at": resolution.observed_at,
-                "consequence_class": get_canonical_field_definition(
-                    resolution.field_path
-                ).consequence_class,
+                "consequence_class": consequence_class,
+                "requires_independent_evidence": (
+                    profile_field_requires_independent_evidence(
+                        resolution_state=resolution.resolution_state,
+                        source_type=resolution.source_type,
+                        consequence_class=consequence_class,
+                    )
+                ),
             }
             if resolution.resolution_state == "disputed":
                 candidate_values: list[Any] = []

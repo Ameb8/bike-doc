@@ -51,6 +51,7 @@ class _BikeProfileService:
                         "source_type": "image_inference",
                         "observed_at": "2026-07-12T00:00:00Z",
                         "consequence_class": "safety",
+                        "requires_independent_evidence": True,
                     },
                 },
                 conflicts=[],
@@ -89,6 +90,7 @@ async def test_get_bike_profile_returns_success_shape_and_active_profile() -> No
         "source_type": "image_inference",
         "observed_at": "2026-07-12T00:00:00Z",
         "consequence_class": "safety",
+        "requires_independent_evidence": True,
     }
     assert "model_score" not in str(result)
     assert result["data"]["user_skill_level"] == "beginner"

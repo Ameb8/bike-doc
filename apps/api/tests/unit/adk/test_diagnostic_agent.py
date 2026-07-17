@@ -110,7 +110,7 @@ def test_diagnostic_prompt_contains_required_stage_14_instructions() -> None:
         "`effective_confidence` is resolution metadata, not reliable evidence",
         "`image_inference` value, even when `resolved` with `high` confidence",
         "exact compatibility, or a specialist-sensitive decision",
-        "A `disputed` safety- or compatibility-relevant field is insufficient",
+        "`requires_independent_evidence: true` is insufficient",
         "not automatically a safety incident",
         "Server-owned safety validation and state transitions remain authoritative",
         "step-by-step repair instructions",

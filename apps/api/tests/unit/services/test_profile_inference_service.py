@@ -1562,6 +1562,56 @@ async def test_newer_installed_evidence_supersedes_older_manual_rear_brake() -> 
     assert store.claims[-1].disposition == "applied"
 
 
+async def test_newer_installed_evidence_supersedes_older_manual_motor_position() -> (
+    None
+):
+    """Installed motor position follows the shared replacement policy."""
+
+    store = _Store()
+    older = datetime(2026, 7, 10, tzinfo=UTC)
+    current = BikeFactClaim(
+        id="bfc_manual_motor",
+        bike_id=store.bike.id,
+        field_path="electric_assist.motor.position",
+        value="rear_hub",
+        source_type="manual_profile_edit",
+        source_ref={"type": "bike_profile", "id": store.bike.id},
+        evidence_refs=[],
+        observed_at=older,
+        disposition="applied",
+    )
+    store.claims.append(current)
+    store.resolutions[(store.bike.id, current.field_path)] = BikeFieldResolution(
+        bike_id=store.bike.id,
+        field_path=current.field_path,
+        current_value=current.value,
+        resolution_state="resolved",
+        current_claim_id=current.id,
+        effective_confidence="high",
+        source_type=current.source_type,
+        observed_at=older,
+        resolved_at=older,
+    )
+    store.turn.created_at = datetime(2026, 7, 11, tzinfo=UTC)
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _electric_claim("electric_assist.motor.position", "mid_drive"),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["electric_assist"]["motor"] == {
+        "position": "mid_drive",
+    }
+    assert store.bike.profile_revision == 1
+    assert current.disposition == "superseded"
+    assert store.claims[-1].disposition == "applied"
+
+
 async def test_older_disagreement_is_retained_as_a_disputed_conflict() -> None:
     store = _Store()
     current_time = datetime(2026, 7, 12, tzinfo=UTC)
