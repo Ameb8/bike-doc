@@ -1,0 +1,88 @@
+apps/api/src/bike_doc_api/services/profile_inference_resolution.py
+  s_829cf5f02220d2::t_a32e1f7f06e2d7 1006-1009
+  s_829cf5f02220d2::t_e1c602de38c9d9 19,1010-1012
+evals/bike-doc/profile-inference/electric-assist-v1.json
+  s_1593c2b8d3879a::t_b71b0aa3f37862 1-16
+evals/bike-doc/profile-inference/electric-assist-v1.responses.json
+  s_1593c2b8d3879a::t_b71b0aa3f37862 1-8
+apps/api/tests/unit/providers/test_profile_inference.py
+  s_1593c2b8d3879a::t_66c858d993cc3d 271-322,326-327
+  s_1593c2b8d3879a::t_6d7201217a3c0c 323-325
+  s_829cf5f02220d2::t_5d2a27a64bcfa7 220-270
+apps/api/tests/unit/services/test_profile_registry.py
+  s_829cf5f02220d2::t_5d2a27a64bcfa7 13,87-100,170-198,200-218
+  s_1593c2b8d3879a::t_8c2463d31c493f 10,101-169
+  s_829cf5f02220d2::t_78292c9c7f3305 199
+apps/api/src/bike_doc_api/schemas/profile_inference.py
+  s_1593c2b8d3879a::t_cfa93826695a6e 47-52,60
+  s_829cf5f02220d2::t_9ef934ab753225 41-46,59
+apps/api/src/bike_doc_api/services/profile_resolution.py
+  s_829cf5f02220d2::t_e1c602de38c9d9 62-67,157-158
+  s_1593c2b8d3879a::t_838a67a1d9c471 159-164,166-172
+  s_1593c2b8d3879a::t_6d7201217a3c0c 165
+evals/bike-doc/profile-inference/suspension-v1.json
+  s_829cf5f02220d2::t_829a4191e677c9 1,16-17
+  s_829cf5f02220d2::t_fa864d28619935 2-15
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_829cf5f02220d2::t_ab733725910fce 831-860
+  s_829cf5f02220d2::t_3c3fd4c7e1735e 641-674
+  s_1593c2b8d3879a::t_59016625814ac9 710
+  s_1593c2b8d3879a::t_87f95ff8f040bf 786,805-821,827
+  s_829cf5f02220d2::t_4944a728d9b888 676-709
+  s_829cf5f02220d2::t_a2bc8c2e3c324b 640,675
+  s_829cf5f02220d2::t_a32e1f7f06e2d7 620
+  s_829cf5f02220d2::t_d68a2ecbbe29c7 621-639,2308-2325
+  s_1593c2b8d3879a::t_8c2463d31c493f 711-716,720-749,2326-2344
+  s_1593c2b8d3879a::t_268c45a900253e 717-719,750-752
+  s_1593c2b8d3879a::t_eec483a2ae51c5 753-785,787-798,803-804,822-826,828-830
+  s_1593c2b8d3879a::t_0a78296de28363 799-802
+evals/bike-doc/profile-inference/electric-assist-v1.baseline.json
+  s_1593c2b8d3879a::t_dc08a8fbe7c6d1 1-93
+evals/bike-doc/profile-inference/suspension-v1.baseline.json
+  s_829cf5f02220d2::t_c1e335e5304e2e 1-44
+evals/bike-doc/profile-inference/suspension-v1.responses.json
+  s_829cf5f02220d2::t_829a4191e677c9 1-11
+apps/api/src/bike_doc_api/providers/profile_inference/gemini.py
+  s_829cf5f02220d2::t_5d2a27a64bcfa7 47-54
+  s_1593c2b8d3879a::t_6d7201217a3c0c 62-63
+  s_1593c2b8d3879a::t_87f95ff8f040bf 55-61,64-65
+Taskfile.yml
+  s_1593c2b8d3879a::t_acb7a430ecc07c 90-94
+apps/api/tests/unit/services/test_profile_inference_evaluation.py
+  s_1593c2b8d3879a::t_734aed765f239e 55-58,196,198-217
+  s_1593c2b8d3879a::t_b18373086636f9 197
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_829cf5f02220d2::t_9ef934ab753225 625-629
+  s_1593c2b8d3879a::t_cfa93826695a6e 713-714
+  s_829cf5f02220d2::t_6d4393db20c119 641-642,651-652
+  s_1593c2b8d3879a::t_838a67a1d9c471 727
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8966af5335715034519692ad7bedd713e2896bca",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_1593c2b8d3879a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ebd-519f-7d22-aaea-674353d70896",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_829cf5f02220d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6dd8-050b-77a0-98ad-e05c91c0a194",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
