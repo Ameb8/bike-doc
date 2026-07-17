@@ -1,0 +1,38 @@
+apps/api/src/bike_doc_api/adk/prompts/diagnostic.md
+  s_d6f465fdf1fcae::t_665a321b017230 25-37
+apps/api/tests/unit/adk/tools/test_bike_profile_tool.py
+  s_d6f465fdf1fcae::t_6b97dbb91383e3 53,91
+apps/api/src/bike_doc_api/services/bikes.py
+  s_d6f465fdf1fcae::t_64048d73d485f5 637-639
+apps/api/tests/unit/services/test_bike_service.py
+  s_d6f465fdf1fcae::t_78a085e71edd4e 1004-1005
+  s_d6f465fdf1fcae::t_68e40f762c86c2 776
+  s_d6f465fdf1fcae::t_2da835542b00f3 866
+  s_d6f465fdf1fcae::t_6b97dbb91383e3 879-881,890,947-1003
+  s_d6f465fdf1fcae::t_acc128819894ff 882-889,891-946
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_d6f465fdf1fcae::t_64048d73d485f5 61
+apps/api/tests/unit/adk/test_diagnostic_agent.py
+  s_d6f465fdf1fcae::t_e448055d894af5 109-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "d6bfbdb191b3677f9f8aad4f24340e1cb869a5c4",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_d6f465fdf1fcae": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6ed1-7359-7843-8166-615be4e3a85a",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
