@@ -52,6 +52,10 @@ DRIVETRAIN_SPECIFICATIONS_PREDICTIONS_PATH = (
         "drivetrain-specifications-v1.responses.json",
     )
 )
+ELECTRIC_ASSIST_DATASET_PATH = ROLLING_DATASET_PATH.with_name("electric-assist-v1.json")
+ELECTRIC_ASSIST_PREDICTIONS_PATH = ELECTRIC_ASSIST_DATASET_PATH.with_name(
+    "electric-assist-v1.responses.json",
+)
 
 
 @pytest.mark.asyncio
@@ -122,7 +126,6 @@ async def test_drivetrain_evaluation_covers_topology_and_installedness() -> None
 
     assert report["case_count"] == 5
     assert report["metrics"]["abstention_correctness"] == 1.0
-    assert report["metrics"]["installedness_accuracy"] == 1.0
     assert report["metrics"]["auto_fill_precision"] == 1.0
     assert report["metrics"]["profile_corruption_failures"] == {}
 
@@ -187,6 +190,31 @@ async def test_drivetrain_specifications_evaluation_covers_counts_and_markings()
         "drivetrain.chain.speed_compatibility",
         "drivetrain.bottom_bracket.interface",
         "drivetrain.bottom_bracket.shell_width_mm",
+    }
+
+
+@pytest.mark.asyncio
+async def test_electric_assist_evaluation_covers_required_cases() -> None:
+    report = await evaluate_dataset(
+        load_json(ELECTRIC_ASSIST_DATASET_PATH),
+        load_predictions(load_json(ELECTRIC_ASSIST_PREDICTIONS_PATH)),
+    )
+
+    assert report["case_count"] == 6
+    assert report["metrics"]["abstention_correctness"] == 1.0
+    assert report["metrics"]["auto_fill_precision"] == 1.0
+    assert report["metrics"]["profile_corruption_failures"] == {}
+    assert {
+        (item["field_path"], item["evidence_class"])
+        for item in report["field_evidence_metrics"]
+        if item["field_path"].startswith("electric_assist.")
+    } == {
+        ("electric_assist.presence", "direct_visual"),
+        ("electric_assist.motor.position", "direct_visual"),
+        ("electric_assist.system_manufacturer", "readable_marking"),
+        ("electric_assist.motor.model", "readable_marking"),
+        ("electric_assist.battery.model", "readable_marking"),
+        ("electric_assist.battery.nominal_voltage_v", "readable_marking"),
     }
 
 

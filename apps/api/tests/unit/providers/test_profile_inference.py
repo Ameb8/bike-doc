@@ -217,6 +217,114 @@ async def test_extractor_instruction_guides_cockpit_and_seating_evidence() -> No
     assert "clamp dimensions" in instruction
 
 
+async def test_extractor_instruction_constrains_suspension_identity_and_travel() -> (
+    None
+):
+    captured: dict[str, object] = {}
+
+    async def generate_content(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            parsed={
+                "schema_version": "bike_profile_inference.v1",
+                "scene": {
+                    "contains_bicycle": True,
+                    "multiple_bicycles": False,
+                    "target_relation": "installed_on_target_bike",
+                    "confidence_score": 0.99,
+                },
+                "claims": [],
+                "abstentions": [],
+            },
+            usage_metadata=None,
+        )
+
+    extractor = GeminiProfileInferenceExtractor(
+        model="test-model", timeout_seconds=1, generate_content=generate_content
+    )
+    await extractor.extract(
+        ProfileInferenceRequest(
+            bike_id="bike_test",
+            repair_session_id="rs_test",
+            images=[
+                InferenceImage(
+                    artifact_id="art_test", mime_type="image/jpeg", content=b"image"
+                )
+            ],
+        )
+    )
+
+    metadata = json.loads(captured["contents"][0])  # type: ignore[index]
+    fields = metadata["field_registry"]["fields"]
+    assert fields["suspension.fork.type"]["allowed_values"] == [
+        "other",
+        "rigid",
+        "suspension",
+    ]
+    for field_path in ("suspension.fork.travel_mm", "suspension.rear_travel_mm"):
+        assert fields[field_path]["permitted_evidence_bases"] == ["readable_marking"]
+    instruction = captured["config"].system_instruction  # type: ignore[index]
+    assert "never estimate travel from appearance, scale, geometry" in instruction
+    assert "including absent for a hardtail or rigid rear" in instruction
+
+
+async def test_extractor_instruction_constrains_electric_assist_evidence() -> None:
+    captured: dict[str, object] = {}
+
+    async def generate_content(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            parsed={
+                "schema_version": "bike_profile_inference.v1",
+                "scene": {
+                    "contains_bicycle": True,
+                    "multiple_bicycles": False,
+                    "target_relation": "installed_on_target_bike",
+                    "confidence_score": 0.99,
+                },
+                "claims": [],
+                "abstentions": [],
+            },
+            usage_metadata=None,
+        )
+
+    extractor = GeminiProfileInferenceExtractor(
+        model="test-model",
+        timeout_seconds=1,
+        generate_content=generate_content,
+    )
+    await extractor.extract(
+        ProfileInferenceRequest(
+            bike_id="bike_test",
+            repair_session_id="rs_test",
+            images=[
+                InferenceImage(
+                    artifact_id="art_test",
+                    mime_type="image/jpeg",
+                    content=b"image",
+                ),
+            ],
+        ),
+    )
+
+    metadata = json.loads(captured["contents"][0])  # type: ignore[index]
+    fields = metadata["field_registry"]["fields"]
+    assert fields["electric_assist.motor.position"]["allowed_values"] == [
+        "front_hub",
+        "mid_drive",
+        "other",
+        "rear_hub",
+    ]
+    assert fields["electric_assist.battery.nominal_voltage_v"][
+        "permitted_evidence_bases"
+    ] == ["readable_marking"]
+    instruction = captured["config"].system_instruction  # type: ignore[index]
+    assert "Electric-assist presence" in instruction
+    assert "never infer nominal voltage from appearance" in instruction.lower().replace(
+        "\n", " "
+    )
+
+
 async def test_extractor_instruction_separates_identity_appearance_and_privacy() -> (
     None
 ):

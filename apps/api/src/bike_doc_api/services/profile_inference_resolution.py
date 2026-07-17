@@ -16,6 +16,7 @@ from bike_doc_api.services.profile_registry import (
     get_canonical_field_definition,
 )
 from bike_doc_api.services.profile_resolution import (
+    COMPONENT_ABSENCE_DEPENDENT_FIELD_PATHS,
     technical_value,
     with_technical_value,
 )
@@ -1001,6 +1002,14 @@ def _component_presence_is_absent(
         if presence_path not in CANONICAL_FIELD_REGISTRY:
             continue
         if technical_value(projection, presence_path) == "absent":
+            return True
+    for (
+        component_path,
+        dependent_paths,
+    ) in COMPONENT_ABSENCE_DEPENDENT_FIELD_PATHS.items():
+        if claim.field_path not in dependent_paths:
+            continue
+        if technical_value(projection, f"{component_path}.presence") == "absent":
             return True
     return False
 

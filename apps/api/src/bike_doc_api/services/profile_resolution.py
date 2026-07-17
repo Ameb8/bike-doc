@@ -59,6 +59,12 @@ LEGACY_FIELD_PATHS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Component absence occasionally also invalidates a nearby system specification
+# which is not structurally nested below the component itself.
+COMPONENT_ABSENCE_DEPENDENT_FIELD_PATHS: dict[str, tuple[str, ...]] = {
+    "suspension.rear_shock": ("suspension.rear_travel_mm",),
+}
+
 
 def manual_legacy_field_claims(
     field_name: str,
@@ -148,6 +154,22 @@ def _clear_component_leaves(projection: dict[str, Any], component_path: str) -> 
     for field_path in CANONICAL_FIELD_REGISTRY:
         if field_path.startswith(prefix):
             _remove_technical_value(projection, field_path)
+    for field_path in COMPONENT_ABSENCE_DEPENDENT_FIELD_PATHS.get(component_path, ()):
+        _remove_technical_value(projection, field_path)
+    component = technical_value(projection, component_path)
+    if isinstance(component, dict):
+        _remove_empty_descendants(component)
+
+
+def _remove_empty_descendants(component: dict[str, Any]) -> None:
+    """Remove empty nested component records after an absence invariant clears them."""
+
+    for key, value in list(component.items()):
+        if not isinstance(value, dict):
+            continue
+        _remove_empty_descendants(value)
+        if not value:
+            component.pop(key)
 
 
 def _remove_technical_value(projection: dict[str, Any], field_path: str) -> None:

@@ -617,6 +617,247 @@ async def test_bootstrap_policy_resolves_clear_installed_cockpit_and_seatpost() 
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_bootstrap_policy_resolves_clear_installed_suspension_fork_type() -> None:
+    """A whole-bike or fork view can establish the installed fork mechanism."""
+
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [_suspension_claim("suspension.fork.type", "suspension")]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["suspension"] == {
+        "fork": {"type": "suspension"},
+    }
+    assert store.claims[0].disposition == "applied"
+
+
+async def test_bootstrap_resolves_marked_suspension_identity_and_travel() -> None:
+    """Exact suspension identity and travel need direct readable markings."""
+
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _suspension_claim("suspension.fork.manufacturer", "Fox", marked=True),
+        _suspension_claim("suspension.fork.model", "36 Factory", marked=True),
+        _suspension_claim("suspension.fork.travel_mm", 160, marked=True),
+        _suspension_claim("suspension.rear_shock.presence", "present"),
+        _suspension_claim(
+            "suspension.rear_shock.manufacturer", "RockShox", marked=True
+        ),
+        _suspension_claim("suspension.rear_shock.model", "Super Deluxe", marked=True),
+        _suspension_claim("suspension.rear_travel_mm", 150, marked=True),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["suspension"] == {
+        "fork": {"manufacturer": "Fox", "model": "36 Factory", "travel_mm": 160},
+        "rear_shock": {
+            "presence": "present",
+            "manufacturer": "RockShox",
+            "model": "Super Deluxe",
+        },
+        "rear_travel_mm": 150,
+    }
+    assert {claim.disposition for claim in store.claims} == {"applied"}
+
+
+async def test_absent_rear_shock_clears_identity_travel_and_replay() -> None:
+    """A hardtail/rigid rear is explicit and cannot retain dependent facts."""
+
+    store = _Store()
+    store.bike.technical_profile["suspension"] = {
+        "rear_shock": {
+            "presence": "present",
+            "manufacturer": "Fox",
+            "model": "Float X",
+        },
+        "rear_travel_mm": 140,
+    }
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _suspension_claim("suspension.rear_shock.presence", "absent"),
+        _suspension_claim("suspension.rear_shock.model", "Float X", marked=True),
+        _suspension_claim("suspension.rear_travel_mm", 140, marked=True),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["suspension"] == {
+        "rear_shock": {"presence": "absent"},
+    }
+    assert {claim.field_path: claim.disposition_reason for claim in store.claims} == {
+        "suspension.rear_shock.presence": "auto_fill_policy_satisfied",
+        "suspension.rear_shock.model": "component_is_resolved_absent",
+        "suspension.rear_travel_mm": "component_is_resolved_absent",
+    }
+
+
+async def test_installed_electric_assist_resolves_marked_facts() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _electric_claim("electric_assist.presence", "present"),
+        _electric_claim("electric_assist.motor.position", "mid_drive"),
+        _electric_claim("electric_assist.system_manufacturer", "Bosch", marked=True),
+        _electric_claim(
+            "electric_assist.system_model", "Performance Line CX", marked=True
+        ),
+        _electric_claim("electric_assist.motor.manufacturer", "Bosch", marked=True),
+        _electric_claim("electric_assist.motor.model", "BDU384Y", marked=True),
+        _electric_claim("electric_assist.battery.manufacturer", "Bosch", marked=True),
+        _electric_claim("electric_assist.battery.model", "PowerTube 750", marked=True),
+        _electric_claim("electric_assist.battery.nominal_voltage_v", 36, marked=True),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["electric_assist"] == {
+        "presence": "present",
+        "system_manufacturer": "Bosch",
+        "system_model": "Performance Line CX",
+        "motor": {
+            "position": "mid_drive",
+            "manufacturer": "Bosch",
+            "model": "BDU384Y",
+        },
+        "battery": {
+            "manufacturer": "Bosch",
+            "model": "PowerTube 750",
+            "nominal_voltage_v": 36,
+        },
+    }
+
+
+async def test_absent_electric_assist_clears_same_run_leaves_and_blocks_replay() -> (
+    None
+):
+    store = _Store()
+    store.bike.technical_profile["electric_assist"] = {
+        "presence": "present",
+        "system_manufacturer": "Bosch",
+        "motor": {"position": "mid_drive", "model": "BDU384Y"},
+        "battery": {"nominal_voltage_v": 36},
+    }
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _electric_claim("electric_assist.presence", "absent"),
+        _electric_claim("electric_assist.motor.position", "rear_hub"),
+        _electric_claim("electric_assist.system_model", "Active Line", marked=True),
+        _electric_claim("electric_assist.battery.nominal_voltage_v", 48, marked=True),
+    ]
+
+    service = _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    )
+    await service.process_submitted_profile_evidence("turn_rear")
+    replay = await service.process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["electric_assist"] == {"presence": "absent"}
+    assert {claim.field_path: claim.disposition_reason for claim in store.claims} == {
+        "electric_assist.presence": "auto_fill_policy_satisfied",
+        "electric_assist.motor.position": "component_is_resolved_absent",
+        "electric_assist.system_model": "component_is_resolved_absent",
+        "electric_assist.battery.nominal_voltage_v": "component_is_resolved_absent",
+    }
+    assert replay.status is ProfileInferenceStatus.COMPLETED
+
+
+async def test_loose_electric_battery_never_mutates_profile() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_electric_claim(
+                "electric_assist.battery.model",
+                "PowerTube 750",
+                marked=True,
+            ),
+            "subject_relation": "loose_component",
+        },
+    ]
+    output["scene"] = {
+        **output["scene"],
+        "target_relation": "loose_component",
+    }
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["electric_assist"] == {}
+    assert {claim.disposition for claim in store.claims} == {"pending"}
+
+
+async def test_unreadable_voltage_claim_fails_strict_extractor_validation() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _electric_claim("electric_assist.battery.nominal_voltage_v", 48),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.FAILED
+    assert store.bike.technical_profile["electric_assist"] == {}
+
+
+async def test_unreadable_or_non_installed_suspension_claims_remain_pending() -> None:
+    """Similarity, occlusion, and loose parts never change installed suspension."""
+
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        {
+            **_suspension_claim("suspension.fork.model", "36 Factory"),
+            "evidence_basis": "derived_visual",
+            "evidence_cues": ["The fork resembles a Fox 36."],
+        },
+        {
+            **_suspension_claim("suspension.fork.type", "suspension"),
+            "visibility": "partial",
+        },
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["suspension"] == {}
+    assert {claim.disposition_reason for claim in store.claims} == {
+        "no_active_field_policy",
+        "visibility_not_clear",
+    }
+
+
 async def test_absent_drivetrain_component_clears_existing_identity_and_specs() -> None:
     store = _Store()
     store.bike.technical_profile["drivetrain"] = {
@@ -2063,4 +2304,42 @@ def _cockpit_claim(
         "artifact_ids": ["art_rear"],
         "observed_text": str(value) if marked else None,
         "evidence_cues": ["The installed cockpit or seatpost detail is clear."],
+    }
+
+
+def _suspension_claim(
+    field_path: str,
+    value: object,
+    *,
+    marked: bool = False,
+) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": "readable_marking" if marked else "direct_visual",
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": str(value) if marked else None,
+        "evidence_cues": ["The installed suspension detail is clearly visible."],
+    }
+
+
+def _electric_claim(
+    field_path: str,
+    value: object,
+    *,
+    marked: bool = False,
+) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": "readable_marking" if marked else "direct_visual",
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": str(value) if marked else None,
+        "evidence_cues": ["The installed electric-assist detail is clear."],
     }

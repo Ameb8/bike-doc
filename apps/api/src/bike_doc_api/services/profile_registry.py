@@ -622,6 +622,11 @@ def _build_registry() -> dict[str, CanonicalField]:
     registry["suspension.fork.type"] = _enum(
         "suspension.fork.type",
         {"rigid", "suspension", "other"},
+        auto_fill=True,
+        supersedes=frozenset(
+            {"image_inference", "legacy_profile_migration", "manual_profile_edit"}
+        ),
+        direct=True,
         bundle="installed_mechanism",
     )
     for name in ("manufacturer", "model"):
@@ -633,6 +638,8 @@ def _build_registry() -> dict[str, CanonicalField]:
         "integer",
         evidence=frozenset({"readable_marking"}),
         marking=True,
+        auto_fill=True,
+        supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
         bundle="exact_dimension",
     )
     _component_fields(registry, "suspension.rear_shock")
@@ -641,6 +648,8 @@ def _build_registry() -> dict[str, CanonicalField]:
         "integer",
         evidence=frozenset({"readable_marking"}),
         marking=True,
+        auto_fill=True,
+        supersedes=frozenset({"image_inference", "legacy_profile_migration"}),
         bundle="exact_dimension",
     )
 
@@ -701,6 +710,8 @@ def _build_registry() -> dict[str, CanonicalField]:
         "electric_assist.motor.position",
         {"front_hub", "rear_hub", "mid_drive", "other"},
         consequence="safety",
+        auto_fill=True,
+        direct=True,
         bundle="installed_mechanism",
     )
     for component in ("motor", "battery"):
@@ -713,6 +724,7 @@ def _build_registry() -> dict[str, CanonicalField]:
         "number",
         consequence="safety",
         evidence=frozenset({"readable_marking"}),
+        auto_fill=True,
         marking=True,
         bundle="exact_dimension",
     )

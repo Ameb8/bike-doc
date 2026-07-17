@@ -7,8 +7,10 @@ import pytest
 from bike_doc_api.schemas.profile_inference import (
     COCKPIT_AND_SEATING_INFERENCE_FIELD_PATHS,
     DRIVETRAIN_INFERENCE_FIELD_PATHS,
+    ELECTRIC_ASSIST_INFERENCE_FIELD_PATHS,
     PROFILE_INFERENCE_FIELD_PATHS,
     ROLLING_SYSTEM_INFERENCE_FIELD_PATHS,
+    SUSPENSION_INFERENCE_FIELD_PATHS,
 )
 from bike_doc_api.services.profile_registry import (
     CANONICAL_FIELD_REGISTRY,
@@ -80,6 +82,140 @@ def test_clear_installed_handlebar_style_is_an_inference_target() -> None:
         "seating.seatpost.diameter_mm",
     } == COCKPIT_AND_SEATING_INFERENCE_FIELD_PATHS
     assert "cockpit.handlebar.style" in PROFILE_INFERENCE_FIELD_PATHS
+
+
+def test_suspension_inference_registry_has_the_complete_canonical_family() -> None:
+    expected = {
+        "suspension.fork.type",
+        "suspension.fork.manufacturer",
+        "suspension.fork.model",
+        "suspension.fork.travel_mm",
+        "suspension.rear_shock.presence",
+        "suspension.rear_shock.manufacturer",
+        "suspension.rear_shock.model",
+        "suspension.rear_travel_mm",
+    }
+
+    assert expected == SUSPENSION_INFERENCE_FIELD_PATHS
+    assert expected <= PROFILE_INFERENCE_FIELD_PATHS
+
+
+def test_electric_assist_registry_has_the_complete_canonical_family() -> None:
+    expected = {
+        "electric_assist.presence",
+        "electric_assist.system_manufacturer",
+        "electric_assist.system_model",
+        "electric_assist.motor.position",
+        "electric_assist.motor.manufacturer",
+        "electric_assist.motor.model",
+        "electric_assist.battery.manufacturer",
+        "electric_assist.battery.model",
+        "electric_assist.battery.nominal_voltage_v",
+    }
+
+    assert expected == ELECTRIC_ASSIST_INFERENCE_FIELD_PATHS
+    assert expected <= PROFILE_INFERENCE_FIELD_PATHS
+
+
+def test_electric_motor_position_uses_clear_installed_mechanism_policy() -> None:
+    field = get_canonical_field_definition("electric_assist.motor.position")
+
+    assert field.enum_values == frozenset(
+        {"front_hub", "rear_hub", "mid_drive", "other"},
+    )
+    assert field.permitted_evidence_bases == frozenset({"direct_visual"})
+    assert field.requires_direct_evidence is True
+    assert field.image_auto_fill is True
+    assert field.policy_bundle == "installed_mechanism"
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "electric_assist.system_manufacturer",
+        "electric_assist.system_model",
+        "electric_assist.motor.manufacturer",
+        "electric_assist.motor.model",
+        "electric_assist.battery.manufacturer",
+        "electric_assist.battery.model",
+        "electric_assist.battery.nominal_voltage_v",
+    ],
+)
+def test_electric_identity_and_voltage_require_readable_markings(
+    field_path: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert field.permitted_evidence_bases == frozenset(
+        {"readable_marking", "derived_visual"},
+    ) or field.permitted_evidence_bases == frozenset({"readable_marking"})
+    assert field.requires_readable_marking is True
+    assert field.image_auto_fill is True
+
+
+def test_absent_electric_assist_removes_entire_system_configuration() -> None:
+    projection = with_technical_value(
+        empty_technical_projection(),
+        field_path="electric_assist.battery.nominal_voltage_v",
+        value=48,
+    )
+
+    absent = with_technical_value(
+        projection,
+        field_path="electric_assist.presence",
+        value="absent",
+    )
+
+    assert technical_value(absent, "electric_assist") == {"presence": "absent"}
+
+
+@pytest.mark.parametrize("value", ["rigid", "suspension", "other"])
+def test_fork_type_is_clear_direct_installed_mechanism_evidence(value: str) -> None:
+    field = get_canonical_field_definition("suspension.fork.type")
+
+    assert value in field.enum_values
+    assert field.permitted_evidence_bases == frozenset({"direct_visual"})
+    assert field.requires_direct_evidence is True
+    assert field.image_auto_fill is True
+    assert field.policy_bundle == "installed_mechanism"
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "suspension.fork.manufacturer",
+        "suspension.fork.model",
+        "suspension.rear_shock.manufacturer",
+        "suspension.rear_shock.model",
+        "suspension.fork.travel_mm",
+        "suspension.rear_travel_mm",
+    ],
+)
+def test_suspension_identity_and_travel_require_readable_markings(
+    field_path: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert "readable_marking" in field.permitted_evidence_bases
+    assert field.requires_readable_marking is True
+    assert field.image_auto_fill is True
+
+
+def test_absent_rear_shock_removes_rear_wheel_travel() -> None:
+    projection = with_technical_value(
+        empty_technical_projection(),
+        field_path="suspension.rear_travel_mm",
+        value=140,
+    )
+
+    absent = with_technical_value(
+        projection,
+        field_path="suspension.rear_shock.presence",
+        value="absent",
+    )
+
+    assert technical_value(absent, "suspension.rear_shock") == {"presence": "absent"}
+    assert technical_value(absent, "suspension.rear_travel_mm") is None
 
 
 @pytest.mark.parametrize(

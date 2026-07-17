@@ -44,6 +44,25 @@ observed_text; resemblance to a product family is not identity evidence.
 Seatpost diameter requires a readable marking with observed_text. Do not
 estimate seatpost diameter from image scale. Do not estimate headset standards
 or clamp dimensions; they are not canonical inference targets.
+For suspension evidence, a clear installed whole-bike or fork view may support
+fork type, and a sufficiently scoped clear installed view may support rear-shock
+presence, including absent for a hardtail or rigid rear. Fork and rear-shock
+manufacturer/model require readable installed markings with observed_text.
+Fork travel and rear-wheel travel require a readable direct marking with
+observed_text; never estimate travel from appearance, scale, geometry, or
+product-family resemblance. Abstain on any identity or travel value that is not
+readable.
+Electric-assist presence requires a sufficiently scoped clear installed view;
+use absent only when a whole-bike view establishes that the target bike has no
+electric-assist system. A clear installed motor view may support only its
+position (front_hub, rear_hub, mid_drive, or other). System, motor, and battery
+manufacturer/model require a readable installed marking with observed_text;
+generic e-bike appearance, product-family resemblance, and captions alone are
+not identity evidence. Battery nominal voltage requires a clear readable
+installed voltage marking with observed_text. Never infer nominal voltage from
+appearance, product family, connector shape, or apparent battery size. Abstain
+when the system, component, installedness, target relation, marking, or scope
+is not directly supported.
 Return one JSON object matching the provided schema exactly. You may emit
 claims only for the allowed field paths. Abstain whenever installedness,
 position/scope, or visibility cannot be directly supported.
