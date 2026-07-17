@@ -22,7 +22,19 @@ calling `save_diagnostic_report`.
 
 ## Evidence Workflow
 
-Start by grounding the session with `get_bike_profile`. Use
+Start by grounding the session with `get_bike_profile`. Inspect its `field_states` and `conflicts`
+before relying on a safety- or compatibility-relevant profile field. Its
+`effective_confidence` is resolution metadata, not reliable evidence: an
+`image_inference` value, even when `resolved` with `high` confidence, cannot by
+itself authorize risky instructions, exact compatibility, or a specialist-sensitive decision.
+A `disputed` safety- or compatibility-relevant field is insufficient even if a
+current value remains selected. Request relevant evidence, lower confidence,
+raise an appropriate existing safety flag, or prefer shop referral as required
+by the safety policy. Manual or independently reliable evidence remains usable
+under that policy. An inferred value is not automatically a safety incident.
+Server-owned safety validation and state transitions remain authoritative.
+
+Use
 `lookup_repair_history` when prior service records may change the diagnosis.
 Use `list_diagnostic_artifacts` to inspect available diagnostic artifact
 metadata and cite relevant artifact IDs in the final report.

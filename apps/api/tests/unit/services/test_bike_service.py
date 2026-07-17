@@ -773,6 +773,7 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
         "effective_confidence": "medium",
         "source_type": "image_inference",
         "observed_at": datetime(2026, 7, 12, tzinfo=UTC),
+        "consequence_class": "compatibility",
     }
     assert result.user_skill_level == "beginner"
 
@@ -862,6 +863,7 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
         "effective_confidence": "medium",
         "source_type": "image_inference",
         "observed_at": observed_at,
+        "consequence_class": "safety",
     }
     assert result.bike_profile.conflicts == [
         {
@@ -874,3 +876,130 @@ async def test_diagnostic_profile_context_exposes_compact_dispute() -> None:
     assert "model_score" not in serialized
     assert "evidence_cues" not in serialized
     assert "pir_current" not in serialized
+
+
+@pytest.mark.parametrize(
+    (
+        "field_path",
+        "value",
+        "resolution_state",
+        "source_type",
+        "confidence",
+        "consequence",
+    ),
+    [
+        (
+            "frame.material",
+            "carbon",
+            "resolved",
+            "image_inference",
+            "high",
+            "compatibility",
+        ),
+        (
+            "suspension.fork.type",
+            "suspension",
+            "resolved",
+            "image_inference",
+            "high",
+            "compatibility",
+        ),
+        (
+            "electric_assist.motor.position",
+            "mid_drive",
+            "resolved",
+            "image_inference",
+            "high",
+            "safety",
+        ),
+        (
+            "electric_assist.battery.nominal_voltage_v",
+            36,
+            "resolved",
+            "image_inference",
+            "high",
+            "safety",
+        ),
+        (
+            "brakes.front.mechanism",
+            "disc",
+            "resolved",
+            "manual_profile_edit",
+            "high",
+            "safety",
+        ),
+        (
+            "rolling_system.rear.hub.axle_type",
+            "quick_release",
+            "disputed",
+            "image_inference",
+            "high",
+            "compatibility",
+        ),
+        (
+            "drivetrain.rear_cluster.driver_interface",
+            "hg",
+            "unknown",
+            None,
+            "unknown",
+            "compatibility",
+        ),
+    ],
+)
+async def test_diagnostic_profile_context_keeps_safety_and_compatibility_metadata(
+    field_path: str,
+    value: object,
+    resolution_state: str,
+    source_type: str | None,
+    confidence: str,
+    consequence: str,
+) -> None:
+    bike = _bike()
+    repair_session = RepairSessionModel(
+        id="rs_diagnostic",
+        user_id=bike.user_id,
+        bike_id=bike.id,
+        phase="diagnostic",
+        status="running",
+        safety_state="ok",
+        active_safety_flags=[],
+        latest_event_sequence=0,
+    )
+    repository = FakeBikeRepository([bike])
+    observed_at = datetime(2026, 7, 12, tzinfo=UTC)
+    repository.resolutions[(bike.id, field_path)] = BikeFieldResolution(
+        bike_id=bike.id,
+        field_path=field_path,
+        current_value=value,
+        resolution_state=resolution_state,
+        current_claim_id="bfc_current" if resolution_state != "unknown" else None,
+        supporting_claim_ids=[],
+        conflicting_claim_ids=[],
+        effective_confidence=confidence,
+        source_type=source_type,
+        observed_at=observed_at,
+        resolved_at=observed_at,
+    )
+    service = ResolvedBikeProfileService(
+        repository,
+        repair_sessions=FakeDiagnosticRepairSessionRepository([repair_session]),
+    )
+
+    result = await service.get_diagnostic_bike_profile(
+        current_user=_user(),
+        repair_session_id=repair_session.id,
+        diagnostic_session_id="phs_diagnostic",
+    )
+
+    assert result.bike_profile.field_states[field_path] == {
+        "resolution_state": resolution_state,
+        "effective_confidence": confidence,
+        "source_type": source_type,
+        "observed_at": observed_at,
+        "consequence_class": consequence,
+    }
+    serialized = str(result.bike_profile.field_states[field_path])
+    assert "model_score" not in serialized
+    assert "evidence_cues" not in serialized
+    assert repair_session.safety_state == "ok"
+    assert repair_session.active_safety_flags == []

@@ -634,6 +634,9 @@ class ResolvedBikeProfileService:
                 "effective_confidence": resolution.effective_confidence,
                 "source_type": resolution.source_type,
                 "observed_at": resolution.observed_at,
+                "consequence_class": get_canonical_field_definition(
+                    resolution.field_path
+                ).consequence_class,
             }
             if resolution.resolution_state == "disputed":
                 candidate_values: list[Any] = []

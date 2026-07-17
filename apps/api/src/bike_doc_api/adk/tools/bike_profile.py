@@ -58,6 +58,7 @@ class BikeProfileFieldState(BaseModel):
     effective_confidence: Literal["unknown", "low", "medium", "high"]
     source_type: str | None = None
     observed_at: datetime | None = None
+    consequence_class: Literal["low", "compatibility", "safety"]
 
 
 class BikeProfileConflict(BaseModel):
