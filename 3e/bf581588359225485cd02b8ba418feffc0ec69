@@ -1,0 +1,47 @@
+apps/api/src/bike_doc_api/services/bikes.py
+  s_9d178cbc550549::t_a2742a546053a7 57,633-635,641-648
+apps/api/tests/unit/services/test_safety_service.py
+  s_9d178cbc550549::t_55983d281f020f 12-15,87-110
+apps/api/src/bike_doc_api/adk/prompts/diagnostic.md
+  s_9d178cbc550549::t_a2742a546053a7 30
+apps/api/src/bike_doc_api/adk/tools/bike_profile.py
+  s_9d178cbc550549::t_a2742a546053a7 62
+Taskfile.yml
+  s_9d178cbc550549::t_a2742a546053a7 95-99
+apps/api/tests/unit/services/test_profile_inference_service.py
+  s_9d178cbc550549::t_55983d281f020f 1565-1614
+apps/api/tests/unit/adk/tools/test_bike_profile_tool.py
+  s_9d178cbc550549::t_55983d281f020f 54,93
+apps/api/tests/unit/services/test_profile_registry.py
+  s_9d178cbc550549::t_55983d281f020f 129
+apps/api/tests/unit/services/test_bike_service.py
+  s_9d178cbc550549::t_50f328a65cd831 777,868
+  s_9d178cbc550549::t_55983d281f020f 891,901,910,919,928,937,946,955,966,1011
+apps/api/tests/unit/adk/test_diagnostic_agent.py
+  s_9d178cbc550549::t_55983d281f020f 113
+apps/api/src/bike_doc_api/services/profile_registry.py
+  s_9d178cbc550549::t_a2742a546053a7 714-716
+apps/api/src/bike_doc_api/services/safety.py
+  s_9d178cbc550549::t_a2742a546053a7 52-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3ebf581588359225485cd02b8ba418feffc0ec69",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_9d178cbc550549": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f6eec-5fad-7bf1-93d7-4665c44919b9",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
