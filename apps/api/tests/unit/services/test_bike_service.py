@@ -394,6 +394,35 @@ async def test_internal_v2_manual_write_and_clear_use_the_same_claim_ledger() ->
     assert bike.profile_revision == 2
 
 
+async def test_structured_public_patch_uses_resolver_claims_and_exposes_v2_group() -> (
+    None
+):
+    bike = _bike()
+    repo = FakeBikeRepository([bike])
+    service = ResolvedBikeProfileService(repo)
+
+    updated = await service.update_bike(
+        current_user=_user(),
+        bike_id=bike.id,
+        patch=BikeProfilePatch(
+            brakes={"rear": {"mechanism": "disc", "actuation": "hydraulic"}},
+            rolling_system={"front": {"tire": {"presence": "absent"}}},
+        ),
+    )
+
+    assert updated.schema_version == "bike_profile.v2"
+    assert updated.profile_revision == 1
+    assert updated.brakes["rear"]["actuation"] == "hydraulic"
+    assert updated.rolling_system["front"]["tire"]["presence"] == "absent"
+    assert "legacy_summary" not in updated.brakes
+    assert "legacy_description" not in updated.drivetrain_v2
+    assert [claim.source_type for claim in repo.claims[:3]] == [
+        "manual_profile_edit",
+        "manual_profile_edit",
+        "manual_profile_edit",
+    ]
+
+
 async def test_manual_correction_of_inferred_value_emits_safe_telemetry() -> None:
     bike = _bike()
     repo = FakeBikeRepository([bike])

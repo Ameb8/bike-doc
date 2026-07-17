@@ -49,8 +49,10 @@ from bike_doc_api.services.profile_registry import (
 )
 from bike_doc_api.services.profile_resolution import (
     NewBikeFactClaim,
+    flatten_technical_patch,
     has_technical_value_path,
     manual_legacy_field_claims,
+    public_technical_projection,
     technical_value,
     with_technical_value,
 )
@@ -58,6 +60,19 @@ from bike_doc_api.services.safety import profile_field_requires_independent_evid
 
 DEFAULT_BIKE_LIMIT = 50
 MAX_BIKE_LIMIT = 100
+_PUBLIC_STRUCTURED_GROUPS = frozenset(
+    {
+        "identity",
+        "frame",
+        "brakes",
+        "drivetrain_v2",
+        "rolling_system",
+        "suspension",
+        "cockpit",
+        "seating",
+        "electric_assist",
+    }
+)
 
 
 class BikeRepositoryProtocol(Protocol):
@@ -272,6 +287,7 @@ class ResolvedBikeProfileService:
             },
             include_clears=False,
         )
+        await self._apply_public_structured_fields(bike=created, request=request)
         if self._commit is not None:
             await self._commit()
         return _public_profile_from_model(created, has_repair_sessions=False)
@@ -312,12 +328,16 @@ class ResolvedBikeProfileService:
         )
         direct_change = False
         technical_fields: dict[str, str | int | None] = {}
+        structured_groups: dict[str, Any] = {}
         for field_name in patch.model_fields_set:
             value = getattr(patch, field_name)
             if field_name in {"display_name", "notes"}:
                 if getattr(bike, field_name) != value:
                     setattr(bike, field_name, value)
                     direct_change = True
+                continue
+            if field_name in _PUBLIC_STRUCTURED_GROUPS:
+                structured_groups[field_name] = value
                 continue
             technical_fields[field_name] = (
                 value.value
@@ -329,6 +349,13 @@ class ResolvedBikeProfileService:
             bike=bike,
             field_values=technical_fields,
             include_clears=True,
+        )
+        technical_change = (
+            await self._apply_manual_claims(
+                bike=bike,
+                claims=flatten_technical_patch(structured_groups),
+            )
+            or technical_change
         )
         updated = bike
         if direct_change and not technical_change:
@@ -345,6 +372,24 @@ class ResolvedBikeProfileService:
             updated,
             has_repair_sessions=updated.id in bike_ids_with_repair_sessions,
             disputed_field_paths=await self._disputed_field_paths(updated.id),
+        )
+
+    async def _apply_public_structured_fields(
+        self,
+        *,
+        bike: BikeProfileModel,
+        request: BikeProfileCreate,
+    ) -> bool:
+        """Apply optional structured create fields through the claim resolver."""
+
+        groups = {
+            field_name: getattr(request, field_name)
+            for field_name in _PUBLIC_STRUCTURED_GROUPS
+            if field_name in request.model_fields_set
+        }
+        return await self._apply_manual_claims(
+            bike=bike,
+            claims=flatten_technical_patch(groups),
         )
 
     async def _apply_manual_technical_fields(
@@ -771,7 +816,9 @@ def _public_profile_from_model(
     has_repair_sessions: bool = False,
     disputed_field_paths: frozenset[str] = frozenset(),
 ) -> BikeProfile:
-    """Project the current resolved profile into the legacy public contract."""
+    """Project the current resolved profile without resolver internals."""
+
+    technical = public_technical_projection(bike.technical_profile)
 
     make = cast(str | None, _projection_or_legacy(bike, "identity.make", bike.make))
     model = cast(str | None, _projection_or_legacy(bike, "identity.model", bike.model))
@@ -816,6 +863,17 @@ def _public_profile_from_model(
         user_id=bike.user_id,
         display_name=bike.display_name,
         has_repair_sessions=has_repair_sessions,
+        schema_version="bike_profile.v2",
+        profile_revision=bike.profile_revision or 0,
+        identity=cast(dict[str, Any], technical["identity"]),
+        frame=cast(dict[str, Any], technical["frame"]),
+        brakes=cast(dict[str, Any], technical["brakes"]),
+        drivetrain_v2=cast(dict[str, Any], technical["drivetrain"]),
+        rolling_system=cast(dict[str, Any], technical["rolling_system"]),
+        suspension=cast(dict[str, Any], technical["suspension"]),
+        cockpit=cast(dict[str, Any], technical["cockpit"]),
+        seating=cast(dict[str, Any], technical["seating"]),
+        electric_assist=cast(dict[str, Any], technical["electric_assist"]),
         make=make,
         model=model,
         model_year=model_year,

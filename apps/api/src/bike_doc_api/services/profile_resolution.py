@@ -6,7 +6,10 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
-from bike_doc_api.services.profile_registry import CANONICAL_FIELD_REGISTRY
+from bike_doc_api.services.profile_registry import (
+    CANONICAL_FIELD_REGISTRY,
+    normalize_canonical_value,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,6 +304,108 @@ def has_technical_value_path(
             return False
         cursor = cursor.get(part)
     return isinstance(cursor, dict) and parts[-1] in cursor
+
+
+PUBLIC_TECHNICAL_METADATA_PATHS = {
+    "brakes.legacy_summary",
+    "drivetrain.legacy_description",
+}
+
+
+def flatten_technical_patch(groups: dict[str, Any]) -> list[NewBikeFactClaim]:
+    """Validate and flatten a public V2 PATCH into resolver-backed claims.
+
+    The transport calls the structured drivetrain group ``drivetrain_v2`` so
+    the deprecated display-only ``drivetrain`` field remains wire-compatible.
+    """
+
+    flattened: list[tuple[str, Any]] = []
+
+    def visit(prefix: str, value: Any) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if not isinstance(key, str) or not key:
+                    raise ValueError("Technical patch keys must be non-empty strings.")
+                visit(f"{prefix}.{key}" if prefix else key, child)
+            return
+        flattened.append((prefix, value))
+
+    for group_name, value in groups.items():
+        prefix = "drivetrain" if group_name == "drivetrain_v2" else group_name
+        if value is None:
+            raise ValueError(f"{group_name} must be an object when supplied.")
+        visit(prefix, value)
+
+    claims: list[NewBikeFactClaim] = []
+    for field_path, value in sorted(
+        flattened,
+        key=lambda item: (
+            0
+            if item[0].endswith(".presence")
+            else 1
+            if item[0].endswith(".mechanism")
+            else 2,
+            item[0],
+        ),
+    ):
+        if field_path in PUBLIC_TECHNICAL_METADATA_PATHS:
+            raise ValueError(f"{field_path} is not a public writable field.")
+        field = CANONICAL_FIELD_REGISTRY.get(field_path)
+        if field is None:
+            raise ValueError(f"Unknown bike-profile field: {field_path}")
+        if field.volatility_class in {"derived", "user_managed"}:
+            raise ValueError(f"{field_path} is read-only.")
+        if value is None:
+            claims.append(
+                NewBikeFactClaim(
+                    field_path=field_path,
+                    value=None,
+                    source_type="manual_profile_clear",
+                )
+            )
+        else:
+            claims.append(
+                NewBikeFactClaim(
+                    field_path=field_path,
+                    value=normalize_canonical_value(field_path, value),
+                    source_type="manual_profile_edit",
+                )
+            )
+    return claims
+
+
+def validate_public_technical_patch(groups: dict[str, Any]) -> None:
+    """Validate public PATCH invariants that are knowable from one document."""
+
+    projection = empty_technical_projection()
+    for claim in flatten_technical_patch(groups):
+        projection = with_technical_value(
+            projection,
+            field_path=claim.field_path,
+            value=claim.value,
+        )
+
+
+def public_technical_projection(projection: dict[str, Any] | None) -> dict[str, Any]:
+    """Return the public current projection with explicit unknown leaves."""
+
+    result = deepcopy(projection) if projection else empty_technical_projection()
+    result["schema_version"] = "bike_profile.v2"
+    for field_path in PUBLIC_TECHNICAL_METADATA_PATHS:
+        _remove_technical_value(result, field_path)
+    for field_path in CANONICAL_FIELD_REGISTRY:
+        if field_path in PUBLIC_TECHNICAL_METADATA_PATHS:
+            continue
+        cursor = result
+        parts = field_path.split(".")
+        for part in parts[:-1]:
+            child = cursor.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                cursor[part] = child
+            cursor = child
+        cursor.setdefault(parts[-1], None)
+    return result
 
 
 def migrate_legacy_profile(values: LegacyBikeProfileValues) -> list[NewBikeFactClaim]:
