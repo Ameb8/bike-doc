@@ -986,50 +986,34 @@ def _pending_reason(
     return "below_auto_fill_threshold"
 
 
-_DRIVETRAIN_COMPONENTS = frozenset(
-    {
-        "front_shifter",
-        "rear_shifter",
-        "front_derailleur",
-        "rear_derailleur",
-        "crankset",
-        "rear_cluster",
-        "chain",
-        "belt",
-        "gear_unit",
-        "bottom_bracket",
-    },
-)
-
-
 def _component_presence_is_absent(
     projection: dict[str, Any],
     claim: BikeFactClaim,
 ) -> bool:
-    """Keep identity/configuration leaves cleared for absent drivetrain roles."""
+    """Keep leaves cleared for any canonical component resolved as absent."""
 
     parts = claim.field_path.split(".")
-    if (
-        len(parts) < 3
-        or parts[0] != "drivetrain"
-        or parts[1] not in _DRIVETRAIN_COMPONENTS
-        or parts[2] == "presence"
-    ):
+    if parts[-1] == "presence":
         return False
-    return technical_value(projection, f"drivetrain.{parts[1]}.presence") == "absent"
+    for length in range(len(parts) - 1, 0, -1):
+        component_path = ".".join(parts[:length])
+        presence_path = f"{component_path}.presence"
+        if presence_path not in CANONICAL_FIELD_REGISTRY:
+            continue
+        if technical_value(projection, presence_path) == "absent":
+            return True
+    return False
 
 
 def _resolution_order(claim: BikeFactClaim) -> tuple[int, str]:
     """Resolve assembly mechanism before facts that depend on it."""
 
-    if claim.field_path.startswith("drivetrain.") and claim.field_path.endswith(
-        ".presence"
-    ):
-        return (0, claim.field_path)
     if claim.field_path.endswith(".mechanism"):
         return (1, claim.field_path)
     if ".rotor." in claim.field_path:
         return (2, claim.field_path)
+    if claim.field_path.endswith(".presence"):
+        return (0, claim.field_path)
     return (3, claim.field_path)
 
 

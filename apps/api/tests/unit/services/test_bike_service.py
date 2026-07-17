@@ -696,6 +696,13 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
             },
             "front_derailleur": {"presence": "absent"},
         },
+        "cockpit": {
+            "handlebar": {"style": "drop"},
+            "stem": {"type": "threadless"},
+        },
+        "seating": {
+            "seatpost": {"presence": "present", "diameter_mm": 30.9},
+        },
     }
     repair_session = RepairSessionModel(
         id="rs_diagnostic",
@@ -753,6 +760,13 @@ async def test_diagnostic_profile_read_uses_the_resolved_profile_projection() ->
         "rear_derailleur": {"presence": "present", "mount_type": "full_mount"},
         "rear_cluster": {"presence": "present", "cluster_type": "cassette"},
         "front_derailleur": {"presence": "absent"},
+    }
+    assert result.bike_profile.profile["cockpit"] == {
+        "handlebar": {"style": "drop"},
+        "stem": {"type": "threadless"},
+    }
+    assert result.bike_profile.profile["seating"] == {
+        "seatpost": {"presence": "present", "diameter_mm": 30.9},
     }
     assert result.bike_profile.field_states["drivetrain.rear_shifter.actuation"] == {
         "resolution_state": "resolved",

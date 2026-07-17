@@ -649,16 +649,21 @@ def _build_registry() -> dict[str, CanonicalField]:
         {"drop", "flat", "riser", "swept", "bullhorn", "bmx", "other"},
         consequence="low",
         auto_fill=True,
+        direct=True,
         bundle="visual_descriptive",
     )
     registry["cockpit.stem.type"] = _enum(
         "cockpit.stem.type",
         {"threadless", "quill", "integrated", "other"},
+        auto_fill=True,
+        direct=True,
         bundle="installed_mechanism",
     )
     registry["cockpit.headset.type"] = _enum(
         "cockpit.headset.type",
         {"external_cup", "zero_stack", "integrated", "threaded", "other"},
+        auto_fill=True,
+        direct=True,
         bundle="installed_mechanism",
     )
     for component in ("handlebar", "stem"):
@@ -670,12 +675,15 @@ def _build_registry() -> dict[str, CanonicalField]:
     registry["seating.seatpost.type"] = _enum(
         "seating.seatpost.type",
         {"rigid", "dropper", "suspension", "other"},
+        auto_fill=True,
+        direct=True,
         bundle="installed_mechanism",
     )
     registry["seating.seatpost.diameter_mm"] = _field(
         "seating.seatpost.diameter_mm",
         "number",
         evidence=frozenset({"readable_marking"}),
+        auto_fill=True,
         marking=True,
         bundle="exact_dimension",
     )

@@ -37,6 +37,13 @@ size require a clear readable marking (include the short exact marking as
 observed_text). A visual look-alike must never be presented as exact identity;
 abstain when it is the only evidence. You may use a clear direct whole-bike
 view for bike type and primary or secondary frame color only.
+For cockpit and seating evidence, use a clear installed view for handlebar
+style, stem type, headset type, and seatpost presence or type. Handlebar, stem,
+and seatpost manufacturer or model require a readable installed marking with
+observed_text; resemblance to a product family is not identity evidence.
+Seatpost diameter requires a readable marking with observed_text. Do not
+estimate seatpost diameter from image scale. Do not estimate headset standards
+or clamp dimensions; they are not canonical inference targets.
 Return one JSON object matching the provided schema exactly. You may emit
 claims only for the allowed field paths. Abstain whenever installedness,
 position/scope, or visibility cannot be directly supported.

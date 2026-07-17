@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from bike_doc_api.schemas.profile_inference import (
+    COCKPIT_AND_SEATING_INFERENCE_FIELD_PATHS,
     DRIVETRAIN_INFERENCE_FIELD_PATHS,
     PROFILE_INFERENCE_FIELD_PATHS,
     ROLLING_SYSTEM_INFERENCE_FIELD_PATHS,
@@ -59,6 +60,91 @@ def test_rear_driver_is_marking_based_and_front_driver_is_not_a_canonical_field(
     assert driver.image_auto_fill is True
     with pytest.raises(FieldRegistryValidationError):
         get_canonical_field_definition("rolling_system.front.hub.driver_interface")
+
+
+def test_clear_installed_handlebar_style_is_an_inference_target() -> None:
+    """A clear installed bar can populate the one descriptive cockpit field."""
+
+    assert {
+        "cockpit.handlebar.style",
+        "cockpit.handlebar.manufacturer",
+        "cockpit.handlebar.model",
+        "cockpit.stem.type",
+        "cockpit.stem.manufacturer",
+        "cockpit.stem.model",
+        "cockpit.headset.type",
+        "seating.seatpost.presence",
+        "seating.seatpost.type",
+        "seating.seatpost.manufacturer",
+        "seating.seatpost.model",
+        "seating.seatpost.diameter_mm",
+    } == COCKPIT_AND_SEATING_INFERENCE_FIELD_PATHS
+    assert "cockpit.handlebar.style" in PROFILE_INFERENCE_FIELD_PATHS
+
+
+@pytest.mark.parametrize(
+    ("field_path", "values", "evidence", "bundle"),
+    [
+        (
+            "cockpit.handlebar.style",
+            {"drop", "flat", "riser", "swept", "bullhorn", "bmx", "other"},
+            {"direct_visual"},
+            "visual_descriptive",
+        ),
+        (
+            "cockpit.stem.type",
+            {"threadless", "quill", "integrated", "other"},
+            {"direct_visual"},
+            "installed_mechanism",
+        ),
+        (
+            "cockpit.headset.type",
+            {"external_cup", "zero_stack", "integrated", "threaded", "other"},
+            {"direct_visual"},
+            "installed_mechanism",
+        ),
+        (
+            "seating.seatpost.type",
+            {"rigid", "dropper", "suspension", "other"},
+            {"direct_visual"},
+            "installed_mechanism",
+        ),
+    ],
+)
+def test_cockpit_and_seating_type_enums_have_direct_installed_policy(
+    field_path: str,
+    values: set[str],
+    evidence: set[str],
+    bundle: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert field.enum_values == frozenset(values)
+    assert field.permitted_evidence_bases == frozenset(evidence)
+    assert field.requires_direct_evidence is True
+    assert field.image_auto_fill is True
+    assert field.policy_bundle == bundle
+
+
+@pytest.mark.parametrize(
+    "field_path",
+    [
+        "cockpit.handlebar.manufacturer",
+        "cockpit.handlebar.model",
+        "cockpit.stem.manufacturer",
+        "cockpit.stem.model",
+        "seating.seatpost.manufacturer",
+        "seating.seatpost.model",
+        "seating.seatpost.diameter_mm",
+    ],
+)
+def test_cockpit_and_seating_identity_and_exact_dimension_require_markings(
+    field_path: str,
+) -> None:
+    field = get_canonical_field_definition(field_path)
+
+    assert "readable_marking" in field.permitted_evidence_bases
+    assert field.requires_readable_marking is True
 
 
 @pytest.mark.parametrize(

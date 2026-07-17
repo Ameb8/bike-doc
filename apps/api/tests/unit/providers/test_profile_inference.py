@@ -160,6 +160,63 @@ async def test_extractor_sends_drivetrain_roles_and_identity() -> None:
     assert "drivetrain.rear_speed_count" in instruction
 
 
+async def test_extractor_instruction_guides_cockpit_and_seating_evidence() -> None:
+    captured: dict[str, object] = {}
+
+    async def generate_content(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+        return SimpleNamespace(
+            parsed={
+                "schema_version": "bike_profile_inference.v1",
+                "scene": {
+                    "contains_bicycle": True,
+                    "multiple_bicycles": False,
+                    "target_relation": "installed_on_target_bike",
+                    "confidence_score": 0.99,
+                },
+                "claims": [],
+                "abstentions": [],
+            },
+            usage_metadata=None,
+        )
+
+    extractor = GeminiProfileInferenceExtractor(
+        model="test-model",
+        timeout_seconds=1,
+        generate_content=generate_content,
+    )
+    await extractor.extract(
+        ProfileInferenceRequest(
+            bike_id="bike_test",
+            repair_session_id="rs_test",
+            images=[
+                InferenceImage(
+                    artifact_id="art_test", mime_type="image/jpeg", content=b"image"
+                )
+            ],
+        )
+    )
+
+    metadata = json.loads(captured["contents"][0])  # type: ignore[index]
+    fields = metadata["field_registry"]["fields"]
+    assert fields["cockpit.handlebar.style"]["allowed_values"] == [
+        "bmx",
+        "bullhorn",
+        "drop",
+        "flat",
+        "other",
+        "riser",
+        "swept",
+    ]
+    assert fields["seating.seatpost.diameter_mm"]["permitted_evidence_bases"] == [
+        "readable_marking"
+    ]
+    instruction = captured["config"].system_instruction  # type: ignore[index]
+    assert "Seatpost diameter requires a readable marking" in instruction
+    assert "Do not estimate headset standards" in instruction
+    assert "clamp dimensions" in instruction
+
+
 async def test_extractor_instruction_separates_identity_appearance_and_privacy() -> (
     None
 ):

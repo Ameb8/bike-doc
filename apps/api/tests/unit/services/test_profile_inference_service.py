@@ -567,6 +567,56 @@ async def test_bootstrap_policy_resolves_installed_drivetrain_roles_and_identity
     assert {claim.disposition for claim in store.claims} == {"applied"}
 
 
+async def test_bootstrap_policy_resolves_clear_installed_cockpit_and_seatpost() -> None:
+    store = _Store()
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _cockpit_claim("cockpit.handlebar.style", "drop"),
+        _cockpit_claim("cockpit.stem.type", "threadless"),
+        _cockpit_claim("cockpit.headset.type", "zero_stack"),
+        _cockpit_claim("cockpit.handlebar.manufacturer", "Zipp", marked=True),
+        _cockpit_claim("cockpit.handlebar.model", "Service Course", marked=True),
+        _cockpit_claim("cockpit.stem.manufacturer", "Ritchey", marked=True),
+        _cockpit_claim("cockpit.stem.model", "WCS C220", marked=True),
+        _cockpit_claim("seating.seatpost.presence", "present"),
+        _cockpit_claim("seating.seatpost.type", "dropper"),
+        _cockpit_claim("seating.seatpost.manufacturer", "OneUp", marked=True),
+        _cockpit_claim("seating.seatpost.model", "V2", marked=True),
+        _cockpit_claim("seating.seatpost.diameter_mm", 30.9, marked=True),
+    ]
+
+    outcome = await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert outcome.status is ProfileInferenceStatus.COMPLETED
+    assert store.bike.technical_profile["cockpit"] == {
+        "handlebar": {
+            "style": "drop",
+            "manufacturer": "Zipp",
+            "model": "Service Course",
+        },
+        "stem": {
+            "type": "threadless",
+            "manufacturer": "Ritchey",
+            "model": "WCS C220",
+        },
+        "headset": {"type": "zero_stack"},
+    }
+    assert store.bike.technical_profile["seating"] == {
+        "seatpost": {
+            "presence": "present",
+            "type": "dropper",
+            "manufacturer": "OneUp",
+            "model": "V2",
+            "diameter_mm": 30.9,
+        },
+    }
+    assert {claim.disposition for claim in store.claims} == {"applied"}
+
+
 async def test_absent_drivetrain_component_clears_existing_identity_and_specs() -> None:
     store = _Store()
     store.bike.technical_profile["drivetrain"] = {
@@ -616,6 +666,41 @@ async def test_absent_drivetrain_component_keeps_same_run_leaves_cleared() -> No
         "drivetrain.rear_derailleur.presence": "auto_fill_policy_satisfied",
         "drivetrain.rear_derailleur.manufacturer": "component_is_resolved_absent",
         "drivetrain.rear_derailleur.mount_type": "component_is_resolved_absent",
+    }
+
+
+async def test_absent_seatpost_clears_existing_and_same_run_identity_and_specs() -> (
+    None
+):
+    store = _Store()
+    store.bike.technical_profile["seating"] = {
+        "seatpost": {
+            "presence": "present",
+            "manufacturer": "OneUp",
+            "model": "V2",
+            "diameter_mm": 30.9,
+        },
+    }
+    output = _valid_single_claim_output()
+    output["claims"] = [
+        _cockpit_claim("seating.seatpost.presence", "absent"),
+        _cockpit_claim("seating.seatpost.manufacturer", "PNW", marked=True),
+        _cockpit_claim("seating.seatpost.diameter_mm", 31.6, marked=True),
+    ]
+
+    await _service(
+        store,
+        _Extractor(output),
+        policy=ProfileResolverPolicy.bootstrap_v1(),
+    ).process_submitted_profile_evidence("turn_rear")
+
+    assert store.bike.technical_profile["seating"]["seatpost"] == {
+        "presence": "absent",
+    }
+    assert {claim.field_path: claim.disposition_reason for claim in store.claims} == {
+        "seating.seatpost.presence": "auto_fill_policy_satisfied",
+        "seating.seatpost.manufacturer": "component_is_resolved_absent",
+        "seating.seatpost.diameter_mm": "component_is_resolved_absent",
     }
 
 
@@ -1959,4 +2044,23 @@ def _identity_claim(
         "artifact_ids": ["art_rear"],
         "observed_text": observed_text,
         "evidence_cues": ["A readable frame marking is visible."],
+    }
+
+
+def _cockpit_claim(
+    field_path: str,
+    value: object,
+    *,
+    marked: bool = False,
+) -> dict[str, object]:
+    return {
+        "field_path": field_path,
+        "value": value,
+        "subject_relation": "installed_on_target_bike",
+        "evidence_basis": "readable_marking" if marked else "direct_visual",
+        "visibility": "clear",
+        "confidence_score": 0.99,
+        "artifact_ids": ["art_rear"],
+        "observed_text": str(value) if marked else None,
+        "evidence_cues": ["The installed cockpit or seatpost detail is clear."],
     }
