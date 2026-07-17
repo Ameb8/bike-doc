@@ -5,10 +5,6 @@ import app.cash.turbine.test
 import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.BikeRepository
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikeListResponse
-import com.bikedoc.android.api.models.BikePatch
 import com.bikedoc.android.navigation.UiEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -89,7 +85,7 @@ class BikeEditViewModelTest {
             }
 
             assertEquals(
-                BikeCreate(
+                BikeProfileEdit(
                     displayName = "Daily Rider",
                     make = "Trek",
                     model = "Domane",
@@ -168,7 +164,7 @@ class BikeEditViewModelTest {
 
             assertEquals("bike-123", repository.updatedBikeId)
             assertEquals(
-                BikePatch(
+                BikeProfileEdit(
                     displayName = "Rain Bike Mk II",
                     make = null,
                     model = null,
@@ -209,36 +205,36 @@ class BikeEditViewModelTest {
         }
 
     private class FakeBikeRepository(
-        private val bikeResult: ApiResult<Bike> =
+        private val bikeResult: ApiResult<BikeProfile> =
             ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val createResult: ApiResult<Bike> =
+        private val createResult: ApiResult<BikeProfile> =
             ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val updateResult: ApiResult<Bike> =
+        private val updateResult: ApiResult<BikeProfile> =
             ApiResult.Success(bike(id = "updated-bike", displayName = "Updated")),
     ) : BikeRepository {
         var getBikeCalls = 0
-        var createdBike: BikeCreate? = null
+        var createdBike: BikeProfileEdit? = null
         var updatedBikeId: String? = null
-        var updatedBike: BikePatch? = null
+        var updatedBike: BikeProfileEdit? = null
 
-        override suspend fun getBikes(): ApiResult<BikeListResponse> {
+        override suspend fun getBikes(): ApiResult<List<BikeProfile>> {
             error("Unused in BikeEditViewModel tests")
         }
 
-        override suspend fun createBike(bike: BikeCreate): ApiResult<Bike> {
+        override suspend fun createBike(bike: BikeProfileEdit): ApiResult<BikeProfile> {
             createdBike = bike
             return createResult
         }
 
-        override suspend fun getBike(bikeId: String): ApiResult<Bike> {
+        override suspend fun getBike(bikeId: String): ApiResult<BikeProfile> {
             getBikeCalls += 1
             return bikeResult
         }
 
         override suspend fun updateBike(
             bikeId: String,
-            bike: BikePatch,
-        ): ApiResult<Bike> {
+            bike: BikeProfileEdit,
+        ): ApiResult<BikeProfile> {
             updatedBikeId = bikeId
             updatedBike = bike
             return updateResult
@@ -263,22 +259,26 @@ private fun bike(
     wheelSize: String? = null,
     tireSize: String? = null,
     notes: String? = null,
-): Bike =
-    Bike(
+): BikeProfile =
+    BikeProfile(
         id = id,
         userId = "user-1",
         displayName = displayName,
         hasRepairSessions = false,
-        make = make,
-        model = model,
-        modelYear = modelYear,
-        bikeType = bikeType,
-        frameMaterial = frameMaterial,
-        drivetrain = drivetrain,
-        brakeType = brakeType,
-        wheelSize = wheelSize,
-        tireSize = tireSize,
-        notes = notes,
-        createdAt = "2026-06-28T12:00:00Z",
-        updatedAt = "2026-06-28T12:00:00Z",
+        schemaVersion = "bike_profile.v2",
+        profileRevision = 0,
+        identity = BikeIdentity(),
+        frame = BikeFrame(),
+        brakes = BikeBrakes(BrakeAssembly(), BrakeAssembly()),
+        drivetrain = BikeDrivetrain(),
+        rollingSystem = BikeRollingSystem(WheelPosition(), WheelPosition()),
+        suspension = BikeSuspension(),
+        cockpit = BikeCockpit(),
+        seating = BikeSeating(),
+        electricAssist = BikeElectricAssist(),
+        legacy =
+            LegacyBikePresentation(
+                make, model, modelYear, bikeType, frameMaterial, drivetrain, brakeType, wheelSize, tireSize, notes,
+            ),
+        createdAt = "2026-06-28T12:00:00Z", updatedAt = "2026-06-28T12:00:00Z",
     )

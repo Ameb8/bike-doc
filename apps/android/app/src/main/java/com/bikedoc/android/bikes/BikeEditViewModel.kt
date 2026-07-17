@@ -5,9 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.BikeRepository
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikePatch
 import com.bikedoc.android.navigation.UiEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -168,33 +165,33 @@ class BikeEditViewModel
             }
         }
 
-        private fun applyLoadedBike(bike: Bike) {
+        private fun applyLoadedBike(bike: BikeProfile) {
             savedStateHandle["displayName"] = bike.displayName
-            savedStateHandle["make"] = bike.make.orEmpty()
-            savedStateHandle["model"] = bike.model.orEmpty()
-            savedStateHandle["modelYear"] = bike.modelYear?.toString().orEmpty()
-            savedStateHandle["bikeType"] = bike.bikeType
-            savedStateHandle["frameMaterial"] = bike.frameMaterial ?: "unknown"
-            savedStateHandle["drivetrain"] = bike.drivetrain.orEmpty()
-            savedStateHandle["brakeType"] = bike.brakeType ?: "unknown"
-            savedStateHandle["wheelSize"] = bike.wheelSize.orEmpty()
-            savedStateHandle["tireSize"] = bike.tireSize.orEmpty()
-            savedStateHandle["notes"] = bike.notes.orEmpty()
+            savedStateHandle["make"] = bike.legacy.make.orEmpty()
+            savedStateHandle["model"] = bike.legacy.model.orEmpty()
+            savedStateHandle["modelYear"] = bike.legacy.modelYear?.toString().orEmpty()
+            savedStateHandle["bikeType"] = bike.legacy.bikeType
+            savedStateHandle["frameMaterial"] = bike.legacy.frameMaterial ?: "unknown"
+            savedStateHandle["drivetrain"] = bike.legacy.drivetrain.orEmpty()
+            savedStateHandle["brakeType"] = bike.legacy.brakeType ?: "unknown"
+            savedStateHandle["wheelSize"] = bike.legacy.wheelSize.orEmpty()
+            savedStateHandle["tireSize"] = bike.legacy.tireSize.orEmpty()
+            savedStateHandle["notes"] = bike.legacy.notes.orEmpty()
 
             _uiState.value =
                 _uiState.value.copy(
                     isNew = false,
                     displayName = bike.displayName,
-                    make = bike.make.orEmpty(),
-                    model = bike.model.orEmpty(),
-                    modelYear = bike.modelYear?.toString().orEmpty(),
-                    bikeType = bike.bikeType,
-                    frameMaterial = bike.frameMaterial ?: "unknown",
-                    drivetrain = bike.drivetrain.orEmpty(),
-                    brakeType = bike.brakeType ?: "unknown",
-                    wheelSize = bike.wheelSize.orEmpty(),
-                    tireSize = bike.tireSize.orEmpty(),
-                    notes = bike.notes.orEmpty(),
+                    make = bike.legacy.make.orEmpty(),
+                    model = bike.legacy.model.orEmpty(),
+                    modelYear = bike.legacy.modelYear?.toString().orEmpty(),
+                    bikeType = bike.legacy.bikeType,
+                    frameMaterial = bike.legacy.frameMaterial ?: "unknown",
+                    drivetrain = bike.legacy.drivetrain.orEmpty(),
+                    brakeType = bike.legacy.brakeType ?: "unknown",
+                    wheelSize = bike.legacy.wheelSize.orEmpty(),
+                    tireSize = bike.legacy.tireSize.orEmpty(),
+                    notes = bike.legacy.notes.orEmpty(),
                     isLoading = false,
                     error = null,
                     validationErrors = emptyMap(),
@@ -236,8 +233,8 @@ class BikeEditViewModel
                     )
         }
 
-        private fun BikeEditUiState.toBikeCreate(): BikeCreate =
-            BikeCreate(
+        private fun BikeEditUiState.toBikeCreate(): BikeProfileEdit =
+            BikeProfileEdit(
                 displayName = displayName.trim(),
                 make = make.trim().takeIf { it.isNotEmpty() },
                 model = model.trim().takeIf { it.isNotEmpty() },
@@ -251,8 +248,8 @@ class BikeEditViewModel
                 notes = notes.trim().takeIf { it.isNotEmpty() },
             )
 
-        private fun BikeEditUiState.toBikePatch(): BikePatch =
-            BikePatch(
+        private fun BikeEditUiState.toBikePatch(): BikeProfileEdit =
+            BikeProfileEdit(
                 displayName = displayName.trim(),
                 make = make.trim().takeIf { it.isNotEmpty() },
                 model = model.trim().takeIf { it.isNotEmpty() },

@@ -1,10 +1,10 @@
 package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.ArtifactUploadResponse
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikeListResponse
-import com.bikedoc.android.api.models.BikePatch
+import com.bikedoc.android.api.models.BikeListResponseDto
+import com.bikedoc.android.api.models.BikeProfileCreateDto
+import com.bikedoc.android.api.models.BikeProfileDto
+import com.bikedoc.android.api.models.BikeProfilePatchDto
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PhaseReportList
 import com.bikedoc.android.api.models.RepairSession
@@ -33,23 +33,23 @@ interface BikeDocApiService {
     suspend fun getBikes(
         @Query("limit") limit: Int = 50,
         @Query("cursor") cursor: String? = null,
-    ): BikeListResponse
+    ): BikeListResponseDto
 
     @POST("v1/bikes")
     suspend fun createBike(
-        @Body bike: BikeCreate,
-    ): Bike
+        @Body bike: BikeProfileCreateDto,
+    ): BikeProfileDto
 
     @GET("v1/bikes/{bikeId}")
     suspend fun getBike(
         @Path("bikeId") bikeId: String,
-    ): Bike
+    ): BikeProfileDto
 
     @PATCH("v1/bikes/{bikeId}")
     suspend fun updateBike(
         @Path("bikeId") bikeId: String,
-        @Body bike: BikePatch,
-    ): Bike
+        @Body bike: BikeProfilePatchDto,
+    ): BikeProfileDto
 
     @DELETE("v1/bikes/{bikeId}")
     suspend fun deleteBike(
