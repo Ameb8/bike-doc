@@ -1,0 +1,57 @@
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeProfile.kt
+  s_a89868ab5a38e1::t_0b40283fa3fd9e 203-211
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeListRepository.kt
+  s_a89868ab5a38e1::t_8a496ed43271fc 44-46,49,87,90-91,95-96,105-106
+  s_a89868ab5a38e1::t_46522456b1456c 97-103
+apps/api/src/bike_doc_api/db/migrations/versions/2026_07_11_0002_bike_profile_v2_claims.py
+  s_c85985108f53b8::t_aae9a4ee9dad75 38-39,41-42,75-78,81-82,84-85,110-113,118-119,121-122,171-172,174-175,279-281,283-285
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeProfileMapper.kt
+  s_a89868ab5a38e1::t_0b40283fa3fd9e 62-72,77-87,236-262,264-289,291-293,302-305,312-330,332-340
+  s_a89868ab5a38e1::t_84c82c6aa6b163 263,290,294-301,306-311,331
+  s_a89868ab5a38e1::t_46522456b1456c 1-2
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeEditViewModel.kt
+  s_a89868ab5a38e1::t_46522456b1456c 1-2
+  s_a89868ab5a38e1::t_f20f65cc60f7e3 22,43,58-62,85,87,135-150,155,168,172-173,181,184-185
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeEditScreen.kt
+  s_a89868ab5a38e1::t_67a74eb416afb7 16,37,47,52,70-72,78-79,101-102,104,111-113,120,124,144,150,156-158,181,187-189,193-194,201,208-211,225-229,245-251,258-260,262,270-272,279,290,305-306,319-320,327,335-336,343,347,354,362,372,376,382,391-393,400-402,416,425-429
+  s_a89868ab5a38e1::t_46522456b1456c 1-2
+  s_a89868ab5a38e1::t_84c82c6aa6b163 55,57,61,63,82,86-90,96,99,108-110,114-119,121-123,125-142,145-149,151-155,159-180,182-186,190-192,195-200,202-207,212-214,219,221,223,230-235,239,241,243,252-257,263-269,273-278,280-288,292-295,300-304,307-318,321-325,330-334,337-342,344-346,348-353,357-361,363-371,373-375,377-379,383-390,396-399,405-415,419-424,430-436
+  s_a89868ab5a38e1::t_e8ac065b0b4da0 289,291
+  s_a89868ab5a38e1::t_8c5c1e1efe481e 107
+docs/specs/android/mvp-spec.md
+  s_a89868ab5a38e1::t_73b0d83e566893 687,697-704
+apps/android/app/src/test/java/com/bikedoc/android/bikes/BikeEditViewModelTest.kt
+  s_a89868ab5a38e1::t_84c82c6aa6b163 24,31,36,40-57,61,65,70,72-79,82,85-87,91,93,95-99,103,108,122,133
+  s_a89868ab5a38e1::t_46522456b1456c 1-2
+  s_a89868ab5a38e1::t_422140d5433bb0 21,112,118,125,136,141-147,149-150
+  s_a89868ab5a38e1::t_f7e0ae23a516f7 148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "c9fb027dde8370f4b3d64bddee75b6cd9c2a5abf",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_a89868ab5a38e1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f718a-4cb0-7bd2-a35e-d3a0108f8126",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_c85985108f53b8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f7180-5be4-7441-a95a-a03951417914",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
