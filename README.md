@@ -268,6 +268,108 @@ agents-cli lint --fix
 Use `agents-cli deploy --dry-run` when the graph is ready for a static
 deployment-style validation.
 
+### Bike Profile Inference Configuration
+
+Bike-profile inference is a separate, single-purpose multimodal extraction
+call. When an accepted diagnostic turn includes one or more ready image
+artifacts, the backend schedules an inference run after diagnostic processing.
+The extractor creates evidence-backed claims; the deterministic resolver is the
+only component that can update the resolved bike profile. Inference therefore
+does not use a conversational diagnostic subagent or an ADK tool loop.
+
+The feature uses the same Google provider credentials as the diagnostic agent,
+but has its own provider, model, timeout, retry, version, and resolver-policy
+settings:
+
+```text
+BIKE_DOC_API_PROFILE_INFERENCE_LLM_PROVIDER=google_ai
+BIKE_DOC_API_PROFILE_INFERENCE_MODEL=gemini-2.5-flash
+BIKE_DOC_API_PROFILE_INFERENCE_TIMEOUT_SECONDS=30
+BIKE_DOC_API_PROFILE_INFERENCE_MAX_ATTEMPTS=3
+BIKE_DOC_API_PROFILE_INFERENCE_EXTRACTOR_VERSION=drivetrain-specifications.v1
+BIKE_DOC_API_PROFILE_INFERENCE_POLICY_MODE=shadow
+BIKE_DOC_API_PROFILE_INFERENCE_POLICIES=[]
+```
+
+`BIKE_DOC_API_PROFILE_INFERENCE_LLM_PROVIDER` accepts `google_ai` or
+`vertex_ai`. Configure credentials as described in the preceding provider
+section: use `GEMINI_API_KEY` or `GOOGLE_API_KEY` for Google AI, or enable
+Vertex AI with `GOOGLE_GENAI_USE_VERTEXAI=true`, `GOOGLE_CLOUD_PROJECT`, and
+`GOOGLE_CLOUD_LOCATION`. `...TIMEOUT_SECONDS` must be positive;
+`...MAX_ATTEMPTS` is limited to 1 through 5. Increment
+`...EXTRACTOR_VERSION` when changing the extraction prompt, model behavior,
+schema, or image processing: it is part of the inference-run identity and
+allows the new extractor version to process the same accepted turn separately.
+
+#### Resolver rollout modes
+
+`BIKE_DOC_API_PROFILE_INFERENCE_POLICY_MODE` selects how the resolver treats
+otherwise valid image claims:
+
+| Mode | Behavior | Intended use |
+|---|---|---|
+| `shadow` | Runs extraction and persists valid claims as pending evidence; never mutates the bike profile. | Default and first rollout stage. |
+| `bootstrap-v1` | Enables the built-in conservative provisional policy bundles. | Local/development end-to-end testing only. It is rejected when `BIKE_DOC_API_ENVIRONMENT=production`. |
+| `evaluated` | Uses only explicitly configured, evaluation-promoted field policies. | Controlled production-like rollout. |
+| `production` | Compatibility spelling for evaluated-policy behavior. | Prefer `evaluated` in new configuration. |
+
+For a local emulator test that should auto-fill qualifying fields, use:
+
+```text
+BIKE_DOC_API_ENVIRONMENT=local
+BIKE_DOC_API_PROFILE_INFERENCE_POLICY_MODE=bootstrap-v1
+BIKE_DOC_API_PROFILE_INFERENCE_POLICIES=[]
+```
+
+Restart `task run` after changing `.env`. `bootstrap-v1` deliberately ignores
+`...POLICIES`; it uses versioned built-in thresholds by field bundle. It still
+requires clear, installed-on-target-bike evidence and retains manual-edit,
+manual-clear, scope, and conflict protections.
+
+#### Evaluation-promoted field policies
+
+`BIKE_DOC_API_PROFILE_INFERENCE_POLICIES` is a JSON array, not a comma-separated
+list. It is read only in `evaluated`/`production` mode. `[]` means no field has
+permission to auto-fill or overwrite: claims can be retained, but the profile
+will not be changed. In `shadow` mode the value is also harmless because no
+claims may mutate the profile.
+
+Each array item authorizes exactly one `field_path` plus `evidence_class` pair:
+
+```text
+BIKE_DOC_API_PROFILE_INFERENCE_POLICY_MODE=evaluated
+BIKE_DOC_API_PROFILE_INFERENCE_POLICIES=[{"field_path":"brakes.rear.mechanism","evidence_class":"direct_visual","calibration_key":"rear-brake-v1","policy_version":"2026-07-18","auto_fill_threshold":0.92,"auto_overwrite_threshold":0.97,"precision_gate_passed":true,"accepted_baseline_version":"rear-brake-shadow-v1","regression_evidence_passed":true,"promoted":true}]
+```
+
+The entry fields are:
+
+- `field_path`: a canonical, image-inference-enabled profile field, such as
+  `brakes.rear.mechanism`.
+- `evidence_class`: an evidence basis allowed by that field, such as
+  `direct_visual`, `readable_marking`, or `counted_visual`.
+- `calibration_key` and `policy_version`: non-empty identifiers for the
+  evaluation/calibration that produced the thresholds.
+- `auto_fill_threshold`: inclusive model-score threshold from 0 through 1.
+- `auto_overwrite_threshold`: optional threshold from 0 through 1 for replacing
+  an eligible older current value; when present, it cannot be lower than the
+  fill threshold.
+- `precision_gate_passed`, `accepted_baseline_version`,
+  `regression_evidence_passed`, and `promoted`: all must attest to a completed
+  evaluation gate. The first, third, and fourth must be `true`; the baseline
+  version must be non-empty.
+
+The backend rejects duplicate field/evidence entries, unsupported evidence for
+the field, and fields that are not eligible for image auto-fill. Even an active
+policy does not bypass normal claim checks: the image must clearly show the
+component installed on the target bike, meet the field's required evidence
+type, and win against any current resolution under the applicable manual and
+overwrite rules. Use the profile-inference evaluation tasks in `Taskfile.yml`
+to produce and compare the evidence before promoting a policy.
+
+`BIKE_DOC_API_PROFILE_INFERENCE_RESOLVER_POLICY` is a legacy alias for
+`...POLICY_MODE`. Do not set both to conflicting values; use
+`...POLICY_MODE` for new deployments.
+
 ### Android App Setup
 
 The Android app reads the backend URL from the Gradle property
