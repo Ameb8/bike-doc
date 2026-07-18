@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.bikes
 
 import com.bikedoc.android.api.models.BikeBrakesDto
@@ -57,12 +59,32 @@ internal fun BikeProfileDto.toDomain() =
 
 internal fun BikeProfileEdit.toCreateDto() =
     BikeProfileCreateDto(
-        displayName, make, model, modelYear, bikeType, frameMaterial, drivetrain, brakeType, wheelSize, tireSize, notes,
+        displayName = displayName,
+        notes = notes,
+        identity = identity.toDto(),
+        frame = frame.toDto(),
+        brakes = brakes.toDto(),
+        drivetrainV2 = drivetrain.toDto(),
+        rollingSystem = rollingSystem.toDto(),
+        suspension = suspension.toDto(),
+        cockpit = cockpit.toDto(),
+        seating = seating.toDto(),
+        electricAssist = electricAssist.toDto(),
     )
 
 internal fun BikeProfileEdit.toPatchDto() =
     BikeProfilePatchDto(
-        displayName, make, model, modelYear, bikeType, frameMaterial, drivetrain, brakeType, wheelSize, tireSize, notes,
+        displayName = displayName,
+        notes = notes,
+        identity = identity.toDto(),
+        frame = frame.toDto(),
+        brakes = brakes.toDto(),
+        drivetrainV2 = drivetrain.toDto(),
+        rollingSystem = rollingSystem.toDto(),
+        suspension = suspension.toDto(),
+        cockpit = cockpit.toDto(),
+        seating = seating.toDto(),
+        electricAssist = electricAssist.toDto(),
     )
 
 private fun String?.toPresence() =
@@ -211,3 +233,108 @@ private fun BikeElectricAssistDto.toDomain() =
         motor?.toDomain(),
         battery?.toDomain(),
     )
+
+private fun ComponentPresence?.toDto() =
+    when (this) {
+        ComponentPresence.UNKNOWN -> "unknown"
+        ComponentPresence.PRESENT -> "present"
+        ComponentPresence.ABSENT -> "absent"
+        null -> null
+    }
+
+private fun ComponentIdentity.toDto() = ComponentIdentityDto(presence.toDto(), manufacturer, model)
+
+private fun BikeIdentity.toDto() = BikeIdentityDto(make, model, modelYear, bikeType)
+
+private fun BikeFrame.toDto() = BikeFrameDto(material, sizeLabel, primaryColor, secondaryColor)
+
+private fun BrakeAssembly.toDto() =
+    BrakeAssemblyDto(
+        presence = component.presence.toDto(),
+        manufacturer = component.manufacturer,
+        model = component.model,
+        mechanism = mechanism,
+        actuation = actuation,
+        control = control?.toDto(),
+        brakeUnit = brakeUnit?.toDto(),
+        rotor = rotor?.toDto(),
+    )
+
+private fun BrakeUnit.toDto() = BrakeUnitDto(component.presence.toDto(), component.manufacturer, component.model, mountStandard, padFamily)
+
+private fun Rotor.toDto() = RotorDto(component.presence.toDto(), component.manufacturer, component.model, diameterMm)
+
+private fun BikeBrakes.toDto() = BikeBrakesDto(front.toDto(), rear.toDto())
+
+private fun DrivetrainRole.toDto() =
+    DrivetrainRoleDto(
+        presence = component.presence.toDto(), manufacturer = component.manufacturer, model = component.model,
+        actuation = actuation, speedCount = speedCount, mountType = mountType,
+        chainringCount = chainringCount, chainringToothCounts = chainringToothCounts,
+        clusterType = clusterType, smallestSprocketTeeth = smallestSprocketTeeth,
+        largestSprocketTeeth = largestSprocketTeeth, driverInterface = driverInterface,
+        speedCompatibility = speedCompatibility, interfaceName = interfaceName, shellWidthMm = shellWidthMm,
+    )
+
+private fun BikeDrivetrain.toDto() =
+    BikeDrivetrainDto(
+        architecture = architecture, driveMedium = driveMedium, frontShifter = frontShifter?.toDto(),
+        rearShifter = rearShifter?.toDto(), frontDerailleur = frontDerailleur?.toDto(),
+        rearDerailleur = rearDerailleur?.toDto(), crankset = crankset?.toDto(), rearCluster = rearCluster?.toDto(),
+        chain = chain?.toDto(), belt = belt?.toDto(), gearUnit = gearUnit?.toDto(), bottomBracket = bottomBracket?.toDto(),
+    )
+
+private fun WheelComponent.toDto() =
+    WheelComponentDto(component.presence.toDto(), component.manufacturer, component.model, nominalSize, isoBsdMm)
+
+private fun RimComponent.toDto() = RimComponentDto(component.presence.toDto(), component.manufacturer, component.model, internalWidthMm)
+
+private fun TireComponent.toDto() =
+    TireComponentDto(
+        component.presence.toDto(),
+        component.manufacturer,
+        component.model,
+        markedSize,
+        isoWidthMm,
+        isoBsdMm,
+        setup,
+        tubelessReady,
+    )
+
+private fun HubComponent.toDto() =
+    HubComponentDto(
+        component.presence.toDto(),
+        component.manufacturer,
+        component.model,
+        axleType,
+        axleStandard,
+        rotorMount,
+        driverInterface,
+    )
+
+private fun WheelPosition.toDto() = WheelPositionDto(wheel?.toDto(), rim?.toDto(), tire?.toDto(), hub?.toDto())
+
+private fun BikeRollingSystem.toDto() = BikeRollingSystemDto(front.toDto(), rear.toDto())
+
+private fun Fork.toDto() = ForkDto(type, manufacturer, model, travelMm)
+
+private fun BikeSuspension.toDto() = BikeSuspensionDto(fork?.toDto(), rearShock?.toDto(), rearTravelMm)
+
+private fun Handlebar.toDto() = HandlebarDto(style, manufacturer, model)
+
+private fun Stem.toDto() = StemDto(type, manufacturer, model)
+
+private fun Headset.toDto() = HeadsetDto(type)
+
+private fun BikeCockpit.toDto() = BikeCockpitDto(handlebar?.toDto(), stem?.toDto(), headset?.toDto())
+
+private fun Seatpost.toDto() = SeatpostDto(component.presence.toDto(), component.manufacturer, component.model, type, diameterMm)
+
+private fun BikeSeating.toDto() = BikeSeatingDto(seatpost?.toDto())
+
+private fun ElectricMotor.toDto() = ElectricMotorDto(position, manufacturer, model)
+
+private fun ElectricBattery.toDto() = ElectricBatteryDto(manufacturer, model, nominalVoltageV)
+
+private fun BikeElectricAssist.toDto() =
+    BikeElectricAssistDto(presence.toDto(), systemManufacturer, systemModel, motor?.toDto(), battery?.toDto())

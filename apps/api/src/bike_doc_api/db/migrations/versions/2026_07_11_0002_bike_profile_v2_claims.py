@@ -35,7 +35,11 @@ def upgrade() -> None:
               'suspension', 'cockpit', 'seating', 'electric_assist'
             ]
           );
+        """,
+    )
 
+    op.execute(
+        """
         CREATE TABLE bike_fact_claims (
           id text PRIMARY KEY,
           bike_id text NOT NULL,
@@ -68,9 +72,17 @@ def upgrade() -> None:
             (source_type = 'manual_profile_clear') = (value IS NULL)
           )
         );
+        """,
+    )
+    op.execute(
+        """
         CREATE INDEX ix_bike_fact_claims_bike_field
           ON bike_fact_claims (bike_id, field_path, created_at);
+        """,
+    )
 
+    op.execute(
+        """
         CREATE FUNCTION prevent_bike_fact_claim_mutation()
         RETURNS trigger
         LANGUAGE plpgsql
@@ -95,11 +107,19 @@ def upgrade() -> None:
           RETURN NEW;
         END;
         $$;
+        """,
+    )
+    op.execute(
+        """
         CREATE TRIGGER trg_bike_fact_claims_immutable
         BEFORE UPDATE ON bike_fact_claims
         FOR EACH ROW
         EXECUTE FUNCTION prevent_bike_fact_claim_mutation();
+        """,
+    )
 
+    op.execute(
+        """
         CREATE TABLE bike_field_resolutions (
           bike_id text NOT NULL,
           field_path text NOT NULL,
@@ -148,7 +168,11 @@ def upgrade() -> None:
           created_at
         FROM bike_fact_claims
         WHERE source_type = 'legacy_profile_migration';
+        """,
+    )
 
+    op.execute(
+        """
         UPDATE bike_profiles AS bike
         SET technical_profile = jsonb_strip_nulls(jsonb_build_object(
           'schema_version', 'bike_profile.v2',
@@ -252,13 +276,11 @@ def _migrate_legacy_claims() -> None:
 
 def downgrade() -> None:
     """Remove V2 profile persistence."""
+    op.execute("DROP TABLE bike_field_resolutions;")
+    op.execute("DROP TABLE bike_fact_claims;")
+    op.execute("DROP FUNCTION prevent_bike_fact_claim_mutation();")
     op.execute(
-        """
-        DROP TABLE bike_field_resolutions;
-        DROP TABLE bike_fact_claims;
-        DROP FUNCTION prevent_bike_fact_claim_mutation();
-        ALTER TABLE bike_profiles
-          DROP COLUMN technical_profile,
-          DROP COLUMN profile_revision;
-        """,
+        "ALTER TABLE bike_profiles "
+        "DROP COLUMN technical_profile, "
+        "DROP COLUMN profile_revision;"
     )

@@ -198,17 +198,16 @@ data class BikeElectricAssist(
     val battery: ElectricBattery? = null,
 )
 
-/** Legacy-only request shape used by the existing editor during the compatibility period. */
 data class BikeProfileEdit(
     val displayName: String,
-    val make: String? = null,
-    val model: String? = null,
-    val modelYear: Int? = null,
-    val bikeType: String = "unknown",
-    val frameMaterial: String = "unknown",
-    val drivetrain: String? = null,
-    val brakeType: String = "unknown",
-    val wheelSize: String? = null,
-    val tireSize: String? = null,
+    val identity: BikeIdentity = BikeIdentity(),
+    val frame: BikeFrame = BikeFrame(),
+    val brakes: BikeBrakes = BikeBrakes(BrakeAssembly(), BrakeAssembly()),
+    val drivetrain: BikeDrivetrain = BikeDrivetrain(),
+    val rollingSystem: BikeRollingSystem = BikeRollingSystem(WheelPosition(), WheelPosition()),
+    val suspension: BikeSuspension = BikeSuspension(),
+    val cockpit: BikeCockpit = BikeCockpit(),
+    val seating: BikeSeating = BikeSeating(),
+    val electricAssist: BikeElectricAssist = BikeElectricAssist(),
     val notes: String? = null,
 )

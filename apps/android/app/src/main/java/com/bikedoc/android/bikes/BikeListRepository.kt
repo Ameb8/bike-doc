@@ -41,12 +41,12 @@ class DefaultBikeListRepository
                                 name = bike.displayName,
                                 makeModelYear =
                                     buildMakeModelYear(
-                                        bike.legacy.make,
-                                        bike.legacy.model,
-                                        bike.legacy.modelYear,
+                                        bike.identity.make,
+                                        bike.identity.model,
+                                        bike.identity.modelYear,
                                     ),
                                 specificationSummary =
-                                    buildSpecificationSummary(bike.legacy.drivetrain, bike.legacy.brakeType),
+                                    buildSpecificationSummary(bike),
                                 hasRepairSessions = bike.hasRepairSessions,
                             )
                         },
@@ -84,19 +84,24 @@ class DefaultBikeListRepository
             return parts.joinToString(separator = " ").ifBlank { "Details coming soon" }
         }
 
-        private fun buildSpecificationSummary(
-            drivetrain: String?,
-            brakeType: String?,
-        ): String {
+        private fun buildSpecificationSummary(bike: BikeProfile): String {
             val parts =
                 listOfNotNull(
-                    drivetrain?.takeIf { it.isNotBlank() },
-                    brakeType
-                        ?.takeIf { it.isNotBlank() }
-                        ?.replace('_', ' ')
-                        ?.split(' ')
-                        ?.joinToString(" ") { part -> part.replaceFirstChar(Char::uppercaseChar) },
+                    bike.drivetrain.architecture?.replace('_', ' ')?.capitalizeWords(),
+                    brakeSummary(bike.brakes),
                 )
             return parts.joinToString(separator = " • ").ifBlank { "Specifications coming soon" }
         }
+
+        private fun brakeSummary(brakes: BikeBrakes): String? {
+            val front = brakes.front.mechanism
+            val rear = brakes.rear.mechanism
+            return when {
+                front == null || rear == null -> null
+                front == rear -> front.replace('_', ' ').capitalizeWords()
+                else -> "Mixed brakes"
+            }
+        }
+
+        private fun String.capitalizeWords() = split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercaseChar) }
     }
