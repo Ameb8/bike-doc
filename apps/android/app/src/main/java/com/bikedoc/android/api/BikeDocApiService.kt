@@ -2,9 +2,7 @@ package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.ArtifactUploadResponse
 import com.bikedoc.android.api.models.BikeListResponseDto
-import com.bikedoc.android.api.models.BikeProfileCreateDto
 import com.bikedoc.android.api.models.BikeProfileDto
-import com.bikedoc.android.api.models.BikeProfilePatchDto
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PhaseReportList
 import com.bikedoc.android.api.models.RepairSession
@@ -13,6 +11,7 @@ import com.bikedoc.android.api.models.RepairSessionListResponse
 import com.bikedoc.android.api.models.TurnAccepted
 import com.bikedoc.android.api.models.TurnCreate
 import com.bikedoc.android.api.models.UserProfile
+import kotlinx.serialization.json.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
@@ -37,7 +36,7 @@ interface BikeDocApiService {
 
     @POST("v1/bikes")
     suspend fun createBike(
-        @Body bike: BikeProfileCreateDto,
+        @Body bike: JsonObject,
     ): BikeProfileDto
 
     @GET("v1/bikes/{bikeId}")
@@ -48,7 +47,7 @@ interface BikeDocApiService {
     @PATCH("v1/bikes/{bikeId}")
     suspend fun updateBike(
         @Path("bikeId") bikeId: String,
-        @Body bike: BikeProfilePatchDto,
+        @Body bike: JsonObject,
     ): BikeProfileDto
 
     @DELETE("v1/bikes/{bikeId}")

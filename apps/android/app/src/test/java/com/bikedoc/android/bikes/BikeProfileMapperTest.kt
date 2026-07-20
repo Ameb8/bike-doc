@@ -13,11 +13,41 @@ import com.bikedoc.android.api.models.BikeSuspensionDto
 import com.bikedoc.android.api.models.BrakeAssemblyDto
 import com.bikedoc.android.api.models.TireComponentDto
 import com.bikedoc.android.api.models.WheelPositionDto
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class BikeProfileMapperTest {
+    @Test
+    fun `create request contains only a display name when no optional fields are supplied`() {
+        val request = BikeProfileEdit(displayName = "Commuter").toCreateRequest()
+
+        assertEquals(setOf("display_name"), request.keys)
+        assertEquals("Commuter", request["display_name"].toString().trim('"'))
+    }
+
+    @Test
+    fun `patch omits untouched fields`() {
+        val original = BikeProfileEdit(displayName = "Commuter", frame = BikeFrame(material = "aluminum"))
+
+        val request = original.copy(displayName = "Rain Bike").toPatchRequest(original)
+
+        assertEquals(setOf("display_name"), request.keys)
+        assertFalse("frame" in request)
+    }
+
+    @Test
+    fun `patch sends explicit null when a user clears a loaded technical value`() {
+        val original = BikeProfileEdit(displayName = "Commuter", frame = BikeFrame(material = "aluminum"))
+
+        val request = original.copy(frame = BikeFrame(material = null)).toPatchRequest(original)
+
+        assertEquals(JsonNull, request["frame"]!!.jsonObject["material"])
+    }
+
     @Test
     fun `preserves migrated legacy compatibility values when structured groups are empty`() {
         val profile = profileDto(make = "Surly", drivetrain = "1x11", brakeType = "mechanical_disc").toDomain()

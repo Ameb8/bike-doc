@@ -20,6 +20,7 @@ import javax.inject.Inject
 data class BikeEditUiState(
     val isNew: Boolean = true,
     val profile: BikeProfileEdit = BikeProfileEdit(displayName = ""),
+    val originalProfile: BikeProfileEdit? = null,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -41,7 +42,7 @@ class BikeEditViewModel
                 BikeEditUiState(
                     isNew = bikeId == null,
                     profile = BikeProfileEdit(displayName = savedStateHandle["displayName"] ?: "", notes = savedStateHandle["notes"]),
-                    isLoading = bikeId != null && !hasRestoredDraft,
+                    isLoading = bikeId != null,
                 ),
             )
         val uiState: StateFlow<BikeEditUiState> = _uiState.asStateFlow()
@@ -50,7 +51,7 @@ class BikeEditViewModel
         val events = eventChannel.receiveAsFlow()
 
         init {
-            if (bikeId != null && !hasRestoredDraft) {
+            if (bikeId != null) {
                 loadBike(bikeId)
             }
         }
@@ -84,7 +85,11 @@ class BikeEditViewModel
                     if (bikeId == null) {
                         repository.createBike(_uiState.value.profile.normalized())
                     } else {
-                        repository.updateBike(bikeId, _uiState.value.profile.normalized())
+                        repository.updateBike(
+                            bikeId,
+                            _uiState.value.profile.normalized(),
+                            requireNotNull(_uiState.value.originalProfile),
+                        )
                     }
 
                 when (result) {
@@ -146,13 +151,23 @@ class BikeEditViewModel
                     electricAssist = bike.electricAssist,
                     notes = bike.legacy.notes,
                 )
-            savedStateHandle["displayName"] = profile.displayName
-            savedStateHandle["notes"] = profile.notes
+            val restoredProfile =
+                if (hasRestoredDraft) {
+                    profile.copy(
+                        displayName = savedStateHandle["displayName"] ?: profile.displayName,
+                        notes = savedStateHandle["notes"] ?: profile.notes,
+                    )
+                } else {
+                    profile
+                }
+            savedStateHandle["displayName"] = restoredProfile.displayName
+            savedStateHandle["notes"] = restoredProfile.notes
 
             _uiState.value =
                 _uiState.value.copy(
                     isNew = false,
-                    profile = profile,
+                    profile = restoredProfile,
+                    originalProfile = profile,
                     isLoading = false,
                     error = null,
                     validationErrors = emptyMap(),

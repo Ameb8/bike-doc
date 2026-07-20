@@ -127,6 +127,7 @@ class BikeEditViewModelTest {
         override suspend fun updateBike(
             bikeId: String,
             bike: BikeProfileEdit,
+            originalBike: BikeProfileEdit,
         ): ApiResult<BikeProfile> {
             updatedBikeId = bikeId
             updatedBike = bike

@@ -2,9 +2,9 @@ package com.bikedoc.android.api
 
 import com.bikedoc.android.bikes.BikeProfile
 import com.bikedoc.android.bikes.BikeProfileEdit
-import com.bikedoc.android.bikes.toCreateDto
+import com.bikedoc.android.bikes.toCreateRequest
 import com.bikedoc.android.bikes.toDomain
-import com.bikedoc.android.bikes.toPatchDto
+import com.bikedoc.android.bikes.toPatchRequest
 import javax.inject.Inject
 
 interface BikeRepository {
@@ -17,6 +17,7 @@ interface BikeRepository {
     suspend fun updateBike(
         bikeId: String,
         bike: BikeProfileEdit,
+        originalBike: BikeProfileEdit,
     ): ApiResult<BikeProfile>
 
     suspend fun deleteBike(bikeId: String): ApiResult<Unit>
@@ -32,7 +33,7 @@ class DefaultBikeRepository
         }
 
         override suspend fun createBike(bike: BikeProfileEdit): ApiResult<BikeProfile> =
-            safeApiCall { apiService.createBike(bike.toCreateDto()).toDomain() }
+            safeApiCall { apiService.createBike(bike.toCreateRequest()).toDomain() }
 
         override suspend fun getBike(bikeId: String): ApiResult<BikeProfile> {
             return safeApiCall { apiService.getBike(bikeId).toDomain() }
@@ -41,8 +42,9 @@ class DefaultBikeRepository
         override suspend fun updateBike(
             bikeId: String,
             bike: BikeProfileEdit,
+            originalBike: BikeProfileEdit,
         ): ApiResult<BikeProfile> {
-            return safeApiCall { apiService.updateBike(bikeId, bike.toPatchDto()).toDomain() }
+            return safeApiCall { apiService.updateBike(bikeId, bike.toPatchRequest(originalBike)).toDomain() }
         }
 
         override suspend fun deleteBike(bikeId: String): ApiResult<Unit> {

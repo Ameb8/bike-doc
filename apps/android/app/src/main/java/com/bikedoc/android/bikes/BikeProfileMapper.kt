@@ -31,6 +31,9 @@ import com.bikedoc.android.api.models.StemDto
 import com.bikedoc.android.api.models.TireComponentDto
 import com.bikedoc.android.api.models.WheelComponentDto
 import com.bikedoc.android.api.models.WheelPositionDto
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 internal fun BikeProfileDto.toDomain() =
     BikeProfile(
@@ -86,6 +89,66 @@ internal fun BikeProfileEdit.toPatchDto() =
         seating = seating.toDto(),
         electricAssist = electricAssist.toDto(),
     )
+
+/**
+ * Encode a create request without serializing unspecified optional fields.
+ *
+ * The server supplies its own defaults for omitted compatibility fields, so a
+ * new profile needs only a display name.
+ */
+internal fun BikeProfileEdit.toCreateRequest(): JsonObject =
+    requireNotNull(
+        sparseRequestJson.encodeToJsonElement(BikeProfileCreateDto.serializer(), toCreateDto()).pruned() as? JsonObject,
+    )
+
+/**
+ * Produce a partial update that carries only the user's changes.
+ *
+ * An explicit JSON null is retained only when a loaded value changed to null,
+ * which is the public contract for a manual clear. Unchanged nulls are omitted.
+ */
+internal fun BikeProfileEdit.toPatchRequest(original: BikeProfileEdit): JsonObject {
+    val originalJson = completeRequestJson.encodeToJsonElement(BikeProfilePatchDto.serializer(), original.toPatchDto())
+    val updatedJson = completeRequestJson.encodeToJsonElement(BikeProfilePatchDto.serializer(), toPatchDto())
+    return requireNotNull(jsonDiff(originalJson, updatedJson) as? JsonObject)
+}
+
+private val sparseRequestJson =
+    Json {
+        encodeDefaults = false
+        explicitNulls = false
+    }
+
+private val completeRequestJson =
+    Json {
+        encodeDefaults = true
+        explicitNulls = true
+    }
+
+private fun JsonElement.pruned(): JsonElement? =
+    when (this) {
+        is JsonObject ->
+            JsonObject(
+                entries.mapNotNull { (key, value) -> value.pruned()?.let { key to it } }.toMap(),
+            ).takeIf { it.isNotEmpty() }
+        else -> this
+    }
+
+private fun jsonDiff(
+    original: JsonElement,
+    updated: JsonElement,
+): JsonElement? =
+    when {
+        original == updated -> null
+        original is JsonObject && updated is JsonObject ->
+            JsonObject(
+                updated.entries
+                    .mapNotNull { (key, updatedValue) ->
+                        jsonDiff(original[key] ?: updatedValue, updatedValue)?.let { key to it }
+                    }.toMap(),
+            ).takeIf { it.isNotEmpty() }
+        else -> updated
+    }
 
 private fun String?.toPresence() =
     when (this) {
