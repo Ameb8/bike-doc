@@ -95,10 +95,14 @@ class GeminiProfileInferenceExtractor:
         model: str,
         timeout_seconds: float,
         generate_content: _GeminiGenerateContent,
+        client: genai.Client | None = None,
     ) -> None:
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._generate_content = generate_content
+        # The async models facade does not keep the root client alive. Retain
+        # it so its HTTP client remains open for the extractor's lifetime.
+        self._client = client
         self.provider = "gemini"
         self.last_usage: dict[str, int | float] | None = None
 
@@ -116,6 +120,7 @@ class GeminiProfileInferenceExtractor:
             model=model,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
+            client=client,
         )
 
     @classmethod
@@ -132,6 +137,7 @@ class GeminiProfileInferenceExtractor:
             model=model,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
+            client=client,
         )
 
     async def extract(self, request: ProfileInferenceRequest) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from bike_doc_api.providers.profile_inference.gemini import (
     GeminiProfileInferenceExtractor,
@@ -12,6 +13,23 @@ from bike_doc_api.schemas.profile_inference import (
     InferenceImage,
     ProfileInferenceRequest,
 )
+
+
+def test_google_ai_factory_keeps_genai_client_alive() -> None:
+    client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=object()))
+    )
+
+    with patch(
+        "bike_doc_api.providers.profile_inference.gemini.genai.Client",
+        return_value=client,
+    ):
+        extractor = GeminiProfileInferenceExtractor.from_google_ai(
+            model="gemini-test",
+            timeout_seconds=5,
+        )
+
+    assert extractor._client is client
 
 
 async def test_extractor_sends_versioned_topology_registry_to_model() -> None:
