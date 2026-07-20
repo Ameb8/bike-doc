@@ -1,0 +1,46 @@
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeRepository.kt
+  s_2106616126dd10::t_154c2a5a2d882f 5,7
+  s_2106616126dd10::t_11d69629e21c84 20,36,45,47
+apps/android/app/src/test/java/com/bikedoc/android/bikes/BikeProfileMapperTest.kt
+  s_2106616126dd10::t_6d65da705cf6f8 16-17
+  s_2106616126dd10::t_3d54b4810f773e 19,24-50
+apps/android/ARCHITECTURE.md
+  s_2106616126dd10::t_88c3f9077c26c4 117-120
+apps/android/app/src/main/java/com/bikedoc/android/api/BikeDocApiService.kt
+  s_2106616126dd10::t_154c2a5a2d882f 14
+  s_2106616126dd10::t_11d69629e21c84 39,50
+apps/android/app/src/test/java/com/bikedoc/android/bikes/BikeEditViewModelTest.kt
+  s_2106616126dd10::t_3d54b4810f773e 130
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeProfileMapper.kt
+  s_2106616126dd10::t_d957ff3a1d35d4 100-102,111-112
+  s_2106616126dd10::t_6165c6e118b0ea 140-144,149-150
+  s_2106616126dd10::t_6d65da705cf6f8 137-139
+  s_2106616126dd10::t_154c2a5a2d882f 34-36,93-99,103-110,113-136,151
+  s_2106616126dd10::t_dade3f1877d88a 145-148
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeEditViewModel.kt
+  s_2106616126dd10::t_154c2a5a2d882f 88-92
+  s_2106616126dd10::t_8db8790fc38946 45,54,169
+  s_2106616126dd10::t_11d69629e21c84 23,170
+  s_2106616126dd10::t_d957ff3a1d35d4 154-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "d555c86bc2db88902757eb7ff58c5ae3c231d7e7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2106616126dd10": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f7762-4574-7bf0-aeba-feb1af8250ba",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
