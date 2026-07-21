@@ -1,7 +1,7 @@
 """Pydantic API schema package."""
 
 from bike_doc_api.schemas.artifact import ArtifactRef, artifact_ref_from_model
-from bike_doc_api.schemas.bike import BikeProfile, bike_profile_from_model
+from bike_doc_api.schemas.bike import BikeProfile
 from bike_doc_api.schemas.common import (
     ArtifactMediaType,
     ArtifactPurpose,

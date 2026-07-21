@@ -1,7 +1,7 @@
 package com.bikedoc.android.bikes
 
 import com.bikedoc.android.api.ApiResult
-import com.bikedoc.android.api.BikeDocApiService
+import com.bikedoc.android.api.BikeRepository
 import javax.inject.Inject
 
 data class BikeListItem(
@@ -29,28 +29,36 @@ sealed interface BikeDeleteResult {
 class DefaultBikeListRepository
     @Inject
     constructor(
-        private val apiService: BikeDocApiService,
+        private val bikeRepository: BikeRepository,
     ) : BikeListRepository {
         override suspend fun getBikes(): ApiResult<List<BikeListItem>> =
-            com.bikedoc.android.api.safeApiCall {
-                apiService.getBikes().items.map { bike ->
-                    BikeListItem(
-                        id = bike.id,
-                        name = bike.displayName,
-                        makeModelYear = buildMakeModelYear(bike.make, bike.model, bike.modelYear),
-                        specificationSummary =
-                            buildSpecificationSummary(bike.drivetrain, bike.brakeType),
-                        hasRepairSessions = bike.hasRepairSessions,
+            when (val result = bikeRepository.getBikes()) {
+                is ApiResult.Success ->
+                    ApiResult.Success(
+                        result.data.map { bike ->
+                            BikeListItem(
+                                id = bike.id,
+                                name = bike.displayName,
+                                makeModelYear =
+                                    buildMakeModelYear(
+                                        bike.identity.make,
+                                        bike.identity.model,
+                                        bike.identity.modelYear,
+                                    ),
+                                specificationSummary =
+                                    buildSpecificationSummary(bike),
+                                hasRepairSessions = bike.hasRepairSessions,
+                            )
+                        },
                     )
-                }
+                is ApiResult.Error -> result
+                ApiResult.Loading -> ApiResult.Loading
             }
 
         override suspend fun deleteBike(bikeId: String): BikeDeleteResult =
             when (
                 val result =
-                    com.bikedoc.android.api.safeApiCall {
-                        apiService.deleteBike(bikeId)
-                    }
+                    bikeRepository.deleteBike(bikeId)
             ) {
                 is ApiResult.Success -> BikeDeleteResult.Success
                 is ApiResult.Error ->
@@ -76,19 +84,24 @@ class DefaultBikeListRepository
             return parts.joinToString(separator = " ").ifBlank { "Details coming soon" }
         }
 
-        private fun buildSpecificationSummary(
-            drivetrain: String?,
-            brakeType: String?,
-        ): String {
+        private fun buildSpecificationSummary(bike: BikeProfile): String {
             val parts =
                 listOfNotNull(
-                    drivetrain?.takeIf { it.isNotBlank() },
-                    brakeType
-                        ?.takeIf { it.isNotBlank() }
-                        ?.replace('_', ' ')
-                        ?.split(' ')
-                        ?.joinToString(" ") { part -> part.replaceFirstChar(Char::uppercaseChar) },
+                    bike.drivetrain.architecture?.replace('_', ' ')?.capitalizeWords(),
+                    brakeSummary(bike.brakes),
                 )
             return parts.joinToString(separator = " • ").ifBlank { "Specifications coming soon" }
         }
+
+        private fun brakeSummary(brakes: BikeBrakes): String? {
+            val front = brakes.front.mechanism
+            val rear = brakes.rear.mechanism
+            return when {
+                front == null || rear == null -> null
+                front == rear -> front.replace('_', ' ').capitalizeWords()
+                else -> "Mixed brakes"
+            }
+        }
+
+        private fun String.capitalizeWords() = split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercaseChar) }
     }

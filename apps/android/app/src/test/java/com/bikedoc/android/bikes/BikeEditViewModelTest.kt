@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.bikes
 
 import androidx.lifecycle.SavedStateHandle
@@ -5,280 +7,145 @@ import app.cash.turbine.test
 import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.BikeRepository
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikeListResponse
-import com.bikedoc.android.api.models.BikePatch
 import com.bikedoc.android.navigation.UiEvent
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BikeEditViewModelTest {
-    @get:Rule
-    val mainDispatcherRule = MainDispatcherRule()
+    @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `create bike requires display name before saving`() =
+    fun `create requires a display name`() =
         runTest {
             val repository = FakeBikeRepository()
             val viewModel = BikeEditViewModel(repository, SavedStateHandle())
 
-            viewModel.onDisplayNameChanged("   ")
-
             viewModel.save()
 
-            assertEquals(
-                "Display name is required.",
-                viewModel.uiState.value.validationErrors["displayName"],
-            )
-            assertFalse(viewModel.uiState.value.isSaving)
+            assertEquals("Display name is required.", viewModel.uiState.value.validationErrors["displayName"])
             assertNull(repository.createdBike)
         }
 
     @Test
-    fun `create bike validates model year range before saving`() =
+    fun `create posts structured V2 profile`() =
         runTest {
             val repository = FakeBikeRepository()
             val viewModel = BikeEditViewModel(repository, SavedStateHandle())
-
-            viewModel.onDisplayNameChanged("Daily Rider")
-            viewModel.onModelYearChanged("1700")
-
-            viewModel.save()
-
-            assertEquals(
-                "Model year must be between 1880 and 2100.",
-                viewModel.uiState.value.validationErrors["modelYear"],
-            )
-            assertNull(repository.createdBike)
-        }
-
-    @Test
-    fun `create bike posts canonical bike payload and navigates back on success`() =
-        runTest {
-            val repository = FakeBikeRepository()
-            val viewModel = BikeEditViewModel(repository, SavedStateHandle())
-
-            viewModel.onDisplayNameChanged("Daily Rider")
-            viewModel.onMakeChanged("Trek")
-            viewModel.onModelChanged("Domane")
-            viewModel.onModelYearChanged("2022")
-            viewModel.onBikeTypeChanged("road")
-            viewModel.onFrameMaterialChanged("carbon")
-            viewModel.onDrivetrainChanged("Shimano 105 2x11")
-            viewModel.onBrakeTypeChanged("hydraulic_disc")
-            viewModel.onWheelSizeChanged("700c")
-            viewModel.onTireSizeChanged("32mm")
-            viewModel.onNotesChanged("Fit checked")
+            val profile =
+                BikeProfileEdit(
+                    displayName = "Daily Rider",
+                    identity = BikeIdentity(make = "Trek", model = "Domane", modelYear = 2022, bikeType = "road"),
+                    frame = BikeFrame(material = "carbon", sizeLabel = "54 cm"),
+                    brakes =
+                        BikeBrakes(
+                            BrakeAssembly(mechanism = "disc", actuation = "hydraulic"),
+                            BrakeAssembly(mechanism = "disc", actuation = "hydraulic"),
+                        ),
+                    rollingSystem =
+                        BikeRollingSystem(
+                            WheelPosition(tire = TireComponent(markedSize = "700x32")),
+                            WheelPosition(tire = TireComponent(markedSize = "700x32")),
+                        ),
+                    notes = "Fit checked",
+                )
+            viewModel.onProfileChanged(profile)
 
             viewModel.events.test {
                 viewModel.save()
-
-                assertEquals(
-                    UiEvent.NavigateBackWithResult(BIKE_LIST_REFRESH_REQUESTED, true),
-                    awaitItem(),
-                )
+                assertEquals(UiEvent.NavigateBackWithResult(BIKE_LIST_REFRESH_REQUESTED, true), awaitItem())
                 cancelAndIgnoreRemainingEvents()
             }
 
-            assertEquals(
-                BikeCreate(
-                    displayName = "Daily Rider",
-                    make = "Trek",
-                    model = "Domane",
-                    modelYear = 2022,
-                    bikeType = "road",
-                    frameMaterial = "carbon",
-                    drivetrain = "Shimano 105 2x11",
-                    brakeType = "hydraulic_disc",
-                    wheelSize = "700c",
-                    tireSize = "32mm",
-                    notes = "Fit checked",
-                ),
-                repository.createdBike,
-            )
+            assertEquals(profile, repository.createdBike)
             assertFalse(viewModel.uiState.value.isSaving)
-            assertTrue(viewModel.uiState.value.validationErrors.isEmpty())
         }
 
     @Test
-    fun `edit bike loads existing bike into the shared form`() =
+    fun `edit loads V2 values rather than deprecated summaries`() =
         runTest {
-            val repository =
-                FakeBikeRepository(
-                    bikeResult =
-                        ApiResult.Success(
-                            bike(
-                                id = "bike-123",
-                                displayName = "Rain Bike",
-                                make = "Surly",
-                                model = "Midnight Special",
-                                modelYear = 2021,
-                                bikeType = "road",
-                                frameMaterial = "steel",
-                                drivetrain = "SRAM Rival",
-                                brakeType = "mechanical_disc",
-                                wheelSize = "700c",
-                                tireSize = "35mm",
-                                notes = "Needs fresh pads",
-                            ),
+            val profile =
+                bike(
+                    identity = BikeIdentity(make = "Surly", model = "Midnight Special", modelYear = 2021),
+                    brakes = BikeBrakes(BrakeAssembly(mechanism = "rim_v_brake"), BrakeAssembly(mechanism = "disc")),
+                    rollingSystem =
+                        BikeRollingSystem(
+                            WheelPosition(tire = TireComponent(markedSize = "700x32")),
+                            WheelPosition(tire = TireComponent(markedSize = "650bx47")),
                         ),
                 )
-
+            val repository = FakeBikeRepository(bikeResult = ApiResult.Success(profile))
             val viewModel = BikeEditViewModel(repository, SavedStateHandle(mapOf("bikeId" to "bike-123")))
 
-            assertEquals(1, repository.getBikeCalls)
-            assertFalse(viewModel.uiState.value.isNew)
-            assertFalse(viewModel.uiState.value.isLoading)
-            assertEquals("Rain Bike", viewModel.uiState.value.displayName)
-            assertEquals("Surly", viewModel.uiState.value.make)
-            assertEquals("2021", viewModel.uiState.value.modelYear)
-            assertEquals("mechanical_disc", viewModel.uiState.value.brakeType)
+            assertEquals("Surly", viewModel.uiState.value.profile.identity.make)
+            assertEquals("disc", viewModel.uiState.value.profile.brakes.rear.mechanism)
+            assertEquals("650bx47", viewModel.uiState.value.profile.rollingSystem.rear.tire?.markedSize)
         }
 
     @Test
-    fun `edit bike patches the existing bike and navigates back on success`() =
+    fun `edit sends structured patch`() =
         runTest {
-            val repository =
-                FakeBikeRepository(
-                    bikeResult = ApiResult.Success(bike(id = "bike-123", displayName = "Rain Bike")),
-                )
+            val repository = FakeBikeRepository(bikeResult = ApiResult.Success(bike()))
             val viewModel = BikeEditViewModel(repository, SavedStateHandle(mapOf("bikeId" to "bike-123")))
-
-            viewModel.onDisplayNameChanged("Rain Bike Mk II")
-            viewModel.onModelYearChanged("2024")
-            viewModel.onBrakeTypeChanged("hydraulic_disc")
+            val updated =
+                viewModel.uiState.value.profile.copy(
+                    brakes = BikeBrakes(BrakeAssembly(mechanism = "disc"), BrakeAssembly(mechanism = "disc", actuation = "hydraulic")),
+                )
+            viewModel.onProfileChanged(updated)
 
             viewModel.events.test {
                 viewModel.save()
-
-                assertEquals(
-                    UiEvent.NavigateBackWithResult(BIKE_LIST_REFRESH_REQUESTED, true),
-                    awaitItem(),
-                )
+                assertEquals(UiEvent.NavigateBackWithResult(BIKE_LIST_REFRESH_REQUESTED, true), awaitItem())
                 cancelAndIgnoreRemainingEvents()
             }
 
             assertEquals("bike-123", repository.updatedBikeId)
-            assertEquals(
-                BikePatch(
-                    displayName = "Rain Bike Mk II",
-                    make = null,
-                    model = null,
-                    modelYear = 2024,
-                    bikeType = "unknown",
-                    frameMaterial = "unknown",
-                    drivetrain = null,
-                    brakeType = "hydraulic_disc",
-                    wheelSize = null,
-                    tireSize = null,
-                    notes = null,
-                ),
-                repository.updatedBike,
-            )
-        }
-
-    @Test
-    fun `restores unsaved form state from saved state handle`() =
-        runTest {
-            val repository = FakeBikeRepository()
-            val viewModel =
-                BikeEditViewModel(
-                    repository,
-                    SavedStateHandle(
-                        mapOf(
-                            "displayName" to "Trainer Bike",
-                            "modelYear" to "2020",
-                            "bikeType" to "gravel",
-                            "notes" to "Indoor setup",
-                        ),
-                    ),
-                )
-
-            assertEquals("Trainer Bike", viewModel.uiState.value.displayName)
-            assertEquals("2020", viewModel.uiState.value.modelYear)
-            assertEquals("gravel", viewModel.uiState.value.bikeType)
-            assertEquals("Indoor setup", viewModel.uiState.value.notes)
+            assertEquals(updated, repository.updatedBike)
         }
 
     private class FakeBikeRepository(
-        private val bikeResult: ApiResult<Bike> =
-            ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val createResult: ApiResult<Bike> =
-            ApiResult.Success(bike(id = "created-bike", displayName = "Created")),
-        private val updateResult: ApiResult<Bike> =
-            ApiResult.Success(bike(id = "updated-bike", displayName = "Updated")),
+        private val bikeResult: ApiResult<BikeProfile> = ApiResult.Success(bike()),
     ) : BikeRepository {
-        var getBikeCalls = 0
-        var createdBike: BikeCreate? = null
+        var createdBike: BikeProfileEdit? = null
         var updatedBikeId: String? = null
-        var updatedBike: BikePatch? = null
+        var updatedBike: BikeProfileEdit? = null
 
-        override suspend fun getBikes(): ApiResult<BikeListResponse> {
-            error("Unused in BikeEditViewModel tests")
-        }
+        override suspend fun getBikes(): ApiResult<List<BikeProfile>> = error("Unused")
 
-        override suspend fun createBike(bike: BikeCreate): ApiResult<Bike> {
+        override suspend fun createBike(bike: BikeProfileEdit): ApiResult<BikeProfile> {
             createdBike = bike
-            return createResult
+            return ApiResult.Success(bike())
         }
 
-        override suspend fun getBike(bikeId: String): ApiResult<Bike> {
-            getBikeCalls += 1
-            return bikeResult
-        }
+        override suspend fun getBike(bikeId: String): ApiResult<BikeProfile> = bikeResult
 
         override suspend fun updateBike(
             bikeId: String,
-            bike: BikePatch,
-        ): ApiResult<Bike> {
+            bike: BikeProfileEdit,
+            originalBike: BikeProfileEdit,
+        ): ApiResult<BikeProfile> {
             updatedBikeId = bikeId
             updatedBike = bike
-            return updateResult
+            return ApiResult.Success(bike())
         }
 
-        override suspend fun deleteBike(bikeId: String): ApiResult<Unit> {
-            error("Unused in BikeEditViewModel tests")
-        }
+        override suspend fun deleteBike(bikeId: String): ApiResult<Unit> = error("Unused")
     }
 }
 
 private fun bike(
-    id: String,
-    displayName: String,
-    make: String? = null,
-    model: String? = null,
-    modelYear: Int? = null,
-    bikeType: String = "unknown",
-    frameMaterial: String? = null,
-    drivetrain: String? = null,
-    brakeType: String? = null,
-    wheelSize: String? = null,
-    tireSize: String? = null,
-    notes: String? = null,
-): Bike =
-    Bike(
-        id = id,
-        userId = "user-1",
-        displayName = displayName,
-        hasRepairSessions = false,
-        make = make,
-        model = model,
-        modelYear = modelYear,
-        bikeType = bikeType,
-        frameMaterial = frameMaterial,
-        drivetrain = drivetrain,
-        brakeType = brakeType,
-        wheelSize = wheelSize,
-        tireSize = tireSize,
-        notes = notes,
-        createdAt = "2026-06-28T12:00:00Z",
-        updatedAt = "2026-06-28T12:00:00Z",
-    )
+    identity: BikeIdentity = BikeIdentity(),
+    brakes: BikeBrakes = BikeBrakes(BrakeAssembly(), BrakeAssembly()),
+    rollingSystem: BikeRollingSystem = BikeRollingSystem(WheelPosition(), WheelPosition()),
+) = BikeProfile(
+    id = "bike-123", userId = "user-1", displayName = "Rain Bike", hasRepairSessions = false,
+    schemaVersion = "bike_profile.v2", profileRevision = 0, identity = identity, frame = BikeFrame(), brakes = brakes,
+    drivetrain = BikeDrivetrain(), rollingSystem = rollingSystem, suspension = BikeSuspension(), cockpit = BikeCockpit(),
+    seating = BikeSeating(), electricAssist = BikeElectricAssist(), legacy = LegacyBikePresentation(bikeType = "unknown", notes = "Notes"),
+    createdAt = "2026-06-28T12:00:00Z", updatedAt = "2026-06-28T12:00:00Z",
+)

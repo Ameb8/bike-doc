@@ -41,14 +41,17 @@ from bike_doc_api.core.config import (
     Settings,
     get_settings,
     validate_diagnostic_runtime_configuration,
+    validate_profile_inference_runtime_configuration,
 )
 from bike_doc_api.db.session import get_session_for_database_url
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User as UserModel
+from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
+from bike_doc_api.repositories.profile_inference import ProfileInferenceRunRepository
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
     RepairSessionRepository,
@@ -60,13 +63,31 @@ from bike_doc_api.schemas.common import RepairSessionStatus
 from bike_doc_api.schemas.event import RepairSessionEventType
 from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.artifacts import ArtifactService
+from bike_doc_api.services.bikes import ResolvedBikeProfileService
 from bike_doc_api.services.events import EventService
+from bike_doc_api.services.profile_inference import (
+    ProfileInferenceExtractor,
+    ProfileInferenceService,
+)
+from bike_doc_api.services.profile_inference_resolution import ProfileResolverPolicy
 from bike_doc_api.services.repair_sessions import RepairSessionService
 from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportService
 from bike_doc_api.services.safety import DiagnosticSafetyService
 from bike_doc_api.services.turns import TurnService
 
 logger = logging.getLogger(__name__)
+
+
+class _UnavailableProfileInferenceExtractor:
+    """Convert configuration failures into retryable run state, not turn failures."""
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def extract(self, _request: object) -> dict[str, object]:
+        """Raise the unavailable runtime error only inside the inference service."""
+
+        raise self._error
 
 
 async def execute_diagnostic_turn_background(
@@ -142,6 +163,85 @@ async def execute_diagnostic_turn_background(
         return
 
 
+async def execute_profile_inference_background(turn_id: str) -> None:
+    """Run profile inference without affecting diagnostic turn processing."""
+
+    settings = get_settings()
+    async for session in get_session_for_database_url(settings.database_url):
+        try:
+            service = _build_profile_inference_service(
+                session=session,
+                settings=settings,
+            )
+            outcome = await service.process_submitted_profile_evidence(turn_id)
+            logger.info(
+                "profile_inference_background_finished",
+                extra={
+                    "status": outcome.status.value,
+                    "claim_count": outcome.claim_count,
+                    "policy_mode": outcome.policy_mode,
+                    "schema_version": "bike_profile_inference.v1",
+                    "extractor_version": settings.profile_inference_extractor_version,
+                },
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.error("profile_inference_background_failed")
+        return
+
+
+def _build_profile_inference_service(
+    *,
+    session: AsyncSession,
+    settings: Settings,
+) -> ProfileInferenceService:
+    """Build the deep inference service around a fresh background DB session."""
+
+    try:
+        extractor: ProfileInferenceExtractor = _build_profile_inference_extractor(
+            settings,
+        )
+    except Exception as exc:
+        logger.exception("profile_inference_runtime_configuration_invalid")
+        extractor = _UnavailableProfileInferenceExtractor(exc)
+    return ProfileInferenceService(
+        turns=RepairTurnRepository(session),
+        repair_sessions=RepairSessionRepository(session),
+        bikes=BikeRepository(session),
+        artifacts=ArtifactRepository(session),
+        runs=ProfileInferenceRunRepository(session),
+        storage=get_storage_provider(settings),
+        extractor=extractor,
+        extractor_version=settings.profile_inference_extractor_version,
+        running_lease_seconds=settings.profile_inference_timeout_seconds + 30.0,
+        max_attempts=settings.profile_inference_max_attempts,
+        resolver_policy=ProfileResolverPolicy.from_deployment(
+            mode=settings.profile_inference_policy_mode,
+            policies=settings.profile_inference_policies,
+        ),
+        commit=session.commit,
+        rollback=session.rollback,
+    )
+
+
+def _build_profile_inference_extractor(
+    settings: Settings,
+) -> ProfileInferenceExtractor:
+    """Build the configured isolated structured extractor adapter."""
+
+    validate_profile_inference_runtime_configuration(settings)
+    if settings.profile_inference_llm_provider == "vertex_ai":
+        return GeminiProfileInferenceExtractor.from_vertex_ai(
+            model=settings.profile_inference_model,
+            timeout_seconds=settings.profile_inference_timeout_seconds,
+        )
+    return GeminiProfileInferenceExtractor.from_google_ai(
+        model=settings.profile_inference_model,
+        timeout_seconds=settings.profile_inference_timeout_seconds,
+    )
+
+
 def _build_background_orchestrator(
     *,
     session: AsyncSession,
@@ -170,6 +270,11 @@ def _build_background_orchestrator(
         phase_sessions=phase_sessions,
         rollback=session.rollback,
     )
+    bike_profile_service = ResolvedBikeProfileService(
+        BikeRepository(session),
+        repair_sessions=repair_sessions,
+        phase_sessions=phase_sessions,
+    )
     artifact_service = ArtifactService(
         artifacts,
         repair_sessions,
@@ -195,7 +300,7 @@ def _build_background_orchestrator(
         rollback=session.rollback,
     )
     tool_dependencies = DiagnosticAgentToolDependencies(
-        bike_profile_service=cast(BikeProfileServiceProtocol, repair_session_service),
+        bike_profile_service=cast(BikeProfileServiceProtocol, bike_profile_service),
         repair_history_service=cast(
             RepairHistoryServiceProtocol,
             repair_session_service,
@@ -226,7 +331,7 @@ def _build_background_orchestrator(
         ),
         runner=runner,
         get_bike_profile=GetBikeProfileTool(
-            cast(BikeProfileServiceProtocol, repair_session_service),
+            cast(BikeProfileServiceProtocol, bike_profile_service),
         ),
         lookup_repair_history=LookupRepairHistoryTool(
             cast(RepairHistoryServiceProtocol, repair_session_service),

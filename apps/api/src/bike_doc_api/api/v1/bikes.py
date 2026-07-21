@@ -14,17 +14,21 @@ from bike_doc_api.schemas.bike import (
     BikeProfileList,
     BikeProfilePatch,
 )
-from bike_doc_api.services.bikes import DEFAULT_BIKE_LIMIT, MAX_BIKE_LIMIT, BikeService
+from bike_doc_api.services.bikes import (
+    DEFAULT_BIKE_LIMIT,
+    MAX_BIKE_LIMIT,
+    ResolvedBikeProfileService,
+)
 
 router = APIRouter(tags=["Bikes"])
 
 
 def get_bike_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-) -> BikeService:
+) -> ResolvedBikeProfileService:
     """Build the bike service for this request."""
 
-    return BikeService(
+    return ResolvedBikeProfileService(
         BikeRepository(session),
         commit=session.commit,
     )
@@ -36,7 +40,7 @@ def get_bike_service(
 )
 async def list_bikes(
     current_user: Annotated[UserModel, Depends(get_current_user)],
-    service: Annotated[BikeService, Depends(get_bike_service)],
+    service: Annotated[ResolvedBikeProfileService, Depends(get_bike_service)],
     limit: Annotated[int, Query(ge=1, le=MAX_BIKE_LIMIT)] = DEFAULT_BIKE_LIMIT,
     cursor: Annotated[str | None, Query(min_length=1)] = None,
 ) -> BikeProfileList:
@@ -57,7 +61,7 @@ async def list_bikes(
 async def create_bike(
     request: BikeProfileCreate,
     current_user: Annotated[UserModel, Depends(get_current_user)],
-    service: Annotated[BikeService, Depends(get_bike_service)],
+    service: Annotated[ResolvedBikeProfileService, Depends(get_bike_service)],
 ) -> BikeProfile:
     """Create a bike profile for the authenticated user."""
 
@@ -70,7 +74,7 @@ async def create_bike(
 )
 async def get_bike(
     current_user: Annotated[UserModel, Depends(get_current_user)],
-    service: Annotated[BikeService, Depends(get_bike_service)],
+    service: Annotated[ResolvedBikeProfileService, Depends(get_bike_service)],
     bike_id: Annotated[str, Path(alias="bikeId", min_length=1)],
 ) -> BikeProfile:
     """Return one owned bike profile."""
@@ -85,7 +89,7 @@ async def get_bike(
 async def update_bike(
     patch: BikeProfilePatch,
     current_user: Annotated[UserModel, Depends(get_current_user)],
-    service: Annotated[BikeService, Depends(get_bike_service)],
+    service: Annotated[ResolvedBikeProfileService, Depends(get_bike_service)],
     bike_id: Annotated[str, Path(alias="bikeId", min_length=1)],
 ) -> BikeProfile:
     """Patch one owned bike profile."""
@@ -104,7 +108,7 @@ async def update_bike(
 )
 async def delete_bike(
     current_user: Annotated[UserModel, Depends(get_current_user)],
-    service: Annotated[BikeService, Depends(get_bike_service)],
+    service: Annotated[ResolvedBikeProfileService, Depends(get_bike_service)],
     bike_id: Annotated[str, Path(alias="bikeId", min_length=1)],
 ) -> Response:
     """Soft-delete one owned bike profile."""

@@ -1,0 +1,94 @@
+{
+  "schema_version": "bike_profile_inference_eval.v2",
+  "dataset_version": "drivetrain-topology-v1.0.0",
+  "tracer": "drivetrain-topology.v1",
+  "description": "Labeled installed drivetrain topology evidence cases.",
+  "policy": "bootstrap-v1",
+  "versions": {
+    "extractor_version": "drivetrain-topology.v1",
+    "output_schema_version": "bike_profile_inference.v1",
+    "prompt_version": "drivetrain-topology-prompt.v1",
+    "model_version": "recorded-response",
+    "preprocessing_version": "image-preprocessing.v1",
+    "registry_version": "bike_profile.v2",
+    "resolver_policy_version": "bootstrap-v1"
+  },
+  "cases": [
+    {
+      "id": "clear_1x_chain_derailleur",
+      "label": "clear_1x_derailleur_topology",
+      "input": {"artifact_ids": ["chain-derailleur"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.architecture", "value": "derailleur", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.drive_medium", "value": "chain", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.front_derailleur.presence", "value": "absent", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.architecture", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.drive_medium", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.front_derailleur.presence", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "clear_belt_internal_gear",
+      "label": "clear_internal_gear_belt_topology",
+      "input": {"artifact_ids": ["belt-internal"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.architecture", "value": "internal_gear_hub", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.drive_medium", "value": "belt", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.chain.presence", "value": "absent", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.belt.presence", "value": "present", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.gear_unit.presence", "value": "present", "position": "whole_bike", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.architecture", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.drive_medium", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.chain.presence", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.belt.presence", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.gear_unit.presence", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "occluded_drivetrain",
+      "label": "occluded_abstention",
+      "input": {"artifact_ids": ["occluded-drivetrain"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "drivetrain.architecture", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.drive_medium", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.front_derailleur.presence", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": []
+    },
+    {
+      "id": "loose_replacement_chain",
+      "label": "loose_component_not_installed",
+      "input": {"artifact_ids": ["loose-chain"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "loose"},
+      "expected_claims": [
+        {"field_path": "drivetrain.chain.presence", "value": "present", "position": "whole_bike", "installedness": "loose", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.chain.presence", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "multiple_bikes_drivetrain",
+      "label": "multiple_bikes_abstention",
+      "input": {"artifact_ids": ["multiple-bikes-drivetrain"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "drivetrain.architecture", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "drivetrain.drive_medium", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": []
+    }
+  ]
+}

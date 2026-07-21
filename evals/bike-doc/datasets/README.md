@@ -5,6 +5,49 @@ behavior. Agents CLI uses these files to exercise the backend-owned ADK agent
 entrypoint, but the product runtime remains the custom FastAPI turn API under
 `apps/api`.
 
+Profile-inference evaluation assets are under `../profile-inference`. They use
+a versioned label schema and are evaluated by the reusable runner, rather than
+by pytest assertions over provider responses.
+
+## Drivetrain Profile Inference
+
+Run all three drivetrain tracers before accepting a drivetrain extractor or
+registry change:
+
+```bash
+task eval:drivetrain-topology
+task eval:drivetrain-roles
+task eval:drivetrain-specifications
+```
+
+The specifications tracer covers counted chainring, sprocket, and speed facts;
+marked driver-interface and bottom-bracket facts; disagreement; loose parts;
+and abstention. Each tracer has a committed accepted baseline.
+
+## Rear-brake profile inference
+
+Run the recorded deterministic response fixture and inspect the report with:
+
+```bash
+task eval:rear-brake
+```
+
+For a new extractor, output schema, prompt, model, preprocessing, registry, or
+resolver-policy version, update the version metadata in the dataset and run:
+
+```bash
+UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py \
+  --dataset evals/bike-doc/profile-inference/rear-brake-shadow-v1.json \
+  --predictions evals/bike-doc/profile-inference/rear-brake-shadow-v1.responses.json \
+  --baseline evals/bike-doc/profile-inference/rear-brake-shadow-v1.baseline.json \
+  --output /tmp/bike-doc-rear-brake-evaluation.json
+```
+
+The command reports a missing baseline explicitly and never treats it as a
+regression pass. Add `--accept` only after reviewing the report; changing
+versions requires a comparison against the prior accepted baseline. Use
+`--accept --accept-initial-baseline` only when creating the first baseline.
+
 ## Running Evaluations
 
 ### Default Dataset

@@ -62,6 +62,41 @@ tasks:
     cmds:
       - uv build
 
+  eval:rear-brake:
+    desc: Evaluate recorded rear-brake inference responses and compare the accepted baseline.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/rear-brake-shadow-v1.json --predictions evals/bike-doc/profile-inference/rear-brake-shadow-v1.responses.json --baseline evals/bike-doc/profile-inference/rear-brake-shadow-v1.baseline.json --output /tmp/bike-doc-rear-brake-evaluation.json
+
+  eval:rolling-system:
+    desc: Evaluate recorded positioned rolling-system inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/rolling-system-v1.json --predictions evals/bike-doc/profile-inference/rolling-system-v1.responses.json --baseline evals/bike-doc/profile-inference/rolling-system-v1.baseline.json --output /tmp/bike-doc-rolling-system-evaluation.json
+
+  eval:drivetrain-topology:
+    desc: Evaluate recorded installed drivetrain topology inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-topology-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-topology-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-topology-v1.baseline.json --output /tmp/bike-doc-drivetrain-topology-evaluation.json
+
+  eval:drivetrain-roles:
+    desc: Evaluate recorded installed drivetrain role and identity inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-roles-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-roles-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-roles-v1.baseline.json --output /tmp/bike-doc-drivetrain-roles-evaluation.json
+
+  eval:drivetrain-specifications:
+    desc: Evaluate recorded counted and marked drivetrain specification inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/drivetrain-specifications-v1.json --predictions evals/bike-doc/profile-inference/drivetrain-specifications-v1.responses.json --baseline evals/bike-doc/profile-inference/drivetrain-specifications-v1.baseline.json --output /tmp/bike-doc-drivetrain-specifications-evaluation.json
+
+  eval:electric-assist:
+    desc: Evaluate recorded electric-assist inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/electric-assist-v1.json --predictions evals/bike-doc/profile-inference/electric-assist-v1.responses.json --baseline evals/bike-doc/profile-inference/electric-assist-v1.baseline.json --output /tmp/bike-doc-electric-assist-evaluation.json
+
+  eval:suspension:
+    desc: Evaluate recorded suspension inference responses.
+    cmds:
+      - UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python evals/bike-doc/profile-inference/evaluate.py --dataset evals/bike-doc/profile-inference/suspension-v1.json --predictions evals/bike-doc/profile-inference/suspension-v1.responses.json --baseline evals/bike-doc/profile-inference/suspension-v1.baseline.json --output /tmp/bike-doc-suspension-evaluation.json
+
   ci:
     desc: Run the non-Docker CI verification suite.
     cmds:

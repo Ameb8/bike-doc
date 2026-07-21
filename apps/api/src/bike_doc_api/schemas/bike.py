@@ -2,11 +2,10 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Self
+from typing import Any, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
-from bike_doc_api.models.bike import BikeProfile as BikeProfileModel
 from bike_doc_api.schemas.common import APIBaseModel
 
 
@@ -47,12 +46,23 @@ class BrakeType(StrEnum):
 
 
 class BikeProfile(APIBaseModel):
-    """Public bike profile."""
+    """Public resolved ``bike_profile.v2`` projection."""
 
     id: str
     user_id: str
     display_name: str
     has_repair_sessions: bool
+    schema_version: str = "bike_profile.v2"
+    profile_revision: int = Field(default=0, ge=0)
+    identity: dict[str, Any] = Field(default_factory=dict)
+    frame: dict[str, Any] = Field(default_factory=dict)
+    brakes: dict[str, Any] = Field(default_factory=dict)
+    drivetrain_v2: dict[str, Any] = Field(default_factory=dict)
+    rolling_system: dict[str, Any] = Field(default_factory=dict)
+    suspension: dict[str, Any] = Field(default_factory=dict)
+    cockpit: dict[str, Any] = Field(default_factory=dict)
+    seating: dict[str, Any] = Field(default_factory=dict)
+    electric_assist: dict[str, Any] = Field(default_factory=dict)
     make: str | None = None
     model: str | None = None
     model_year: int | None = None
@@ -81,6 +91,35 @@ class BikeProfileCreate(APIBaseModel):
     wheel_size: str | None = None
     tire_size: str | None = None
     notes: str | None = None
+    identity: dict[str, Any] | None = None
+    frame: dict[str, Any] | None = None
+    brakes: dict[str, Any] | None = None
+    drivetrain_v2: dict[str, Any] | None = None
+    rolling_system: dict[str, Any] | None = None
+    suspension: dict[str, Any] | None = None
+    cockpit: dict[str, Any] | None = None
+    seating: dict[str, Any] | None = None
+    electric_assist: dict[str, Any] | None = None
+
+    @field_validator("make", "model", "drivetrain", "wheel_size", "tire_size")
+    @classmethod
+    def reject_blank_technical_text(cls, value: str | None) -> str | None:
+        """Reject empty technical values before they reach the claim ledger."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Technical values must not be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_structured_technical_fields(self) -> Self:
+        """Reject unknown or invalid V2 leaves before they reach a route."""
+
+        from bike_doc_api.services.profile_resolution import (
+            validate_public_technical_patch,
+        )
+
+        validate_public_technical_patch(_structured_groups(self))
+        return self
 
 
 class BikeProfilePatch(APIBaseModel):
@@ -97,6 +136,24 @@ class BikeProfilePatch(APIBaseModel):
     wheel_size: str | None = None
     tire_size: str | None = None
     notes: str | None = None
+    identity: dict[str, Any] | None = None
+    frame: dict[str, Any] | None = None
+    brakes: dict[str, Any] | None = None
+    drivetrain_v2: dict[str, Any] | None = None
+    rolling_system: dict[str, Any] | None = None
+    suspension: dict[str, Any] | None = None
+    cockpit: dict[str, Any] | None = None
+    seating: dict[str, Any] | None = None
+    electric_assist: dict[str, Any] | None = None
+
+    @field_validator("make", "model", "drivetrain", "wheel_size", "tire_size")
+    @classmethod
+    def reject_blank_technical_text(cls, value: str | None) -> str | None:
+        """Reject empty technical values before they reach the claim ledger."""
+
+        if value is not None and not value.strip():
+            raise ValueError("Technical values must not be blank.")
+        return value
 
     @model_validator(mode="after")
     def reject_nulls_for_non_nullable_fields(self) -> Self:
@@ -116,6 +173,17 @@ class BikeProfilePatch(APIBaseModel):
                 raise ValueError(msg)
         return self
 
+    @model_validator(mode="after")
+    def validate_structured_technical_fields(self) -> Self:
+        """Reject unknown or invalid V2 leaves before they reach a route."""
+
+        from bike_doc_api.services.profile_resolution import (
+            validate_public_technical_patch,
+        )
+
+        validate_public_technical_patch(_structured_groups(self))
+        return self
+
 
 class BikeProfileList(APIBaseModel):
     """Bike profile list response."""
@@ -124,28 +192,21 @@ class BikeProfileList(APIBaseModel):
     next_cursor: str | None
 
 
-def bike_profile_from_model(
-    bike: BikeProfileModel,
-    *,
-    has_repair_sessions: bool = False,
-) -> BikeProfile:
-    """Map a persistence bike profile to the public schema."""
+def _structured_groups(model: BikeProfileCreate | BikeProfilePatch) -> dict[str, Any]:
+    """Return only structured groups that were intentionally supplied."""
 
-    return BikeProfile(
-        id=bike.id,
-        user_id=bike.user_id,
-        display_name=bike.display_name,
-        has_repair_sessions=has_repair_sessions,
-        make=bike.make,
-        model=bike.model,
-        model_year=bike.model_year,
-        bike_type=BikeType(bike.bike_type),
-        frame_material=FrameMaterial(bike.frame_material),
-        drivetrain=bike.drivetrain,
-        brake_type=BrakeType(bike.brake_type),
-        wheel_size=bike.wheel_size,
-        tire_size=bike.tire_size,
-        notes=bike.notes,
-        created_at=bike.created_at,
-        updated_at=bike.updated_at,
-    )
+    return {
+        field_name: getattr(model, field_name)
+        for field_name in {
+            "identity",
+            "frame",
+            "brakes",
+            "drivetrain_v2",
+            "rolling_system",
+            "suspension",
+            "cockpit",
+            "seating",
+            "electric_assist",
+        }
+        if field_name in model.model_fields_set
+    }

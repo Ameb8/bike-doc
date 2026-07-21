@@ -31,3 +31,11 @@ class StorageProvider(Protocol):
         content_sha256: str,
     ) -> StoredObject:
         """Store object bytes and return provider-neutral metadata."""
+
+    async def get_object(
+        self,
+        *,
+        path: str,
+        bucket: str | None,
+    ) -> bytes:
+        """Read private artifact bytes through app-owned storage metadata."""

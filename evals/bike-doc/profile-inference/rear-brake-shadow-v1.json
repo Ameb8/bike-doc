@@ -1,0 +1,221 @@
+{
+  "schema_version": "bike_profile_inference_eval.v2",
+  "dataset_version": "front-rear-brake-v1.0.0",
+  "tracer": "front-rear-brake.v1",
+  "description": "Held-out labels for independent front/rear brake extraction and deterministic resolution. Image references are supplied by the runner; this file contains no production media.",
+  "policy": "bootstrap-v1",
+  "versions": {
+    "extractor_version": "front-rear-brake.v1",
+    "output_schema_version": "bike_profile_inference.v1",
+    "prompt_version": "front-rear-brake-prompt.v1",
+    "model_version": "recorded-response",
+    "preprocessing_version": "image-preprocessing.v1",
+    "registry_version": "bike_profile.v2",
+    "resolver_policy_version": "bootstrap-v1"
+  },
+  "cases": [
+    {
+      "id": "rear_hydraulic_disc_clear",
+      "label": "clear_rear_evidence",
+      "input": {"artifact_ids": ["rear-clear"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "front_brake_only",
+      "label": "front_only_positioned_assembly",
+      "input": {"artifact_ids": ["front-only"]},
+      "expected_scene": {"position": "front", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.front.mechanism", "value": "disc", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.front.mechanism", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "rear_brake_occluded",
+      "label": "insufficient_safety_detail",
+      "input": {"artifact_ids": ["rear-occluded"]},
+      "expected_scene": {"position": "rear", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "brakes.rear.mechanism", "position": "rear", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "position": "rear", "installedness": "ambiguous", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "abstained", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "abstained", "conflict": false}
+      ]
+    },
+    {
+      "id": "multiple_bikes_rear_brakes_visible",
+      "label": "multiple_bicycles",
+      "input": {"artifact_ids": ["multiple-bikes"]},
+      "expected_scene": {"position": "rear", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "brakes.rear.mechanism", "position": "rear", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "position": "rear", "installedness": "ambiguous", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "abstained", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "abstained", "conflict": false}
+      ]
+    },
+    {
+      "id": "no_bike_scene",
+      "label": "no_bicycle",
+      "input": {"artifact_ids": ["no-bike"]},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "brakes.rear.mechanism", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "abstained", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "abstained", "conflict": false}
+      ]
+    },
+    {
+      "id": "loose_replacement_caliper",
+      "label": "loose_component",
+      "input": {"artifact_ids": ["loose-caliper"]},
+      "expected_scene": {"position": "rear", "installedness": "loose"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "loose", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "loose", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]},
+        {"field_path": "brakes.rear.actuation", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "boxed_rear_brake_packaging",
+      "label": "packaging_reference",
+      "input": {"artifact_ids": ["packaged-caliper"]},
+      "expected_scene": {"position": "rear", "installedness": "reference"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "reference", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "caption_confirms_installedness",
+      "label": "caption_installedness_clarification",
+      "input": {"artifact_ids": ["caption-installed"], "caption": "This is the rear brake currently installed on my bike."},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.actuation", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "manual_conflict_new_replacement",
+      "label": "manual_conflict_replacement",
+      "input": {"artifact_ids": ["new-rear-brake"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "initial_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "mechanical", "source_type": "manual_profile_edit", "observed_at": "2026-07-10T12:00:00Z"}
+      ],
+      "expected_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.actuation", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "manual_conflict_retained",
+      "label": "manual_conflict",
+      "input": {"artifact_ids": ["ambiguous-rear-brake"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "initial_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "mechanical", "source_type": "manual_profile_edit", "observed_at": "2026-07-10T12:00:00Z"}
+      ],
+      "expected_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.actuation", "expected_action": "conflict", "conflict": true}
+      ]
+    },
+    {
+      "id": "insufficient_safety_detail",
+      "label": "partial_visibility_abstention",
+      "input": {"artifact_ids": ["rear-partial"]},
+      "expected_scene": {"position": "rear", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.actuation", "expected_action": "pending", "conflict": false}
+      ]
+    },
+    {
+      "id": "caption_identifies_loose_replacement",
+      "label": "caption_replacement_clarification",
+      "input": {"artifact_ids": ["caption-loose"], "caption": "This is a replacement caliper, not installed yet."},
+      "expected_scene": {"position": "rear", "installedness": "loose"},
+      "expected_claims": [
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "loose", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "position_error_profile_corruption",
+      "label": "position_mistake_corruption",
+      "input": {"artifact_ids": ["front-misread"]},
+      "expected_scene": {"position": "front", "installedness": "installed"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "brakes.rear.mechanism", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_outcomes": [
+        {"field_path": "brakes.rear.mechanism", "expected_action": "rejected", "conflict": false, "profile_corruption_failures": ["position"]}
+      ]
+    },
+    {
+      "id": "mixed_front_mechanical_rear_hydraulic_disc",
+      "label": "mixed_positioned_assemblies",
+      "input": {"artifact_ids": ["mixed-brakes"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "brakes.front.mechanism", "value": "disc", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.front.actuation", "value": "mechanical", "position": "front", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.mechanism", "value": "disc", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"},
+        {"field_path": "brakes.rear.actuation", "value": "hydraulic", "position": "rear", "installedness": "installed", "evidence_class": "direct_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "brakes.front.mechanism", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.front.actuation", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.rear.mechanism", "expected_action": "applied", "conflict": false},
+        {"field_path": "brakes.rear.actuation", "expected_action": "applied", "conflict": false}
+      ]
+    }
+  ]
+}

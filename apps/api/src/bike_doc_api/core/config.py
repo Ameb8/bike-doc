@@ -9,10 +9,63 @@ from pathlib import Path
 from typing import Literal
 
 import google.auth
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
+
+
+class ProfileInferenceFieldPolicySettings(BaseModel):
+    """Deployment data for one canonical field/evidence policy."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_path: str = Field(min_length=1)
+    evidence_class: str = Field(min_length=1)
+    calibration_key: str = Field(min_length=1)
+    policy_version: str = Field(min_length=1)
+    auto_fill_threshold: float = Field(ge=0.0, le=1.0)
+    auto_overwrite_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    precision_gate_passed: bool = False
+    accepted_baseline_version: str | None = None
+    regression_evidence_passed: bool = False
+    promoted: bool = False
+
+    @field_validator(
+        "field_path", "evidence_class", "calibration_key", "policy_version"
+    )
+    @classmethod
+    def validate_identifiers(cls, value: str) -> str:
+        """Reject whitespace-only deployment identifiers."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("profile inference policy identifiers must not be blank")
+        return normalized
+
+    @field_validator("accepted_baseline_version")
+    @classmethod
+    def validate_baseline_version(cls, value: str | None) -> str | None:
+        """Normalize the optional accepted evaluation baseline identifier."""
+
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def validate_threshold_order(self) -> "ProfileInferenceFieldPolicySettings":
+        """Keep overwrite at least as selective as fill when configured."""
+
+        if (
+            self.auto_overwrite_threshold is not None
+            and self.auto_overwrite_threshold < self.auto_fill_threshold
+        ):
+            raise ValueError(
+                "auto_overwrite_threshold must be greater than or equal to "
+                "auto_fill_threshold",
+            )
+        return self
 
 
 class Settings(BaseSettings):
@@ -48,6 +101,25 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
+    profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_max_attempts: int = Field(default=3, ge=1, le=5)
+    profile_inference_extractor_version: str = Field(
+        default="drivetrain-specifications.v1",
+        min_length=1,
+    )
+    profile_inference_policy_mode: Literal[
+        "shadow", "bootstrap-v1", "evaluated", "production"
+    ] = "shadow"
+    profile_inference_policies: list[ProfileInferenceFieldPolicySettings] = Field(
+        default_factory=list,
+    )
+    # Kept as a compatibility alias for deployments created by the tracer
+    # rollout. New deployments should use profile_inference_policy_mode.
+    profile_inference_resolver_policy: (
+        Literal["production", "shadow", "bootstrap-v1", "evaluated"] | None
+    ) = None
     price_lookup_provider: Literal["unavailable", "gemini_grounded"] = "unavailable"
     price_lookup_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     price_lookup_model: str = Field(default="gemini-2.5-flash", min_length=1)
@@ -170,6 +242,25 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
+    @field_validator("profile_inference_llm_provider", mode="before")
+    @classmethod
+    def validate_profile_inference_llm_provider(cls, value: object) -> object:
+        """Normalize the isolated image-extraction provider selection."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("profile_inference_model", "profile_inference_extractor_version")
+    @classmethod
+    def validate_profile_inference_strings(cls, value: str) -> str:
+        """Reject blank model or version identifiers used for run idempotency."""
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("profile inference settings must not be blank")
+        return normalized
+
     @field_validator(
         "diagnostic_agent_temperature",
         "diagnostic_agent_timeout_seconds",
@@ -179,6 +270,15 @@ class Settings(BaseSettings):
         """Reject non-finite diagnostic generation settings."""
         if not isfinite(value):
             raise ValueError("diagnostic numeric settings must be finite")
+        return value
+
+    @field_validator("profile_inference_timeout_seconds")
+    @classmethod
+    def validate_finite_profile_inference_float(cls, value: float) -> float:
+        """Reject non-finite profile-inference generation settings."""
+
+        if not isfinite(value):
+            raise ValueError("profile inference numeric settings must be finite")
         return value
 
     @field_validator("price_lookup_provider", mode="before")
@@ -228,6 +328,34 @@ class Settings(BaseSettings):
         if self.artifact_storage_provider == "gcs" and self.artifact_gcs_bucket is None:
             raise ValueError(
                 "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
+            )
+        if self.profile_inference_resolver_policy is not None:
+            legacy_mode = {
+                "production": "evaluated",
+                "shadow": "shadow",
+                "bootstrap-v1": "bootstrap-v1",
+                "evaluated": "evaluated",
+            }[self.profile_inference_resolver_policy]
+            if (
+                "profile_inference_policy_mode" in self.model_fields_set
+                and (
+                    "evaluated"
+                    if self.profile_inference_policy_mode == "production"
+                    else self.profile_inference_policy_mode
+                )
+                != legacy_mode
+            ):
+                raise ValueError(
+                    "profile inference policy mode conflicts with its "
+                    "compatibility alias"
+                )
+            self.profile_inference_policy_mode = legacy_mode  # type: ignore[assignment]
+        if (
+            environment == "production"
+            and self.profile_inference_policy_mode == "bootstrap-v1"
+        ):
+            raise ValueError(
+                "bootstrap-v1 profile inference policy is not permitted in production"
             )
         return self
 
@@ -294,6 +422,32 @@ def validate_price_lookup_runtime_configuration(
         raise ValueError("vertex_ai price lookup requires GOOGLE_CLOUD_PROJECT")
     if not env.get("GOOGLE_CLOUD_LOCATION"):
         raise ValueError("vertex_ai price lookup requires GOOGLE_CLOUD_LOCATION")
+
+
+def validate_profile_inference_runtime_configuration(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate credentials required by the configured image extractor."""
+
+    if settings.environment.lower() == "test":
+        return
+    env = environ if environ is not None else os.environ
+    if settings.profile_inference_llm_provider == "google_ai":
+        if env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY"):
+            return
+        raise ValueError(
+            "google_ai profile inference requires GEMINI_API_KEY or GOOGLE_API_KEY",
+        )
+    if env.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() != "true":
+        raise ValueError(
+            "vertex_ai profile inference requires GOOGLE_GENAI_USE_VERTEXAI=true",
+        )
+    if not env.get("GOOGLE_CLOUD_PROJECT"):
+        raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_PROJECT")
+    if not env.get("GOOGLE_CLOUD_LOCATION"):
+        raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_LOCATION")
 
 
 def validate_artifact_storage_runtime_configuration(

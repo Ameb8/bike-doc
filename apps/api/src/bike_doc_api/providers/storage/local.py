@@ -38,6 +38,14 @@ class LocalStorageProvider:
             content_sha256=content_sha256,
         )
 
+    async def get_object(self, *, path: str, bucket: str | None) -> bytes:
+        """Read a private local object by its app-owned relative path."""
+
+        del bucket
+        relative_path = _safe_relative_path(path)
+        source = self._root.joinpath(*PurePosixPath(relative_path).parts)
+        return await asyncio.to_thread(source.read_bytes)
+
 
 def _safe_relative_path(object_name: str) -> str:
     """Return a normalized relative provider path."""

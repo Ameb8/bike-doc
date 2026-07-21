@@ -47,3 +47,11 @@ class GCSStorageProvider:
             byte_size=len(content),
             content_sha256=content_sha256,
         )
+
+    async def get_object(self, *, path: str, bucket: str | None) -> bytes:
+        """Read a private object without exposing a signed URL."""
+
+        if bucket is not None and bucket != self._bucket.name:
+            raise ValueError("artifact bucket does not match the configured provider")
+        blob = self._bucket.blob(path)
+        return await asyncio.to_thread(blob.download_as_bytes)

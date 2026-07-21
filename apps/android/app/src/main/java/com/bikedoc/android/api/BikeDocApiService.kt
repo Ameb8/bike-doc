@@ -1,10 +1,8 @@
 package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.ArtifactUploadResponse
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikeListResponse
-import com.bikedoc.android.api.models.BikePatch
+import com.bikedoc.android.api.models.BikeListResponseDto
+import com.bikedoc.android.api.models.BikeProfileDto
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PhaseReportList
 import com.bikedoc.android.api.models.RepairSession
@@ -13,6 +11,7 @@ import com.bikedoc.android.api.models.RepairSessionListResponse
 import com.bikedoc.android.api.models.TurnAccepted
 import com.bikedoc.android.api.models.TurnCreate
 import com.bikedoc.android.api.models.UserProfile
+import kotlinx.serialization.json.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import retrofit2.http.Body
@@ -33,23 +32,23 @@ interface BikeDocApiService {
     suspend fun getBikes(
         @Query("limit") limit: Int = 50,
         @Query("cursor") cursor: String? = null,
-    ): BikeListResponse
+    ): BikeListResponseDto
 
     @POST("v1/bikes")
     suspend fun createBike(
-        @Body bike: BikeCreate,
-    ): Bike
+        @Body bike: JsonObject,
+    ): BikeProfileDto
 
     @GET("v1/bikes/{bikeId}")
     suspend fun getBike(
         @Path("bikeId") bikeId: String,
-    ): Bike
+    ): BikeProfileDto
 
     @PATCH("v1/bikes/{bikeId}")
     suspend fun updateBike(
         @Path("bikeId") bikeId: String,
-        @Body bike: BikePatch,
-    ): Bike
+        @Body bike: JsonObject,
+    ): BikeProfileDto
 
     @DELETE("v1/bikes/{bikeId}")
     suspend fun deleteBike(

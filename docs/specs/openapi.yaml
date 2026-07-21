@@ -742,11 +742,31 @@ components:
 
     BikeProfile:
       type: object
+      description: |
+        The current resolved `bike_profile.v2` projection. It never includes
+        claims, evidence, confidence, resolution states, inference runs, model
+        details, or other operational metadata. `display_name` and `notes` are
+        user-managed and are never written by image inference. Deprecated
+        compatibility summaries are not a second source of truth: `brake_type`,
+        `wheel_size`, and `tire_size` are null unless both positioned values
+        agree and are undisputed. `drivetrain` remains a deprecated display
+        summary; the structured current drivetrain is `drivetrain_v2`.
       required:
         - id
         - user_id
         - display_name
         - has_repair_sessions
+        - schema_version
+        - profile_revision
+        - identity
+        - frame
+        - brakes
+        - drivetrain_v2
+        - rolling_system
+        - suspension
+        - cockpit
+        - seating
+        - electric_assist
         - bike_type
         - created_at
         - updated_at
@@ -760,6 +780,32 @@ components:
         has_repair_sessions:
           type: boolean
           description: True when the authenticated user owns one or more repair sessions for this bike.
+        schema_version:
+          type: string
+          enum: [bike_profile.v2]
+        profile_revision:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Monotonically increasing revision of resolved technical facts.
+        identity:
+          $ref: "#/components/schemas/BikeIdentity"
+        frame:
+          $ref: "#/components/schemas/BikeFrame"
+        brakes:
+          $ref: "#/components/schemas/BikeBrakes"
+        drivetrain_v2:
+          $ref: "#/components/schemas/BikeDrivetrain"
+        rolling_system:
+          $ref: "#/components/schemas/BikeRollingSystem"
+        suspension:
+          $ref: "#/components/schemas/BikeSuspension"
+        cockpit:
+          $ref: "#/components/schemas/BikeCockpit"
+        seating:
+          $ref: "#/components/schemas/BikeSeating"
+        electric_assist:
+          $ref: "#/components/schemas/BikeElectricAssist"
         make:
           type: string
           nullable: true
@@ -778,18 +824,24 @@ components:
         drivetrain:
           type: string
           nullable: true
+          deprecated: true
+          description: Deprecated display summary. Use `drivetrain_v2` for technical facts.
           example: Shimano 105 2x11
         brake_type:
           type: string
           enum: [unknown, rim, mechanical_disc, hydraulic_disc, coaster, other]
+          nullable: true
+          deprecated: true
         wheel_size:
           type: string
           nullable: true
           example: 700c
+          deprecated: true
         tire_size:
           type: string
           nullable: true
           example: 700x32
+          deprecated: true
         notes:
           type: string
           nullable: true
@@ -832,9 +884,33 @@ components:
           type: string
         notes:
           type: string
+        identity:
+          $ref: "#/components/schemas/BikeIdentityPatch"
+        frame:
+          $ref: "#/components/schemas/BikeFramePatch"
+        brakes:
+          $ref: "#/components/schemas/BikeBrakesPatch"
+        drivetrain_v2:
+          $ref: "#/components/schemas/BikeDrivetrainPatch"
+        rolling_system:
+          $ref: "#/components/schemas/BikeRollingSystemPatch"
+        suspension:
+          $ref: "#/components/schemas/BikeSuspensionPatch"
+        cockpit:
+          $ref: "#/components/schemas/BikeCockpitPatch"
+        seating:
+          $ref: "#/components/schemas/BikeSeatingPatch"
+        electric_assist:
+          $ref: "#/components/schemas/BikeElectricAssistPatch"
 
     BikeProfilePatch:
       type: object
+      description: |
+        Partial update. Omitted fields are unchanged. An explicit JSON `null`
+        clears a nullable technical leaf through a `manual_profile_clear` claim;
+        it does not mean component absence. Use `presence: absent` to assert
+        known absence. Structured fields are resolver-backed manual edits; the
+        read-only backend-derived drivetrain counts cannot be written.
       properties:
         display_name:
           type: string
@@ -868,6 +944,278 @@ components:
         notes:
           type: string
           nullable: true
+        identity:
+          $ref: "#/components/schemas/BikeIdentityPatch"
+        frame:
+          $ref: "#/components/schemas/BikeFramePatch"
+        brakes:
+          $ref: "#/components/schemas/BikeBrakesPatch"
+        drivetrain_v2:
+          $ref: "#/components/schemas/BikeDrivetrainPatch"
+        rolling_system:
+          $ref: "#/components/schemas/BikeRollingSystemPatch"
+        suspension:
+          $ref: "#/components/schemas/BikeSuspensionPatch"
+        cockpit:
+          $ref: "#/components/schemas/BikeCockpitPatch"
+        seating:
+          $ref: "#/components/schemas/BikeSeatingPatch"
+        electric_assist:
+          $ref: "#/components/schemas/BikeElectricAssistPatch"
+
+    Presence:
+      type: string
+      nullable: true
+      enum: [unknown, present, absent]
+      description: Null means unknown; `absent` is an explicit installed-component absence.
+
+    ComponentIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        presence:
+          $ref: "#/components/schemas/Presence"
+        manufacturer:
+          type: string
+          nullable: true
+          minLength: 1
+        model:
+          type: string
+          nullable: true
+          minLength: 1
+
+    BikeIdentity:
+      type: object
+      additionalProperties: false
+      properties:
+        make: {type: string, nullable: true, minLength: 1}
+        model: {type: string, nullable: true, minLength: 1}
+        model_year: {type: integer, nullable: true, minimum: 1880, maximum: 2100}
+        bike_type: {type: string, nullable: true, enum: [road, gravel, mountain, hybrid, commuter, cargo, ebike, bmx, folding, recumbent, other]}
+    BikeIdentityPatch:
+      $ref: "#/components/schemas/BikeIdentity"
+    BikeFrame:
+      type: object
+      additionalProperties: false
+      properties:
+        material: {type: string, nullable: true, enum: [aluminum, steel, carbon, titanium, other]}
+        size_label: {type: string, nullable: true, minLength: 1}
+        primary_color: {type: string, nullable: true, minLength: 1}
+        secondary_color: {type: string, nullable: true, minLength: 1}
+    BikeFramePatch:
+      $ref: "#/components/schemas/BikeFrame"
+    BrakeAssembly:
+      allOf:
+        - $ref: "#/components/schemas/ComponentIdentity"
+        - type: object
+          additionalProperties: false
+          properties:
+            mechanism: {type: string, nullable: true, enum: [disc, rim_caliper, rim_cantilever, rim_v_brake, rim_u_brake, rim_other, coaster, drum, roller, other]}
+            actuation: {type: string, nullable: true, enum: [mechanical, hydraulic, electronic, none, other]}
+            control: {$ref: "#/components/schemas/ComponentIdentity"}
+            brake_unit:
+              allOf:
+                - $ref: "#/components/schemas/ComponentIdentity"
+                - type: object
+                  properties:
+                    mount_standard: {type: string, nullable: true, enum: [flat_mount, post_mount, international_standard, center_bolt, frame_boss, other]}
+                    pad_family: {type: string, nullable: true, minLength: 1}
+            rotor:
+              allOf:
+                - $ref: "#/components/schemas/ComponentIdentity"
+                - type: object
+                  properties:
+                    diameter_mm: {type: number, nullable: true, exclusiveMinimum: 0}
+    BikeBrakes:
+      type: object
+      additionalProperties: false
+      required: [front, rear]
+      properties:
+        front: {$ref: "#/components/schemas/BrakeAssembly"}
+        rear: {$ref: "#/components/schemas/BrakeAssembly"}
+    BikeBrakesPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        front: {$ref: "#/components/schemas/BrakeAssembly"}
+        rear: {$ref: "#/components/schemas/BrakeAssembly"}
+    DrivetrainRole:
+      allOf:
+        - $ref: "#/components/schemas/ComponentIdentity"
+        - type: object
+          properties:
+            actuation: {type: string, nullable: true, enum: [mechanical, electronic, hydraulic, other]}
+            speed_count: {type: integer, nullable: true, minimum: 1}
+            mount_type: {type: string, nullable: true, enum: [hanger, direct_mount, full_mount, other]}
+            chainring_count: {type: integer, nullable: true, minimum: 1}
+            chainring_tooth_counts: {type: string, nullable: true, minLength: 1}
+            cluster_type: {type: string, nullable: true, enum: [cassette, freewheel, single_sprocket, belt_cog, other]}
+            smallest_sprocket_teeth: {type: integer, nullable: true, minimum: 1}
+            largest_sprocket_teeth: {type: integer, nullable: true, minimum: 1}
+            driver_interface: {type: string, nullable: true, enum: [hg, microspline, xd, xdr, campagnolo, threaded_freewheel, other]}
+            speed_compatibility: {type: integer, nullable: true, minimum: 1}
+            interface: {type: string, nullable: true, minLength: 1}
+            shell_width_mm: {type: number, nullable: true, exclusiveMinimum: 0}
+    BikeDrivetrain:
+      type: object
+      additionalProperties: false
+      properties:
+        architecture: {type: string, nullable: true, enum: [derailleur, internal_gear_hub, gearbox, singlespeed_freewheel, fixed_gear, continuously_variable, other]}
+        drive_medium: {type: string, nullable: true, enum: [chain, belt, shaft, other]}
+        front_chainring_count: {type: integer, nullable: true, minimum: 1, readOnly: true}
+        rear_speed_count: {type: integer, nullable: true, minimum: 1, readOnly: true}
+        front_shifter: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_shifter: {$ref: "#/components/schemas/DrivetrainRole"}
+        front_derailleur: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_derailleur: {$ref: "#/components/schemas/DrivetrainRole"}
+        crankset: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_cluster: {$ref: "#/components/schemas/DrivetrainRole"}
+        chain: {$ref: "#/components/schemas/DrivetrainRole"}
+        belt: {$ref: "#/components/schemas/DrivetrainRole"}
+        gear_unit: {$ref: "#/components/schemas/DrivetrainRole"}
+        bottom_bracket: {$ref: "#/components/schemas/DrivetrainRole"}
+    BikeDrivetrainPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        architecture: {type: string, nullable: true, enum: [derailleur, internal_gear_hub, gearbox, singlespeed_freewheel, fixed_gear, continuously_variable, other]}
+        drive_medium: {type: string, nullable: true, enum: [chain, belt, shaft, other]}
+        front_shifter: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_shifter: {$ref: "#/components/schemas/DrivetrainRole"}
+        front_derailleur: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_derailleur: {$ref: "#/components/schemas/DrivetrainRole"}
+        crankset: {$ref: "#/components/schemas/DrivetrainRole"}
+        rear_cluster: {$ref: "#/components/schemas/DrivetrainRole"}
+        chain: {$ref: "#/components/schemas/DrivetrainRole"}
+        belt: {$ref: "#/components/schemas/DrivetrainRole"}
+        gear_unit: {$ref: "#/components/schemas/DrivetrainRole"}
+        bottom_bracket: {$ref: "#/components/schemas/DrivetrainRole"}
+    WheelPosition:
+      type: object
+      additionalProperties: false
+      properties:
+        wheel:
+          allOf:
+            - $ref: "#/components/schemas/ComponentIdentity"
+            - type: object
+              properties:
+                nominal_size: {type: string, nullable: true, minLength: 1}
+                iso_bsd_mm: {type: integer, nullable: true, minimum: 1}
+        rim:
+          allOf:
+            - $ref: "#/components/schemas/ComponentIdentity"
+            - type: object
+              properties:
+                internal_width_mm: {type: number, nullable: true, exclusiveMinimum: 0}
+        tire:
+          allOf:
+            - $ref: "#/components/schemas/ComponentIdentity"
+            - type: object
+              properties:
+                marked_size: {type: string, nullable: true, minLength: 1}
+                iso_width_mm: {type: integer, nullable: true, minimum: 1}
+                iso_bsd_mm: {type: integer, nullable: true, minimum: 1}
+                setup: {type: string, nullable: true, enum: [tubed, tubeless, tubular, airless, other]}
+                tubeless_ready: {type: boolean, nullable: true}
+        hub:
+          allOf:
+            - $ref: "#/components/schemas/ComponentIdentity"
+            - type: object
+              properties:
+                axle_type: {type: string, nullable: true, enum: [quick_release, thru_axle, bolt_on, solid_axle, other]}
+                axle_standard: {type: string, nullable: true, minLength: 1}
+                rotor_mount: {type: string, nullable: true, enum: [six_bolt, centerlock, none, other]}
+                driver_interface: {type: string, nullable: true, enum: [hg, microspline, xd, xdr, campagnolo, threaded_freewheel, other]}
+    BikeRollingSystem:
+      type: object
+      additionalProperties: false
+      required: [front, rear]
+      properties:
+        front: {$ref: "#/components/schemas/WheelPosition"}
+        rear: {$ref: "#/components/schemas/WheelPosition"}
+    BikeRollingSystemPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        front: {$ref: "#/components/schemas/WheelPosition"}
+        rear: {$ref: "#/components/schemas/WheelPosition"}
+    BikeSuspension:
+      type: object
+      additionalProperties: false
+      properties:
+        fork:
+          type: object
+          additionalProperties: false
+          properties:
+            type: {type: string, nullable: true, enum: [rigid, suspension, other]}
+            manufacturer: {type: string, nullable: true, minLength: 1}
+            model: {type: string, nullable: true, minLength: 1}
+            travel_mm: {type: integer, nullable: true, minimum: 1}
+        rear_shock: {$ref: "#/components/schemas/ComponentIdentity"}
+        rear_travel_mm: {type: integer, nullable: true, minimum: 1}
+    BikeSuspensionPatch:
+      $ref: "#/components/schemas/BikeSuspension"
+    BikeCockpit:
+      type: object
+      additionalProperties: false
+      properties:
+        handlebar:
+          type: object
+          additionalProperties: false
+          properties:
+            style: {type: string, nullable: true, enum: [drop, flat, riser, swept, bullhorn, bmx, other]}
+            manufacturer: {type: string, nullable: true, minLength: 1}
+            model: {type: string, nullable: true, minLength: 1}
+        stem:
+          type: object
+          additionalProperties: false
+          properties:
+            type: {type: string, nullable: true, enum: [threadless, quill, integrated, other]}
+            manufacturer: {type: string, nullable: true, minLength: 1}
+            model: {type: string, nullable: true, minLength: 1}
+        headset:
+          type: object
+          additionalProperties: false
+          properties:
+            type: {type: string, nullable: true, enum: [external_cup, zero_stack, integrated, threaded, other]}
+    BikeCockpitPatch:
+      $ref: "#/components/schemas/BikeCockpit"
+    BikeSeating:
+      type: object
+      additionalProperties: false
+      properties:
+        seatpost:
+          allOf:
+            - $ref: "#/components/schemas/ComponentIdentity"
+            - type: object
+              properties:
+                type: {type: string, nullable: true, enum: [rigid, dropper, suspension, other]}
+                diameter_mm: {type: number, nullable: true, exclusiveMinimum: 0}
+    BikeSeatingPatch:
+      $ref: "#/components/schemas/BikeSeating"
+    BikeElectricAssist:
+      type: object
+      additionalProperties: false
+      properties:
+        presence: {$ref: "#/components/schemas/Presence"}
+        system_manufacturer: {type: string, nullable: true, minLength: 1}
+        system_model: {type: string, nullable: true, minLength: 1}
+        motor:
+          type: object
+          additionalProperties: false
+          properties:
+            position: {type: string, nullable: true, enum: [front_hub, rear_hub, mid_drive, other]}
+            manufacturer: {type: string, nullable: true, minLength: 1}
+            model: {type: string, nullable: true, minLength: 1}
+        battery:
+          type: object
+          additionalProperties: false
+          properties:
+            manufacturer: {type: string, nullable: true, minLength: 1}
+            model: {type: string, nullable: true, minLength: 1}
+            nominal_voltage_v: {type: number, nullable: true, exclusiveMinimum: 0}
+    BikeElectricAssistPatch:
+      $ref: "#/components/schemas/BikeElectricAssist"
 
     RepairHistoryEntry:
       type: object

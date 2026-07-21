@@ -1,0 +1,173 @@
+{
+  "response_schema_version": "bike_profile_inference_eval_result.v1",
+  "source": "recorded-deterministic-fixture",
+  "cases": [
+    {
+      "case_id": "rear_hydraulic_disc_clear",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["rear-clear"], "evidence_cues": ["Rear rotor and caliper are clearly visible."]},
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.98, "artifact_ids": ["rear-clear"], "evidence_cues": ["A hose enters the rear caliper."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 410, "input_tokens": 850, "output_tokens": 180, "cost_usd": 0.0042}
+    },
+    {
+      "case_id": "front_brake_only",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.97},
+        "claims": [
+          {"field_path": "brakes.front.mechanism", "value": "disc", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.96, "artifact_ids": ["front-only"], "evidence_cues": ["A front disc brake is visible."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 390, "input_tokens": 800, "output_tokens": 110, "cost_usd": 0.0038}
+    },
+    {
+      "case_id": "rear_brake_occluded",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "ambiguous", "confidence_score": 0.78},
+        "claims": [],
+        "abstentions": [{"field_path": "brakes.rear.mechanism", "reason": "rear_brake_occluded"}, {"field_path": "brakes.rear.actuation", "reason": "rear_brake_occluded"}]
+      },
+      "telemetry": {"latency_ms": 370, "input_tokens": 780, "output_tokens": 90, "cost_usd": 0.0035}
+    },
+    {
+      "case_id": "multiple_bikes_rear_brakes_visible",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": true, "target_relation": "ambiguous", "confidence_score": 0.95},
+        "claims": [],
+        "abstentions": [{"field_path": "brakes.rear.mechanism", "reason": "multiple_bikes_target_unclear"}, {"field_path": "brakes.rear.actuation", "reason": "multiple_bikes_target_unclear"}]
+      },
+      "telemetry": {"latency_ms": 420, "input_tokens": 900, "output_tokens": 90, "cost_usd": 0.0041}
+    },
+    {
+      "case_id": "no_bike_scene",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": false, "multiple_bicycles": false, "target_relation": "ambiguous", "confidence_score": 0.99},
+        "claims": [],
+        "abstentions": [{"field_path": "brakes.rear.mechanism", "reason": "no_bicycle"}, {"field_path": "brakes.rear.actuation", "reason": "no_bicycle"}]
+      },
+      "telemetry": {"latency_ms": 250, "input_tokens": 650, "output_tokens": 80, "cost_usd": 0.0027}
+    },
+    {
+      "case_id": "loose_replacement_caliper",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "loose_component", "confidence_score": 0.94},
+        "claims": [
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "loose_component", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.98, "artifact_ids": ["loose-caliper"], "evidence_cues": ["Loose caliper is shown beside the bike."]},
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "loose_component", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.97, "artifact_ids": ["loose-caliper"], "evidence_cues": ["Hydraulic hose is attached to the loose caliper."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 400, "input_tokens": 840, "output_tokens": 170, "cost_usd": 0.0040}
+    },
+    {
+      "case_id": "boxed_rear_brake_packaging",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "packaging_or_reference", "confidence_score": 0.96},
+        "claims": [
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "packaging_or_reference", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.96, "artifact_ids": ["packaged-caliper"], "evidence_cues": ["Disc caliper is visible in product packaging."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 360, "input_tokens": 760, "output_tokens": 110, "cost_usd": 0.0034}
+    },
+    {
+      "case_id": "caption_confirms_installedness",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.98},
+        "claims": [
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.98, "artifact_ids": ["caption-installed"], "evidence_cues": ["Rear hose and installed caliper are visible."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 380, "input_tokens": 820, "output_tokens": 110, "cost_usd": 0.0037}
+    },
+    {
+      "case_id": "manual_conflict_new_replacement",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["new-rear-brake"], "evidence_cues": ["New hydraulic hose is attached to the installed rear caliper."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 405, "input_tokens": 830, "output_tokens": 115, "cost_usd": 0.0039}
+    },
+    {
+      "case_id": "manual_conflict_retained",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.98},
+        "claims": [
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.95, "artifact_ids": ["ambiguous-rear-brake"], "evidence_cues": ["Hose-like line is visible but the installation detail is not decisive."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 398, "input_tokens": 825, "output_tokens": 115, "cost_usd": 0.0038}
+    },
+    {
+      "case_id": "insufficient_safety_detail",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.86},
+        "claims": [
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "partial", "confidence_score": 0.93, "artifact_ids": ["rear-partial"], "evidence_cues": ["Only part of the rear brake hose is visible."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 375, "input_tokens": 790, "output_tokens": 115, "cost_usd": 0.0036}
+    },
+    {
+      "case_id": "caption_identifies_loose_replacement",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "loose_component", "confidence_score": 0.97},
+        "claims": [
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "loose_component", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.98, "artifact_ids": ["caption-loose"], "evidence_cues": ["Replacement caliper is not mounted to the bike."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 385, "input_tokens": 815, "output_tokens": 110, "cost_usd": 0.0038}
+    },
+    {
+      "case_id": "position_error_profile_corruption",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.98},
+        "claims": [
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.98, "artifact_ids": ["front-misread"], "evidence_cues": ["Disc brake is visible but position was misidentified."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 395, "input_tokens": 805, "output_tokens": 110, "cost_usd": 0.0038}
+    },
+    {
+      "case_id": "mixed_front_mechanical_rear_hydraulic_disc",
+      "extraction": {
+        "schema_version": "bike_profile_inference.v1",
+        "scene": {"contains_bicycle": true, "multiple_bicycles": false, "target_relation": "installed_on_target_bike", "confidence_score": 0.99},
+        "claims": [
+          {"field_path": "brakes.front.mechanism", "value": "disc", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-brakes"], "evidence_cues": ["A front rotor and caliper are visible."]},
+          {"field_path": "brakes.front.actuation", "value": "mechanical", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-brakes"], "evidence_cues": ["A cable enters the front caliper."]},
+          {"field_path": "brakes.rear.mechanism", "value": "disc", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-brakes"], "evidence_cues": ["A rear rotor and caliper are visible."]},
+          {"field_path": "brakes.rear.actuation", "value": "hydraulic", "subject_relation": "installed_on_target_bike", "evidence_basis": "direct_visual", "visibility": "clear", "confidence_score": 0.99, "artifact_ids": ["mixed-brakes"], "evidence_cues": ["A hose enters the rear caliper."]}
+        ],
+        "abstentions": []
+      },
+      "telemetry": {"latency_ms": 450, "input_tokens": 900, "output_tokens": 240, "cost_usd": 0.0048}
+    }
+  ]
+}

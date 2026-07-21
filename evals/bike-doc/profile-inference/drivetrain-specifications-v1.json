@@ -1,0 +1,136 @@
+{
+  "schema_version": "bike_profile_inference_eval.v2",
+  "dataset_version": "drivetrain-specifications-v1.0.0",
+  "tracer": "drivetrain-specifications.v1",
+  "description": "Labeled evidence-qualified drivetrain count and marked-specification cases.",
+  "policy": "bootstrap-v1",
+  "versions": {
+    "extractor_version": "drivetrain-specifications.v1",
+    "output_schema_version": "bike_profile_inference.v1",
+    "prompt_version": "drivetrain-specifications-prompt.v1",
+    "model_version": "recorded-response",
+    "preprocessing_version": "image-preprocessing.v1",
+    "registry_version": "bike_profile.v2",
+    "resolver_policy_version": "bootstrap-v1"
+  },
+  "cases": [
+    {
+      "id": "clear_2x11_counted_components",
+      "label": "clear_installed_chainring_sprocket_and_speed_counts",
+      "input": {"artifact_ids": ["clear-2x11"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.crankset.chainring_count", "value": 2, "position": "whole_bike", "installedness": "installed", "evidence_class": "counted_visual"},
+        {"field_path": "drivetrain.crankset.chainring_tooth_counts", "value": "50/34", "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.rear_cluster.speed_count", "value": 11, "position": "whole_bike", "installedness": "installed", "evidence_class": "counted_visual"},
+        {"field_path": "drivetrain.rear_cluster.smallest_sprocket_teeth", "value": 11, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.rear_cluster.largest_sprocket_teeth", "value": 34, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.rear_shifter.speed_count", "value": 11, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.chain.speed_compatibility", "value": 11, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.crankset.chainring_count", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.crankset.chainring_tooth_counts", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.rear_cluster.speed_count", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.rear_cluster.smallest_sprocket_teeth", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.rear_cluster.largest_sprocket_teeth", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.rear_shifter.speed_count", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.chain.speed_compatibility", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "clear_internal_gear_unit_count",
+      "label": "readable_installed_gear_unit_speed",
+      "input": {"artifact_ids": ["gear-unit-speed"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.gear_unit.speed_count", "value": 14, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.gear_unit.speed_count", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "clear_marked_interfaces",
+      "label": "readable_installed_driver_and_bottom_bracket_markings",
+      "input": {"artifact_ids": ["marked-interfaces"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.rear_cluster.driver_interface", "value": "microspline", "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.bottom_bracket.interface", "value": "BB86", "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.bottom_bracket.shell_width_mm", "value": 86.5, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.rear_cluster.driver_interface", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.bottom_bracket.interface", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.bottom_bracket.shell_width_mm", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "disagreeing_cluster_and_shifter_counts",
+      "label": "resolved_count_sources_disagree",
+      "input": {"artifact_ids": ["count-disagreement"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [
+        {"field_path": "drivetrain.rear_cluster.speed_count", "value": 10, "position": "whole_bike", "installedness": "installed", "evidence_class": "counted_visual"},
+        {"field_path": "drivetrain.rear_shifter.speed_count", "value": 11, "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.rear_cluster.speed_count", "expected_action": "applied", "conflict": false},
+        {"field_path": "drivetrain.rear_shifter.speed_count", "expected_action": "applied", "conflict": false}
+      ]
+    },
+    {
+      "id": "ambiguous_apparent_counts",
+      "label": "apparent_chainring_and_sprocket_counts_abstain",
+      "input": {"artifact_ids": ["occluded-counts"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "drivetrain.crankset.chainring_count", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "counted_visual"},
+        {"field_path": "drivetrain.rear_cluster.speed_count", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "counted_visual"}
+      ],
+      "expected_outcomes": []
+    },
+    {
+      "id": "unreadable_marked_specifications",
+      "label": "unreadable_driver_and_bottom_bracket_markings_abstain",
+      "input": {"artifact_ids": ["unreadable-markings"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "installed"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "drivetrain.rear_cluster.driver_interface", "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"},
+        {"field_path": "drivetrain.bottom_bracket.shell_width_mm", "position": "whole_bike", "installedness": "installed", "evidence_class": "readable_marking"}
+      ],
+      "expected_outcomes": []
+    },
+    {
+      "id": "loose_replacement_cassette_count",
+      "label": "loose_counted_component_stays_pending",
+      "input": {"artifact_ids": ["loose-cassette"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "loose"},
+      "expected_claims": [
+        {"field_path": "drivetrain.rear_cluster.speed_count", "value": 12, "position": "whole_bike", "installedness": "loose", "evidence_class": "counted_visual"}
+      ],
+      "expected_abstentions": [],
+      "expected_outcomes": [
+        {"field_path": "drivetrain.rear_cluster.speed_count", "expected_action": "pending", "conflict": false, "profile_corruption_failures": ["installedness"]}
+      ]
+    },
+    {
+      "id": "multiple_bikes_specification_abstention",
+      "label": "multiple_bikes_do_not_supply_exact_specifications",
+      "input": {"artifact_ids": ["multiple-bike-cassettes"]},
+      "expected_scene": {"position": "whole_bike", "installedness": "ambiguous"},
+      "expected_claims": [],
+      "expected_abstentions": [
+        {"field_path": "drivetrain.rear_cluster.driver_interface", "position": "whole_bike", "installedness": "ambiguous", "evidence_class": "readable_marking"}
+      ],
+      "expected_outcomes": []
+    }
+  ]
+}

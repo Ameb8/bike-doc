@@ -684,17 +684,7 @@ Handles both create and edit. When `bikeId` is present, pre-fill from
 ```kotlin
 data class BikeEditUiState(
     val isNew: Boolean = true,
-    val displayName: String = "",
-    val make: String = "",
-    val model: String = "",
-    val modelYear: String = "",
-    val bikeType: String = "unknown",
-    val frameMaterial: String = "unknown",
-    val drivetrain: String = "",
-    val brakeType: String = "unknown",
-    val wheelSize: String = "",
-    val tireSize: String = "",
-    val notes: String = "",
+    val profile: BikeProfileEdit = BikeProfileEdit(displayName = ""),
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -704,18 +694,14 @@ data class BikeEditUiState(
 
 **UI:**
 - Top bar: "Add Bike" or "Edit Bike", back arrow, "Save" action
-- Fields (all optional except `displayName`):
-  - Display name (required) — free text
-  - Make — free text
-  - Model — free text
-  - Model year — numeric keyboard, 4-digit
-  - Bike type — dropdown backed by backend enum values
-  - Frame material — dropdown backed by backend enum values
-  - Drivetrain — free text
-  - Brake type — dropdown backed by backend enum values
-  - Wheel size — free text
-  - Tire size — free text
-  - Notes — multiline free text
+- Fields (all optional except `displayName`) use the `bike_profile.v2`
+  projection. The editor groups the structured values into Identity and frame,
+  independently positioned front/rear brakes, drivetrain roles, independently
+  positioned front/rear wheels and tires, suspension, cockpit and seating, and
+  electric assist. `brake_type`, free-text `drivetrain`, `wheel_size`, and
+  `tire_size` are deprecated compatibility summaries and are never editable.
+- Component presence is entered independently as `unknown`, `present`, or
+  `absent`; an absent component must not retain technical detail fields.
 - If editing: "Remove this bike" destructive button at bottom
 
 **Validation (client-side):**

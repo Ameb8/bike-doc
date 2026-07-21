@@ -114,7 +114,10 @@ is used for one-off effects that must not replay after recomposition.
 models loading, loaded data, and errors, and `HomeScreen` offers the entry
 actions for bikes and sign-out. `bikes/` contains two closely related flows.
 `BikeEditViewModel` loads, validates, creates, updates, and deletes an
-individual profile through `BikeRepository`. `BikeListRepository` deliberately
+individual profile through `BikeRepository`. Bike writes are encoded at that
+repository seam: creates omit unspecified optional fields, while updates diff
+the loaded profile and send explicit JSON null only for a user-requested clear.
+`BikeListRepository` deliberately
 maps API `Bike` DTOs to the list-specific `BikeListItem` display model, and
 normalizes a delete conflict into `BikeDeleteResult.RepairHistoryConflict`.
 The list ViewModel owns selection mode and the session chooser: it queries

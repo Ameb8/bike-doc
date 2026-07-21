@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.bikes
 
 import androidx.lifecycle.SavedStateHandle
@@ -5,9 +7,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.BikeRepository
-import com.bikedoc.android.api.models.Bike
-import com.bikedoc.android.api.models.BikeCreate
-import com.bikedoc.android.api.models.BikePatch
 import com.bikedoc.android.navigation.UiEvent
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
@@ -20,17 +19,8 @@ import javax.inject.Inject
 
 data class BikeEditUiState(
     val isNew: Boolean = true,
-    val displayName: String = "",
-    val make: String = "",
-    val model: String = "",
-    val modelYear: String = "",
-    val bikeType: String = "unknown",
-    val frameMaterial: String = "unknown",
-    val drivetrain: String = "",
-    val brakeType: String = "unknown",
-    val wheelSize: String = "",
-    val tireSize: String = "",
-    val notes: String = "",
+    val profile: BikeProfileEdit = BikeProfileEdit(displayName = ""),
+    val originalProfile: BikeProfileEdit? = null,
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val error: String? = null,
@@ -51,18 +41,8 @@ class BikeEditViewModel
             MutableStateFlow(
                 BikeEditUiState(
                     isNew = bikeId == null,
-                    displayName = savedStateHandle["displayName"] ?: "",
-                    make = savedStateHandle["make"] ?: "",
-                    model = savedStateHandle["model"] ?: "",
-                    modelYear = savedStateHandle["modelYear"] ?: "",
-                    bikeType = savedStateHandle["bikeType"] ?: "unknown",
-                    frameMaterial = savedStateHandle["frameMaterial"] ?: "unknown",
-                    drivetrain = savedStateHandle["drivetrain"] ?: "",
-                    brakeType = savedStateHandle["brakeType"] ?: "unknown",
-                    wheelSize = savedStateHandle["wheelSize"] ?: "",
-                    tireSize = savedStateHandle["tireSize"] ?: "",
-                    notes = savedStateHandle["notes"] ?: "",
-                    isLoading = bikeId != null && !hasRestoredDraft,
+                    profile = BikeProfileEdit(displayName = savedStateHandle["displayName"] ?: "", notes = savedStateHandle["notes"]),
+                    isLoading = bikeId != null,
                 ),
             )
         val uiState: StateFlow<BikeEditUiState> = _uiState.asStateFlow()
@@ -71,32 +51,16 @@ class BikeEditViewModel
         val events = eventChannel.receiveAsFlow()
 
         init {
-            if (bikeId != null && !hasRestoredDraft) {
+            if (bikeId != null) {
                 loadBike(bikeId)
             }
         }
 
-        fun onDisplayNameChanged(value: String) = updateField("displayName", value) { copy(displayName = value) }
-
-        fun onMakeChanged(value: String) = updateField("make", value) { copy(make = value) }
-
-        fun onModelChanged(value: String) = updateField("model", value) { copy(model = value) }
-
-        fun onModelYearChanged(value: String) = updateField("modelYear", value) { copy(modelYear = value) }
-
-        fun onBikeTypeChanged(value: String) = updateField("bikeType", value) { copy(bikeType = value) }
-
-        fun onFrameMaterialChanged(value: String) = updateField("frameMaterial", value) { copy(frameMaterial = value) }
-
-        fun onDrivetrainChanged(value: String) = updateField("drivetrain", value) { copy(drivetrain = value) }
-
-        fun onBrakeTypeChanged(value: String) = updateField("brakeType", value) { copy(brakeType = value) }
-
-        fun onWheelSizeChanged(value: String) = updateField("wheelSize", value) { copy(wheelSize = value) }
-
-        fun onTireSizeChanged(value: String) = updateField("tireSize", value) { copy(tireSize = value) }
-
-        fun onNotesChanged(value: String) = updateField("notes", value) { copy(notes = value) }
+        fun onProfileChanged(profile: BikeProfileEdit) {
+            savedStateHandle["displayName"] = profile.displayName
+            savedStateHandle["notes"] = profile.notes
+            _uiState.value = _uiState.value.copy(profile = profile, error = null)
+        }
 
         fun retry() {
             bikeId?.let(::loadBike)
@@ -119,9 +83,13 @@ class BikeEditViewModel
 
                 val result =
                     if (bikeId == null) {
-                        repository.createBike(_uiState.value.toBikeCreate())
+                        repository.createBike(_uiState.value.profile.normalized())
                     } else {
-                        repository.updateBike(bikeId, _uiState.value.toBikePatch())
+                        repository.updateBike(
+                            bikeId,
+                            _uiState.value.profile.normalized(),
+                            requireNotNull(_uiState.value.originalProfile),
+                        )
                     }
 
                 when (result) {
@@ -168,33 +136,38 @@ class BikeEditViewModel
             }
         }
 
-        private fun applyLoadedBike(bike: Bike) {
-            savedStateHandle["displayName"] = bike.displayName
-            savedStateHandle["make"] = bike.make.orEmpty()
-            savedStateHandle["model"] = bike.model.orEmpty()
-            savedStateHandle["modelYear"] = bike.modelYear?.toString().orEmpty()
-            savedStateHandle["bikeType"] = bike.bikeType
-            savedStateHandle["frameMaterial"] = bike.frameMaterial ?: "unknown"
-            savedStateHandle["drivetrain"] = bike.drivetrain.orEmpty()
-            savedStateHandle["brakeType"] = bike.brakeType ?: "unknown"
-            savedStateHandle["wheelSize"] = bike.wheelSize.orEmpty()
-            savedStateHandle["tireSize"] = bike.tireSize.orEmpty()
-            savedStateHandle["notes"] = bike.notes.orEmpty()
+        private fun applyLoadedBike(bike: BikeProfile) {
+            val profile =
+                BikeProfileEdit(
+                    displayName = bike.displayName,
+                    identity = bike.identity,
+                    frame = bike.frame,
+                    brakes = bike.brakes,
+                    drivetrain = bike.drivetrain,
+                    rollingSystem = bike.rollingSystem,
+                    suspension = bike.suspension,
+                    cockpit = bike.cockpit,
+                    seating = bike.seating,
+                    electricAssist = bike.electricAssist,
+                    notes = bike.legacy.notes,
+                )
+            val restoredProfile =
+                if (hasRestoredDraft) {
+                    profile.copy(
+                        displayName = savedStateHandle["displayName"] ?: profile.displayName,
+                        notes = savedStateHandle["notes"] ?: profile.notes,
+                    )
+                } else {
+                    profile
+                }
+            savedStateHandle["displayName"] = restoredProfile.displayName
+            savedStateHandle["notes"] = restoredProfile.notes
 
             _uiState.value =
                 _uiState.value.copy(
                     isNew = false,
-                    displayName = bike.displayName,
-                    make = bike.make.orEmpty(),
-                    model = bike.model.orEmpty(),
-                    modelYear = bike.modelYear?.toString().orEmpty(),
-                    bikeType = bike.bikeType,
-                    frameMaterial = bike.frameMaterial ?: "unknown",
-                    drivetrain = bike.drivetrain.orEmpty(),
-                    brakeType = bike.brakeType ?: "unknown",
-                    wheelSize = bike.wheelSize.orEmpty(),
-                    tireSize = bike.tireSize.orEmpty(),
-                    notes = bike.notes.orEmpty(),
+                    profile = restoredProfile,
+                    originalProfile = profile,
                     isLoading = false,
                     error = null,
                     validationErrors = emptyMap(),
@@ -207,79 +180,21 @@ class BikeEditViewModel
 
         private fun validate(state: BikeEditUiState): Map<String, String> {
             val errors = mutableMapOf<String, String>()
-            if (state.displayName.isBlank()) {
+            if (state.profile.displayName.isBlank()) {
                 errors["displayName"] = "Display name is required."
             }
 
-            val modelYearValue = state.modelYear.trim()
-            if (modelYearValue.isNotEmpty()) {
-                val parsed = modelYearValue.toIntOrNull()
-                if (parsed == null || parsed !in 1880..2100) {
+            state.profile.identity.modelYear?.let { modelYear ->
+                if (modelYear !in 1880..2100) {
                     errors["modelYear"] = "Model year must be between 1880 and 2100."
                 }
             }
             return errors
         }
 
-        private fun updateField(
-            key: String,
-            value: String,
-            transform: BikeEditUiState.() -> BikeEditUiState,
-        ) {
-            savedStateHandle[key] = value
-            _uiState.value =
-                _uiState.value
-                    .transform()
-                    .copy(
-                        error = _uiState.value.error,
-                        validationErrors = _uiState.value.validationErrors - key,
-                    )
-        }
-
-        private fun BikeEditUiState.toBikeCreate(): BikeCreate =
-            BikeCreate(
-                displayName = displayName.trim(),
-                make = make.trim().takeIf { it.isNotEmpty() },
-                model = model.trim().takeIf { it.isNotEmpty() },
-                modelYear = modelYear.trim().toIntOrNull(),
-                bikeType = bikeType,
-                frameMaterial = frameMaterial,
-                drivetrain = drivetrain.trim().takeIf { it.isNotEmpty() },
-                brakeType = brakeType,
-                wheelSize = wheelSize.trim().takeIf { it.isNotEmpty() },
-                tireSize = tireSize.trim().takeIf { it.isNotEmpty() },
-                notes = notes.trim().takeIf { it.isNotEmpty() },
-            )
-
-        private fun BikeEditUiState.toBikePatch(): BikePatch =
-            BikePatch(
-                displayName = displayName.trim(),
-                make = make.trim().takeIf { it.isNotEmpty() },
-                model = model.trim().takeIf { it.isNotEmpty() },
-                modelYear = modelYear.trim().toIntOrNull(),
-                bikeType = bikeType,
-                frameMaterial = frameMaterial,
-                drivetrain = drivetrain.trim().takeIf { it.isNotEmpty() },
-                brakeType = brakeType,
-                wheelSize = wheelSize.trim().takeIf { it.isNotEmpty() },
-                tireSize = tireSize.trim().takeIf { it.isNotEmpty() },
-                notes = notes.trim().takeIf { it.isNotEmpty() },
-            )
-
         companion object {
-            private val FORM_KEYS =
-                listOf(
-                    "displayName",
-                    "make",
-                    "model",
-                    "modelYear",
-                    "bikeType",
-                    "frameMaterial",
-                    "drivetrain",
-                    "brakeType",
-                    "wheelSize",
-                    "tireSize",
-                    "notes",
-                )
+            private val FORM_KEYS = listOf("displayName", "notes")
         }
     }
+
+private fun BikeProfileEdit.normalized() = copy(displayName = displayName.trim(), notes = notes?.trim()?.takeIf(String::isNotEmpty))

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bike_doc_api.models.bike import BikeProfile
+from bike_doc_api.models.bike import BikeFactClaim, BikeFieldResolution, BikeProfile
 from bike_doc_api.models.repair_session import RepairSession
 
 
@@ -41,6 +41,24 @@ class BikeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_owned_active_for_update(
+        self,
+        *,
+        bike_id: str,
+        user_id: str,
+    ) -> BikeProfile | None:
+        """Lock one owned active profile for claim resolution."""
+        result = await self._session.execute(
+            select(BikeProfile)
+            .where(
+                BikeProfile.id == bike_id,
+                BikeProfile.user_id == user_id,
+                BikeProfile.deleted_at.is_(None),
+            )
+            .with_for_update(),
+        )
+        return result.scalar_one_or_none()
+
     async def list_owned_active(
         self,
         user_id: str,
@@ -62,6 +80,61 @@ class BikeRepository:
         bike.updated_at = datetime.now(UTC)
         await self._session.flush()
         return bike
+
+    async def add_claim(self, claim: BikeFactClaim) -> BikeFactClaim:
+        """Append an immutable bike fact claim to the active transaction."""
+        self._session.add(claim)
+        await self._session.flush()
+        return claim
+
+    async def get_claim(self, claim_id: str) -> BikeFactClaim | None:
+        """Return a claim so a later resolution may update its disposition."""
+        return await self._session.get(BikeFactClaim, claim_id)
+
+    async def list_claims(
+        self,
+        *,
+        bike_id: str,
+        field_path: str | None = None,
+    ) -> list[BikeFactClaim]:
+        """Return immutable claim history used for replay-safe resolution."""
+        statement = select(BikeFactClaim).where(BikeFactClaim.bike_id == bike_id)
+        if field_path is not None:
+            statement = statement.where(BikeFactClaim.field_path == field_path)
+        result = await self._session.execute(
+            statement.order_by(BikeFactClaim.created_at, BikeFactClaim.id),
+        )
+        return list(result.scalars().all())
+
+    async def get_resolution(
+        self,
+        *,
+        bike_id: str,
+        field_path: str,
+    ) -> BikeFieldResolution | None:
+        """Return one field's latest resolution under the profile lock."""
+        return await self._session.get(
+            BikeFieldResolution,
+            {"bike_id": bike_id, "field_path": field_path},
+        )
+
+    async def save_resolution(
+        self,
+        resolution: BikeFieldResolution,
+    ) -> BikeFieldResolution:
+        """Insert or flush a current field resolution."""
+        self._session.add(resolution)
+        await self._session.flush()
+        return resolution
+
+    async def list_resolutions(self, *, bike_id: str) -> list[BikeFieldResolution]:
+        """Return compact resolution metadata for an internal profile read."""
+        result = await self._session.execute(
+            select(BikeFieldResolution)
+            .where(BikeFieldResolution.bike_id == bike_id)
+            .order_by(BikeFieldResolution.field_path),
+        )
+        return list(result.scalars().all())
 
     async def list_bike_ids_with_owned_repair_sessions(
         self,

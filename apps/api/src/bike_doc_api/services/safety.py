@@ -49,6 +49,25 @@ _SEVERITY_RANK: dict[SafetySeverity, int] = {
 }
 
 
+def profile_field_requires_independent_evidence(
+    *,
+    resolution_state: str,
+    source_type: str | None,
+    consequence_class: str,
+) -> bool:
+    """Return whether profile metadata alone is insufficient for risky guidance.
+
+    This is intentionally a narrow interpretation layer over the existing
+    diagnostic safety policy: it never creates a safety flag or changes session
+    state. It gives phase agents a server-owned signal that inferred or disputed
+    safety/compatibility facts need independent supporting evidence.
+    """
+
+    return consequence_class in {"safety", "compatibility"} and (
+        resolution_state == "disputed" or source_type == "image_inference"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ReportSafetyFlags:
     """Validated diagnostic report safety flags."""
