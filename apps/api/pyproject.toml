@@ -16,6 +16,7 @@ dependencies = [
   "google-auth>=2.40",
   "google-cloud-storage>=3.2",
   "google-genai==2.10.0",
+  "pillow==11.3.0",
   "pydantic-settings>=2.9",
   "python-multipart>=0.0.20",
   "sqlalchemy[asyncio]>=2.0",
