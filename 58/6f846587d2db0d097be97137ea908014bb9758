@@ -1,0 +1,95 @@
+docs/specs/apps/agent/image-diagnosis.md
+  s_595cf5a840bb91::t_c5cf9743442bb1 75,671-673,676-679,790
+  s_d79e3971b459ff::t_96fa560a3cc16d 574-586,779
+  s_595cf5a840bb91::t_2c160004fdb3f8 426-429
+  s_d79e3971b459ff::t_efbe13e5b57f5c 545-562,777-778
+  s_d79e3971b459ff::t_e5658a5cea879d 172-180,536,595-596
+  s_595cf5a840bb91::t_59ad1cef454072 4,134-138,410,413,419-420,431-433,435-438,774-775,859,863-866,873,886,897-898,941,944-946
+  s_bc4d5b4938a606::t_5a3d576e93e4b5 192,832-833
+  s_595cf5a840bb91::t_00bbb9cc61a05f 181-187,631,637-640,794-795
+  s_595cf5a840bb91::t_ca2e6ea8af0ea3 404-409,474-482,697-698,769-771
+  s_e5275a86f5a6a2::t_4cfd09541b6c73 852-858,860-862,874-885,899-904
+  s_595cf5a840bb91::t_9dbbe099488789 398-400,411-412,416-418,469-472,696,766-768
+  s_595cf5a840bb91::t_73e0d52f3db4ec 571,608-612,632-636,780-782
+  s_bc4d5b4938a606::t_9fac6ca940d857 466,491-492,494-495,500-503
+  s_bc4d5b4938a606::t_8a00a8dec89129 439,785-787,889,896
+  s_9f69736fc0a6fa::t_b50bf69c51f7d6 930-935
+  s_595cf5a840bb91::t_04cd4fd134fd57 440-447,699,706-710,788-789
+  s_d79e3971b459ff::t_031c1e0a596895 13-16,77-78,386-389
+  s_d79e3971b459ff::t_34f4bfffa47893 140-148,392-396,694-695,760-764,867-872,942-943
+  s_9f69736fc0a6fa::t_441ecf5e900ce8 167-170,188-191,792-793,814,834,837
+  s_595cf5a840bb91::t_d62618395e140a 448-450,453,887-888
+  s_4abc1a6a5bfffa::t_fd5ddadaefdde6 220-380
+  s_4abc1a6a5bfffa::t_d11c2bbba91acc 451-452,489-490,890-895
+  s_3a1d51fc4e990c::t_be96583525f5e2 1-3,5-12,17-55,57-74,76,79-133,139,149-166,171,193-219,381-385,390-391,397,401-403,414-415,421-425,430,454-465,467-468,473,483-488,493,496-499,504-535,537-538,563-570,572-573,587-594,597-599,603-607,613-630,641-670,674-675,680-693,700-705,711-759,765,772-773,776,783-784,791,796-813,815-824,826-831,838-851,905-912,914,916-929,936-940,949-957
+  s_d79e3971b459ff::t_7ad788d175cad3 56,434,539-544,600-602,825,835-836,913,915,947-948
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "586f846587d2db0d097be97137ea908014bb9758",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_3a1d51fc4e990c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8276-a6fa-74e0-9cc1-1cffeb8964d4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_4abc1a6a5bfffa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8c1a-a425-7d53-aa9a-fcec2ea0b632",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_595cf5a840bb91": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f85b0-d6dd-7333-bdfb-41179ac8df67",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_9f69736fc0a6fa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83c9-d337-7643-b842-08a7ea6f9993",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_bc4d5b4938a606": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83ba-469e-7241-ba07-105a080a97e2",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_d79e3971b459ff": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f85d3-a7ac-70e0-8ffb-82ece5deed03",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_e5275a86f5a6a2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f83b2-4e83-7e12-b9f4-7f390f276ea4",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
