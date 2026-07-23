@@ -1,0 +1,37 @@
+apps/api/tests/unit/services/test_image_preprocessing.py
+  s_2822514852386d::t_9f3c1c0bc91d75 1-7,9-11,13-16,18-101,121-138,140-191,198,200-213,215-217
+  s_2822514852386d::t_e8c6b057ba768b 17
+  s_2822514852386d::t_ba4718575d6619 8,12,192-197,199,214
+  s_2822514852386d::t_1ac9cdff0f0242 102-120
+  s_2822514852386d::t_a9b9424cc8dcb4 139
+apps/api/pyproject.toml
+  s_2822514852386d::t_3330366ac3f2e8 19
+apps/api/src/bike_doc_api/services/image_preprocessing.py
+  s_2822514852386d::t_61ad1942f94bcb 86,88,90,105-106,112-115,156-159
+  s_2822514852386d::t_4bc82be9aeaf89 166-167,169-173,182-193
+  s_2822514852386d::t_6cb32daca84313 213-214
+  s_2822514852386d::t_3330366ac3f2e8 1-10,12-47,52-85,87,89,91-104,107-111,116-155,160-165,168,174-181,194-212,215
+  s_2822514852386d::t_e8c6b057ba768b 11
+  s_2822514852386d::t_ba4718575d6619 48-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8e3e2ff2e08fe12076fb13651f74703a260a33a0",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2822514852386d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f8dad-41c2-7960-8b24-97a9cbbec448",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
