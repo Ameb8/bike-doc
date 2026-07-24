@@ -1502,6 +1502,8 @@ components:
           nullable: true
         artifact_ids:
           type: array
+          maxItems: 3
+          uniqueItems: true
           items:
             type: string
 

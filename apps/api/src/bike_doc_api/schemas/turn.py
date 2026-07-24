@@ -17,7 +17,10 @@ class UserTurnMessage(APIBaseModel):
     """User-authored turn content."""
 
     text: str | None = None
-    artifact_ids: list[str]
+    artifact_ids: list[str] = Field(
+        max_length=3,
+        json_schema_extra={"uniqueItems": True},
+    )
 
     @field_validator("text")
     @classmethod
@@ -31,10 +34,12 @@ class UserTurnMessage(APIBaseModel):
     @field_validator("artifact_ids")
     @classmethod
     def validate_artifact_ids(cls, value: list[str]) -> list[str]:
-        """Reject blank artifact IDs in public payloads."""
+        """Reject blank or duplicate artifact IDs in public payloads."""
 
         if any(not artifact_id.strip() for artifact_id in value):
             raise ValueError("artifact_ids must not contain blank IDs")
+        if len(value) != len(set(value)):
+            raise ValueError("artifact_ids must not contain duplicates")
         return value
 
     @model_validator(mode="after")

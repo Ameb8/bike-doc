@@ -83,6 +83,23 @@ def test_app_openapi_contains_diagnostic_slice_paths(app: FastAPI) -> None:
             assert method in openapi["paths"][path]
 
 
+def test_user_turn_artifact_id_constraints_match_canonical_contract(
+    app: FastAPI,
+) -> None:
+    canonical = _load_canonical_openapi()
+    canonical_property = canonical["components"]["schemas"]["UserTurnMessage"][
+        "properties"
+    ]["artifact_ids"]
+    actual_property = app.openapi()["components"]["schemas"]["UserTurnMessage"][
+        "properties"
+    ]["artifact_ids"]
+
+    assert actual_property["type"] == canonical_property["type"] == "array"
+    assert actual_property["items"] == canonical_property["items"] == {"type": "string"}
+    assert actual_property["maxItems"] == canonical_property["maxItems"] == 3
+    assert actual_property["uniqueItems"] is canonical_property["uniqueItems"] is True
+
+
 @pytest.mark.xfail(
     reason="Stage 5 diagnostic routes are specified before implementation.",
 )

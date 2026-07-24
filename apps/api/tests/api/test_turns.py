@@ -851,6 +851,42 @@ async def test_invalid_turn_payload_returns_422(
         )
 
 
+@pytest.mark.parametrize(
+    "artifact_ids",
+    [
+        ["art_1", "art_2", "art_3", "art_4"],
+        [OWNED_ARTIFACT_ID, OWNED_ARTIFACT_ID],
+    ],
+)
+async def test_invalid_artifact_ids_are_rejected_before_turn_work(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    turn_service_override: _InMemoryTurnStore,
+    artifact_ids: list[str],
+) -> None:
+    async def unexpected_turn_acceptance(*args: Any, **kwargs: Any) -> None:
+        raise AssertionError("TurnService.accept_turn must not be called")
+
+    monkeypatch.setattr(TurnService, "accept_turn", unexpected_turn_acceptance)
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            message={"text": "Inspect these.", "artifact_ids": artifact_ids}
+        ),
+    )
+
+    assert_error_response(response, status_code=422, error_code="validation_error")
+    assert turn_service_override.artifact_lookup_ids == []
+    assert turn_service_override.turns == {}
+    assert turn_service_override.events == []
+    assert turn_service_override.background_calls == []
+    assert turn_service_override.profile_inference_calls == []
+
+
 async def test_post_turn_with_missing_or_invalid_auth_returns_401(
     api_client: httpx.AsyncClient,
     app: FastAPI,

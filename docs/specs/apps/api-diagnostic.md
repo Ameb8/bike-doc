@@ -191,6 +191,9 @@ Expected errors:
 
 Accepts one user turn for the session's current phase. The turn may include
 text, artifact IDs, or both. `client_turn_id` is required for idempotency.
+`message.artifact_ids` accepts zero through three distinct IDs. A list with
+four or more IDs, or with duplicate IDs, is rejected as public request
+validation before artifact lookup or turn processing.
 
 Request:
 
@@ -243,7 +246,7 @@ Expected errors:
 | `401` | Missing or invalid bearer token. | `unauthorized` |
 | `404` | Session or referenced artifact/input request does not exist for this user. | `not_found` |
 | `409` | Session is not accepting diagnostic turns, or `client_turn_id` is reused with different payload. | `session_state_conflict` or `idempotency_conflict` |
-| `422` | `schema_version`, `client_turn_id`, or message body is invalid. | `validation_error` |
+| `422` | `schema_version`, `client_turn_id`, or message body is invalid, including more than three or duplicate `artifact_ids`. | `validation_error` |
 
 Retrying the exact same `client_turn_id` request returns the original accepted
 turn response with `202 Accepted`.
