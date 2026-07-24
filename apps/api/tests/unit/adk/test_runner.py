@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import Any, cast
 
 from google.adk.events import Event
@@ -21,6 +22,11 @@ from bike_doc_api.adk.runner import (
     DiagnosticRunnerResult,
 )
 from bike_doc_api.adk.sessions import DIAGNOSTIC_ADK_APP_NAME, DIAGNOSTIC_ADK_USER_ID
+from bike_doc_api.schemas.observation_extraction import (
+    ArtifactProcessingStatus,
+    DiagnosticVisualObservationProjection,
+    NormalizedModelImage,
+)
 
 
 def _request() -> DiagnosticRunnerRequest:
@@ -34,6 +40,38 @@ def _request() -> DiagnosticRunnerRequest:
         message_text="The chain skips.",
         artifact_ids=("art_1",),
         bike_profile={"id": "bike_1"},
+    )
+
+
+def _image(artifact_id: str, content: bytes) -> NormalizedModelImage:
+    return NormalizedModelImage(
+        artifact_id=artifact_id,
+        mime_type="image/jpeg",
+        content=content,
+        original_width=1200,
+        original_height=800,
+        normalized_width=1200,
+        normalized_height=800,
+        content_sha256="a" * 64,
+        preprocessing_version="image-preprocessing.v1",
+    )
+
+
+def _observations(artifact_id: str) -> DiagnosticVisualObservationProjection:
+    return DiagnosticVisualObservationProjection.model_validate(
+        {
+            "observations": [
+                {
+                    "artifact_ids": [artifact_id],
+                    "component_or_area": "chain",
+                    "position": "rear",
+                    "finding": "surface rust is visible",
+                    "evidence_cues": ["orange discoloration"],
+                    "visibility": "clear",
+                    "safety_relevant": False,
+                },
+            ],
+        },
     )
 
 
@@ -350,6 +388,107 @@ async def test_runner_seeds_adk_call_with_safe_app_context() -> None:
     assert app_context["artifact_ids"] == ["art_1"]
     assert "adk_session_id" not in app_context
     assert "prompt" not in repr(call["state_delta"]).lower()
+
+
+async def test_runner_passes_current_images_as_labeled_multimodal_parts() -> None:
+    service = InMemorySessionService()
+    await _seed_session(service)
+    fake_adk = _FakeADKRunner([_final("Done.")])
+    request = replace(
+        _request(),
+        current_images=(
+            _image("art_front", b"front-normalized"),
+            _image("art_rear", b"rear-normalized"),
+            _image("art_side", b"side-normalized"),
+        ),
+    )
+
+    await DiagnosticRunner(
+        agent=cast(Any, object()),
+        session_service=service,
+        runner_factory=lambda _agent, _service: fake_adk,
+    ).run(request)
+
+    parts = fake_adk.calls[0]["new_message"].parts
+    assert [part.text for part in parts] == [
+        "The chain skips.",
+        "Image artifact ID: art_front",
+        None,
+        "Image artifact ID: art_rear",
+        None,
+        "Image artifact ID: art_side",
+        None,
+    ]
+    assert parts[2].inline_data.mime_type == "image/jpeg"
+    assert parts[2].inline_data.data == b"front-normalized"
+    assert parts[4].inline_data.mime_type == "image/jpeg"
+    assert parts[4].inline_data.data == b"rear-normalized"
+    assert parts[6].inline_data.mime_type == "image/jpeg"
+    assert parts[6].inline_data.data == b"side-normalized"
+
+
+async def test_runner_omits_fabricated_text_and_keeps_visual_context_score_free() -> (
+    None
+):
+    service = InMemorySessionService()
+    await _seed_session(service)
+    fake_adk = _FakeADKRunner([_final("Done.")])
+    request = replace(
+        _request(),
+        message_text=None,
+        current_images=(_image("art_current", b"current-pixels"),),
+        current_observations=(_observations("art_current"),),
+        prior_observations=(_observations("art_prior"),),
+        artifact_processing_statuses=(
+            ArtifactProcessingStatus(
+                artifact_id="art_unavailable",
+                status="unavailable",
+                failure_code="image_normalization_failed",
+            ),
+            ArtifactProcessingStatus(
+                artifact_id="art_not_inspected",
+                status="unavailable",
+                failure_code="image_analysis_unavailable",
+            ),
+        ),
+    )
+
+    await DiagnosticRunner(
+        agent=cast(Any, object()),
+        session_service=service,
+        runner_factory=lambda _agent, _service: fake_adk,
+    ).run(request)
+
+    call = fake_adk.calls[0]
+    assert [part.text for part in call["new_message"].parts] == [
+        "Image artifact ID: art_current",
+        None,
+    ]
+    context = call["state_delta"]["app_context"]
+    assert context["current_observations"] == [
+        _observations("art_current").model_dump(mode="json"),
+    ]
+    assert context["prior_observations"] == [
+        _observations("art_prior").model_dump(mode="json"),
+    ]
+    assert context["artifact_processing_statuses"] == [
+        {
+            "artifact_id": "art_unavailable",
+            "status": "unavailable",
+            "failure_code": "image_normalization_failed",
+            "retryable": False,
+        },
+        {
+            "artifact_id": "art_not_inspected",
+            "status": "unavailable",
+            "failure_code": "image_analysis_unavailable",
+            "retryable": False,
+        },
+    ]
+    rendered = repr(call["state_delta"])
+    assert "current-pixels" not in rendered
+    assert "raw_model_score" not in rendered
+    assert "content_sha256" not in rendered
 
 
 async def test_runner_detects_missing_in_memory_adk_session_as_recoverable() -> None:

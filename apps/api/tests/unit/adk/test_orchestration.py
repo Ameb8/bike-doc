@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from copy import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -29,7 +30,15 @@ from bike_doc_api.schemas.event import (
     RepairSessionEventType,
     validate_repair_session_event_data,
 )
+from bike_doc_api.schemas.observation_extraction import (
+    ArtifactProcessingStatus,
+    NormalizedModelImage,
+)
 from bike_doc_api.schemas.repair_session import repair_session_from_model
+from bike_doc_api.services.diagnostic_visual_context import (
+    DiagnosticVisualContext,
+    DiagnosticVisualContextError,
+)
 
 
 class _Store:
@@ -75,6 +84,7 @@ class _Store:
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
             updated_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
+        self.artifacts = {self.artifact.id: self.artifact}
 
     async def get(self, phase_session_id: str) -> RepairPhaseSession | None:
         if phase_session_id == self.phase_session.id:
@@ -97,8 +107,9 @@ class _Store:
         artifact_id: str,
         user_id: str,
     ) -> ArtifactRef | None:
-        if artifact_id == self.artifact.id and user_id == self.artifact.user_id:
-            return self.artifact
+        artifact = self.artifacts.get(artifact_id)
+        if artifact is not None and user_id == artifact.user_id:
+            return artifact
         return None
 
     async def add(self, event: RepairSessionEvent) -> RepairSessionEvent:
@@ -136,6 +147,23 @@ class _EventService:
         )
         self.store.events.append(event)
         return event
+
+
+class _VisualContext:
+    """Fake accepted-turn visual preparation boundary."""
+
+    def __init__(self, context: DiagnosticVisualContext | None = None) -> None:
+        self.context = context or DiagnosticVisualContext(True, (), (), (), (), ())
+        self.calls: list[tuple[str, str]] = []
+
+    async def prepare_turn(
+        self,
+        *,
+        user_id: str,
+        turn_id: str,
+    ) -> DiagnosticVisualContext:
+        self.calls.append((user_id, turn_id))
+        return self.context
 
 
 class _Runner:
@@ -277,6 +305,7 @@ def _orchestrator(
     input_tool: _Tool | None = None,
     safety_tool: _Tool | None = None,
     report_tool: _Tool | None = None,
+    visual_context: _VisualContext | None = None,
 ) -> DiagnosticTurnOrchestrator:
     calls: list[dict[str, Any]] = []
     return DiagnosticTurnOrchestrator(
@@ -298,6 +327,7 @@ def _orchestrator(
         request_diagnostic_input=input_tool or _Tool({"ok": True, "data": {}}, calls),
         raise_safety_flag=safety_tool or _Tool({"ok": True, "data": {}}, calls),
         save_diagnostic_report=report_tool or _Tool({"ok": True, "data": {}}, calls),
+        visual_context=visual_context or _VisualContext(),
     )
 
 
@@ -324,11 +354,170 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert request.bike_profile == {"id": "bike_orch"}
     assert request.repair_history == ()
     assert request.diagnostic_artifacts == ({"id": "art_1"},)
+    assert request.current_images == ()
+    assert request.current_observations == ()
+    assert request.prior_observations == ()
+    assert request.artifact_processing_statuses == ()
     assert [event.type for event in store.events] == [
         "artifact.referenced",
         "turn.completed",
     ]
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:
+    store = _Store()
+    runner = _Runner()
+    image = NormalizedModelImage(
+        artifact_id="art_1",
+        mime_type="image/jpeg",
+        content=b"normalized-pixels",
+        original_width=100,
+        original_height=80,
+        normalized_width=100,
+        normalized_height=80,
+        content_sha256="a" * 64,
+        preprocessing_version="image-normalization.v1",
+    )
+    visual_context = _VisualContext(
+        DiagnosticVisualContext(
+            True,
+            (image,),
+            (),
+            (),
+            (
+                ArtifactProcessingStatus(
+                    artifact_id="art_1",
+                    status="available",
+                ),
+            ),
+            (),
+        )
+    )
+
+    await _orchestrator(
+        store=store,
+        runner=runner,
+        visual_context=visual_context,
+    ).process_turn(current_user=_user(), turn=_turn(artifact_ids=["art_1"]))
+
+    assert visual_context.calls == [("usr_orch", "turn_orch")]
+    assert runner.requests[0].current_images == (image,)
+    assert runner.requests[0].artifact_processing_statuses[0].artifact_id == "art_1"
+    assert runner.requests[0].current_observations == ()
+    assert runner.requests[0].prior_observations == ()
+
+
+async def test_image_only_visual_failure_persists_error_and_skips_runner() -> None:
+    store = _Store()
+    runner = _Runner()
+    visual_context = _VisualContext(
+        DiagnosticVisualContext(
+            False,
+            (),
+            (),
+            (),
+            (
+                ArtifactProcessingStatus(
+                    artifact_id="art_1",
+                    status="unavailable",
+                    failure_code="image_analysis_unavailable",
+                ),
+            ),
+            (
+                DiagnosticVisualContextError(
+                    code="image_analysis_unavailable",
+                    artifact_id=None,
+                    retryable=False,
+                ),
+            ),
+        )
+    )
+
+    await _orchestrator(
+        store=store,
+        runner=runner,
+        visual_context=visual_context,
+    ).process_turn(current_user=_user(), turn=_turn(text=None, artifact_ids=["art_1"]))
+
+    assert runner.stream_called == 0
+    assert [event.type for event in store.events] == [
+        "artifact.referenced",
+        "error",
+        "turn.completed",
+    ]
+    assert store.events[1].data == {
+        "code": "image_analysis_unavailable",
+        "message": "Image analysis is unavailable for this turn.",
+        "retryable": False,
+    }
+    assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_partial_visual_failure_persists_and_passes_valid_pixels() -> None:
+    store = _Store()
+    runner = _Runner()
+    image = NormalizedModelImage(
+        artifact_id="art_1",
+        mime_type="image/jpeg",
+        content=b"normalized-pixels",
+        original_width=100,
+        original_height=80,
+        normalized_width=100,
+        normalized_height=80,
+        content_sha256="a" * 64,
+        preprocessing_version="image-normalization.v1",
+    )
+    visual_context = _VisualContext(
+        DiagnosticVisualContext(
+            True,
+            (image,),
+            (),
+            (),
+            (
+                ArtifactProcessingStatus(artifact_id="art_1", status="available"),
+                ArtifactProcessingStatus(
+                    artifact_id="art_bad",
+                    status="unavailable",
+                    failure_code="image_decode_failed",
+                ),
+            ),
+            (
+                DiagnosticVisualContextError(
+                    code="image_decode_failed",
+                    artifact_id="art_bad",
+                    retryable=False,
+                ),
+            ),
+        )
+    )
+    excluded_artifact = copy(store.artifact)
+    excluded_artifact.id = "art_bad"
+    store.artifacts[excluded_artifact.id] = excluded_artifact
+
+    await _orchestrator(
+        store=store,
+        runner=runner,
+        visual_context=visual_context,
+    ).process_turn(
+        current_user=_user(),
+        turn=_turn(artifact_ids=["art_1", "art_bad"]),
+    )
+
+    assert runner.stream_called == 1
+    assert runner.requests[0].current_images == (image,)
+    assert [event.type for event in store.events] == [
+        "artifact.referenced",
+        "artifact.referenced",
+        "error",
+        "turn.completed",
+    ]
+    assert store.events[2].data == {
+        "code": "image_decode_failed",
+        "message": "Image could not be decoded.",
+        "retryable": False,
+        "artifact_id": "art_bad",
+    }
 
 
 async def test_assistant_output_becomes_public_events() -> None:

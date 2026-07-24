@@ -263,3 +263,80 @@ async def test_background_missing_user_restores_session_and_writes_terminal_even
     assert store.events[1][2]["turn_id"] == "turn_bg"
     assert store.events[1][2]["session"]["status"] == "awaiting_user"
     assert "auth|" not in repr(store.events)
+
+
+def test_background_composition_builds_visual_context_with_fresh_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fresh_session = _FakeSession()
+    settings = Settings(
+        environment="test",
+        database_url="postgresql+asyncpg://test/test",
+    )
+    captured: dict[str, object] = {}
+    storage = object()
+
+    class _VisualContextService:
+        def __init__(self, **kwargs: object) -> None:
+            captured["visual_context_kwargs"] = kwargs
+
+    class _Orchestrator:
+        def __init__(self, **kwargs: object) -> None:
+            captured["orchestrator_kwargs"] = kwargs
+
+    monkeypatch.setattr(background, "get_storage_provider", lambda _settings: storage)
+    monkeypatch.setattr(background, "TurnService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        background,
+        "RepairSessionService",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        background,
+        "ResolvedBikeProfileService",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(background, "ArtifactService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(background, "ReportService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        background,
+        "DiagnosticSafetyService",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        background, "DiagnosticRunner", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(
+        background, "create_diagnostic_agent", lambda *args, **kwargs: object()
+    )
+    monkeypatch.setattr(background, "get_adk_session_service", lambda: object())
+    monkeypatch.setattr(
+        background, "_build_cost_estimate_service", lambda _settings: None
+    )
+    monkeypatch.setattr(background, "GetBikeProfileTool", lambda *args: object())
+    monkeypatch.setattr(background, "LookupRepairHistoryTool", lambda *args: object())
+    monkeypatch.setattr(
+        background, "ListDiagnosticArtifactsTool", lambda *args: object()
+    )
+    monkeypatch.setattr(
+        background, "RequestDiagnosticInputTool", lambda *args: object()
+    )
+    monkeypatch.setattr(background, "RaiseSafetyFlagTool", lambda *args: object())
+    monkeypatch.setattr(background, "SaveDiagnosticReportTool", lambda *args: object())
+    monkeypatch.setattr(
+        background, "DiagnosticVisualContextService", _VisualContextService
+    )
+    monkeypatch.setattr(background, "DiagnosticTurnOrchestrator", _Orchestrator)
+
+    background._build_background_orchestrator(session=fresh_session, settings=settings)
+
+    visual_context_kwargs = captured["visual_context_kwargs"]
+    assert isinstance(visual_context_kwargs, dict)
+    assert visual_context_kwargs["storage"] is storage
+    assert isinstance(visual_context_kwargs["turns"], background.RepairTurnRepository)
+    assert isinstance(
+        visual_context_kwargs["repair_sessions"],
+        background.RepairSessionRepository,
+    )
+    assert isinstance(visual_context_kwargs["artifacts"], background.ArtifactRepository)
+    assert captured["orchestrator_kwargs"]["visual_context"] is not None  # type: ignore[index]

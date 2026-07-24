@@ -21,6 +21,11 @@ from bike_doc_api.adk.sessions import (
 )
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
+from bike_doc_api.schemas.observation_extraction import (
+    ArtifactProcessingStatus,
+    DiagnosticVisualObservationProjection,
+    NormalizedModelImage,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,6 +43,16 @@ class DiagnosticRunnerRequest:
     bike_profile: Mapping[str, Any] | None
     repair_history: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
+    current_images: tuple[NormalizedModelImage, ...] = field(default_factory=tuple)
+    current_observations: tuple[DiagnosticVisualObservationProjection, ...] = field(
+        default_factory=tuple
+    )
+    prior_observations: tuple[DiagnosticVisualObservationProjection, ...] = field(
+        default_factory=tuple,
+    )
+    artifact_processing_statuses: tuple[ArtifactProcessingStatus, ...] = field(
+        default_factory=tuple,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -366,11 +381,22 @@ def _default_runner_factory(
 
 
 def _content_from_request(request: DiagnosticRunnerRequest) -> types.Content:
-    """Convert app-owned turn text into the verified GenAI content shape."""
+    """Convert current text and normalized pixels into verified GenAI content."""
+
+    parts: list[types.Part] = []
+    if request.message_text is not None:
+        parts.append(types.Part.from_text(text=request.message_text))
+    for image in request.current_images:
+        parts.extend(
+            (
+                types.Part.from_text(text=f"Image artifact ID: {image.artifact_id}"),
+                types.Part.from_bytes(data=image.content, mime_type=image.mime_type),
+            ),
+        )
 
     return types.Content(
         role="user",
-        parts=[types.Part.from_text(text=request.message_text or "")],
+        parts=parts,
     )
 
 
@@ -394,6 +420,18 @@ def _state_delta_from_request(request: DiagnosticRunnerRequest) -> dict[str, Any
             "repair_history": [dict(entry) for entry in request.repair_history],
             "diagnostic_artifacts": [
                 dict(artifact) for artifact in request.diagnostic_artifacts
+            ],
+            "current_observations": [
+                observation.model_dump(mode="json")
+                for observation in request.current_observations
+            ],
+            "prior_observations": [
+                observation.model_dump(mode="json")
+                for observation in request.prior_observations
+            ],
+            "artifact_processing_statuses": [
+                status.model_dump(mode="json")
+                for status in request.artifact_processing_statuses
             ],
         },
     }

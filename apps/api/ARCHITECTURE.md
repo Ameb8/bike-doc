@@ -32,8 +32,8 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | `main.py`, `core/` | App construction, settings, logging, security primitives, and the public error envelope | `create_app`, `Settings`, `install_exception_handlers` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
-| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
-| `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records, metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
+| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
+| `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records (including session-scoped image-observation extraction runs and ordered provider attempts), metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
 | `providers/` | Replaceable storage and price-lookup integrations | `StorageProvider`, `PriceLookupProvider` |
 | `adk/` | Internal agent construction, ADK session/runner adaptation, tool adapters, and turn orchestration | `orchestration.py`, `background.py` |
 
@@ -107,7 +107,7 @@ turn route
   -> TurnService accepts, locks, validates, and persists turn.started
   -> FastAPI BackgroundTasks
   -> adk/background builds a fresh service/repository graph
-  -> DiagnosticTurnOrchestrator seeds durable context and streams DiagnosticRunner
+  -> DiagnosticTurnOrchestrator prepares current-turn visual context, seeds durable context, and streams DiagnosticRunner
   -> ADK tools call services; runner events become public events
   -> EventService persists/commits events, then local SSE fan-out
 ```
@@ -120,13 +120,18 @@ running, and commits before returning `202 Accepted`. An idempotent replay does
 not start a second background execution.
 
 The background task opens a new database session and reconstructs the
-orchestration graph. `DiagnosticTurnOrchestrator` reads the durable bike
-profile, repair history, and allowed diagnostic-artifact metadata to seed the
-runner. `DiagnosticRunner` translates Google ADK output into app-owned event
-objects; no raw ADK event, prompt, tool trace, model setting, or ADK session ID
-crosses that boundary. The orchestrator persists assistant output and terminal
-events, and completes the turn with the public repair-session status implied by
-the result.
+orchestration graph, including `DiagnosticVisualContextService` with fresh
+turn, repair-session, artifact, storage, settings, and preprocessing
+dependencies. Before building the runner request, the orchestrator prepares
+only the accepted turn's images. `pixels_only` supplies labeled normalized
+pixels, per-artifact statuses, and empty observation projections; `off` never
+reads pixels and supplies uninspected statuses. An image-only turn for which
+the agent cannot be invoked persists its safe recoverable error and terminal
+awaiting-user event without invoking the runner. `DiagnosticRunner` translates
+Google ADK output into app-owned event objects; no raw ADK event, prompt, tool
+trace, model setting, or ADK session ID crosses that boundary. Profile
+inference is separately scheduled after diagnostic processing and does not
+delay it.
 
 State-mutating tools run directly inside ADK's tool loop. The input-request,
 safety-flag, and report tools call the corresponding backend services, which
@@ -197,8 +202,10 @@ shared decision schema.
 ### `repositories/`, `models/`, and `db/`
 
 Models represent stored records: users and bikes; repair sessions, phase
-sessions, and turns; artifacts; ordered repair-session events; and phase
-reports. `repair_sessions.py` is the central persistence model for the
+sessions, and turns; artifacts; ordered repair-session events; phase reports;
+and image-observation extraction runs. An extraction run is the one durable
+visual-evidence record for an accepted image-bearing turn; its ordered provider
+attempts are execution history rather than additional evidence. `repair_sessions.py` is the central persistence model for the
 long-lived product workflow. A repair session is app-owned; a phase-session
 row maps a product phase to its opaque internal ADK session ID. Repositories
 encapsulate SQLAlchemy queries, including owner-scoped and `FOR UPDATE` reads;
