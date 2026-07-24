@@ -1,0 +1,29 @@
+apps/android/app/src/main/res/values/strings.xml
+  s_ae5da9ab800a30::t_0e3c49fb1578d6 72-138
+  s_ae5da9ab800a30::t_cb9e97d75b2bb2 139
+apps/android/app/src/main/java/com/bikedoc/android/bikes/BikeEditScreen.kt
+  s_ae5da9ab800a30::t_68ff9c016af52d 5,118-123,127-138,142-153,160-163,166-169,180,183-190,193,196-211,219-227,229-237,250-255,333-338,340-345,357-359,361-378,392-394,396-404,406-413,426-437,443-445,459-464,468-470,474-479,491,493,496-501,505-507,511-513,526,528-536
+  s_ae5da9ab800a30::t_38081e7b004489 10,20,27-29,116-117,124,126,139-141,154,156-159,164-165,170-171,173-176,215-218,228,238,240-249,256,264-305,311-313,315-326,332,339,346,351,356,360,379,391,395,405,425,438,440-442,446-447,458,465,467,471,473,480,490,494-495,502-504,508-510,514-515,527,537
+  s_ae5da9ab800a30::t_cb9e97d75b2bb2 306-310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "697231cf9895aed2f7ef526c82c5268a41a9c625",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_ae5da9ab800a30": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f95cf-4dd2-7110-aacf-420ee0ed045e",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
