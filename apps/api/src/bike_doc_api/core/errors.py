@@ -106,6 +106,17 @@ class SessionStateConflictError(AppError):
         )
 
 
+class ArtifactNotReadyError(AppError):
+    """An artifact is still being prepared and may be retried later."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            status_code=409,
+            code="artifact_not_ready",
+            message="Artifact is not ready for diagnosis.",
+        )
+
+
 class BikeRepairHistoryConflictError(AppError):
     """A bike cannot be deleted while owned repair-session history exists."""
 

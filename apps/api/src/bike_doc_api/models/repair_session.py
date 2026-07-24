@@ -323,10 +323,22 @@ class RepairTurn(Base):
             "start_event_sequence >= 1",
             name="ck_repair_turns_start_event_sequence",
         ),
+        CheckConstraint(
+            "image_analysis_mode IS NULL OR image_analysis_mode IN ("
+            "'off', 'pixels_only', 'shadow', 'enabled'"
+            ")",
+            name="ck_repair_turns_image_analysis_mode",
+        ),
         Index(
             "ux_repair_turns_session_client_turn",
             "repair_session_id",
             "client_turn_id",
+            unique=True,
+        ),
+        Index(
+            "ux_repair_turns_id_session",
+            "id",
+            "repair_session_id",
             unique=True,
         ),
         Index(
@@ -379,6 +391,7 @@ class RepairTurn(Base):
     message: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     responds_to_input_request_id: Mapped[str | None] = mapped_column(Text)
     start_event_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    image_analysis_mode: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

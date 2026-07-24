@@ -10,6 +10,12 @@ from bike_doc_api.schemas.common import (
     ArtifactStatus,
 )
 
+# Kept with app-owned artifact contract values so upload and turn acceptance
+# use the same diagnostic-image definition without schemas importing services.
+ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES = frozenset(
+    {"image/jpeg", "image/png", "image/webp"},
+)
+
 
 class ArtifactRef(APIBaseModel):
     """Public artifact metadata."""

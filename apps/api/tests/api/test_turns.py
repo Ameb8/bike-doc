@@ -79,6 +79,7 @@ class _InMemoryTurnStore:
         self.events: list[RepairSessionEventModel] = []
         self.background_calls: list[tuple[str, str, str]] = []
         self.profile_inference_calls: list[str] = []
+        self.artifact_lookup_ids: list[str] = []
         self.artifacts = {
             OWNED_ARTIFACT_ID: ArtifactRefModel(
                 id=OWNED_ARTIFACT_ID,
@@ -167,6 +168,7 @@ class _InMemoryTurnStore:
                 return None
             return session
         if artifact_id is not None:
+            self.artifact_lookup_ids.append(artifact_id)
             artifact = self.artifacts.get(artifact_id)
             if artifact is None or artifact.user_id != user_id:
                 return None
@@ -652,6 +654,141 @@ async def test_referencing_invalid_artifact_returns_404(
             ),
         )
         assert_error_response(response, status_code=404, error_code="not_found")
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("purpose", "verification_photo"),
+        ("media_type", "document"),
+        ("mime_type", "image/gif"),
+    ],
+)
+async def test_rejects_non_diagnostic_image_artifact(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+    field: str,
+    value: str,
+) -> None:
+    artifact = turn_service_override.artifacts[OWNED_ARTIFACT_ID]
+    setattr(artifact, field, value)
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id=f"client-turn-invalid-{field}",
+            message={"text": "See attached.", "artifact_ids": [artifact.id]},
+        ),
+    )
+
+    assert_error_response(response, status_code=422, error_code="validation_error")
+    assert turn_service_override.turns == {}
+    assert turn_service_override.events == []
+    assert turn_service_override.background_calls == []
+    assert turn_service_override.profile_inference_calls == []
+
+
+@pytest.mark.parametrize("status", ["uploaded", "processing"])
+async def test_not_ready_artifact_is_retryable_and_does_not_schedule_work(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+    status: str,
+) -> None:
+    artifact = turn_service_override.artifacts[OWNED_ARTIFACT_ID]
+    artifact.status = status
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id=f"client-turn-not-ready-{status}",
+            message={"text": "See attached.", "artifact_ids": [artifact.id]},
+        ),
+    )
+
+    assert_error_response(response, status_code=409, error_code="artifact_not_ready")
+    assert turn_service_override.turns == {}
+    assert turn_service_override.events == []
+    assert turn_service_override.background_calls == []
+    assert turn_service_override.profile_inference_calls == []
+
+
+async def test_rejected_artifact_does_not_schedule_work(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    artifact = turn_service_override.artifacts[OWNED_ARTIFACT_ID]
+    artifact.status = "rejected"
+    artifact.rejection_reason = "malformed upload"
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id="client-turn-rejected",
+            message={"text": "See attached.", "artifact_ids": [artifact.id]},
+        ),
+    )
+
+    assert_error_response(response, status_code=422, error_code="validation_error")
+    assert turn_service_override.turns == {}
+    assert turn_service_override.events == []
+    assert turn_service_override.background_calls == []
+    assert turn_service_override.profile_inference_calls == []
+
+
+async def test_mixed_artifact_list_is_all_or_nothing_before_background_processing(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    invalid_artifact_id = "art_unsupported_mime_contract"
+    turn_service_override.artifacts[invalid_artifact_id] = ArtifactRefModel(
+        id=invalid_artifact_id,
+        user_id=turn_service_override.sessions[OWNED_SESSION_ID].user_id,
+        repair_session_id=OWNED_SESSION_ID,
+        purpose="diagnostic_photo",
+        media_type="image",
+        mime_type="image/gif",
+        filename="unsupported.gif",
+        byte_size=123,
+        status="ready",
+        content_sha256="e" * 64,
+        storage_provider="local",
+        storage_path="objects/unsupported.gif",
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    response = await _post_turn(
+        api_client,
+        auth_headers,
+        OWNED_SESSION_ID,
+        _valid_turn_payload(
+            client_turn_id="client-turn-mixed-artifacts",
+            message={
+                "text": "Two photos.",
+                "artifact_ids": [OWNED_ARTIFACT_ID, invalid_artifact_id],
+            },
+        ),
+    )
+
+    assert_error_response(response, status_code=422, error_code="validation_error")
+    assert turn_service_override.artifact_lookup_ids == [
+        OWNED_ARTIFACT_ID,
+        invalid_artifact_id,
+    ]
+    assert turn_service_override.turns == {}
+    assert turn_service_override.events == []
+    assert turn_service_override.background_calls == []
+    assert turn_service_override.profile_inference_calls == []
 
 
 async def test_referencing_unknown_input_request_returns_404(
