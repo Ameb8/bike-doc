@@ -138,6 +138,8 @@
     <string name="bike_edit_driver_interface">Driver interface</string>
     <string name="bike_edit_not_specified">Not specified</string>
     <string name="bike_edit_option_unknown">Unknown</string>
+    <string name="bike_edit_option_present">Present</string>
+    <string name="bike_edit_option_absent">Absent</string>
     <string name="bike_edit_option_road">Road</string>
     <string name="bike_edit_option_gravel">Gravel</string>
     <string name="bike_edit_option_mountain">Mountain</string>

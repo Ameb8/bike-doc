@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -133,15 +136,25 @@ private fun ProfileForm(
                 IntField(identity.modelYear, {
                     onChanged(profile.copy(identity = identity.copy(modelYear = it)))
                 }, stringResource(R.string.bike_edit_model_year), enabled)
-                Field(identity.bikeType.orEmpty(), {
-                    onChanged(profile.copy(identity = identity.copy(bikeType = it.blankToNull())))
-                }, stringResource(R.string.bike_edit_bike_type), enabled)
+                EnumDropdown(
+                    identity.bikeType,
+                    enumOptions(
+                        "road", "gravel", "mountain", "hybrid", "commuter", "cargo", "ebike", "bmx", "folding", "recumbent", "other",
+                    ),
+                    { onChanged(profile.copy(identity = identity.copy(bikeType = it))) },
+                    stringResource(R.string.bike_edit_bike_type),
+                    enabled,
+                )
             }
             ComponentSection(stringResource(R.string.bike_edit_frame), summary(profile.frame.material, profile.frame.sizeLabel)) {
                 val frame = profile.frame
-                Field(frame.material.orEmpty(), {
-                    onChanged(profile.copy(frame = frame.copy(material = it.blankToNull())))
-                }, stringResource(R.string.bike_edit_frame_material), enabled)
+                EnumDropdown(
+                    frame.material,
+                    enumOptions("aluminum", "steel", "carbon", "titanium", "other"),
+                    { onChanged(profile.copy(frame = frame.copy(material = it))) },
+                    stringResource(R.string.bike_edit_frame_material),
+                    enabled,
+                )
                 Field(frame.sizeLabel.orEmpty(), {
                     onChanged(profile.copy(frame = frame.copy(sizeLabel = it.blankToNull())))
                 }, stringResource(R.string.bike_edit_frame_size), enabled)
@@ -161,13 +174,13 @@ private fun ProfileForm(
                 stringResource(R.string.bike_edit_front_brake),
                 summary(profile.brakes.front.component.manufacturer, profile.brakes.front.component.model),
             ) {
-                BrakeFields(profile.brakes.front, enabled) { onChanged(profile.copy(brakes = profile.brakes.copy(front = it))) }
+                BrakeFields(profile.brakes.front, false, enabled) { onChanged(profile.copy(brakes = profile.brakes.copy(front = it))) }
             }
             ComponentSection(
                 stringResource(R.string.bike_edit_rear_brake),
                 summary(profile.brakes.rear.component.manufacturer, profile.brakes.rear.component.model),
             ) {
-                BrakeFields(profile.brakes.rear, enabled) { onChanged(profile.copy(brakes = profile.brakes.copy(rear = it))) }
+                BrakeFields(profile.brakes.rear, true, enabled) { onChanged(profile.copy(brakes = profile.brakes.copy(rear = it))) }
             }
         }
         CollapsibleSection(
@@ -175,40 +188,54 @@ private fun ProfileForm(
             summary = summary(profile.drivetrain.architecture, profile.drivetrain.driveMedium),
         ) {
             val drivetrain = profile.drivetrain
-            Field(drivetrain.architecture.orEmpty(), {
-                onChanged(profile.copy(drivetrain = drivetrain.copy(architecture = it.blankToNull())))
-            }, stringResource(R.string.bike_edit_architecture), enabled)
-            Field(drivetrain.driveMedium.orEmpty(), {
-                onChanged(profile.copy(drivetrain = drivetrain.copy(driveMedium = it.blankToNull())))
+            EnumDropdown(
+                drivetrain.architecture,
+                enumOptions(
+                    "derailleur",
+                    "internal_gear_hub",
+                    "gearbox",
+                    "singlespeed_freewheel",
+                    "fixed_gear",
+                    "continuously_variable",
+                    "other",
+                ),
+                {
+                    onChanged(profile.copy(drivetrain = drivetrain.copy(architecture = it)))
+                },
+                stringResource(R.string.bike_edit_architecture),
+                enabled,
+            )
+            EnumDropdown(drivetrain.driveMedium, enumOptions("chain", "belt", "shaft", "other"), {
+                onChanged(profile.copy(drivetrain = drivetrain.copy(driveMedium = it)))
             }, stringResource(R.string.bike_edit_drive_medium), enabled)
-            RoleSection(stringResource(R.string.bike_edit_front_shifter), drivetrain.frontShifter, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_front_shifter), drivetrain.frontShifter, RoleKind.SHIFTER, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(frontShifter = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_rear_shifter), drivetrain.rearShifter, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_rear_shifter), drivetrain.rearShifter, RoleKind.SHIFTER, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(rearShifter = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_front_derailleur), drivetrain.frontDerailleur, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_front_derailleur), drivetrain.frontDerailleur, RoleKind.PLAIN, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(frontDerailleur = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_rear_derailleur), drivetrain.rearDerailleur, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_rear_derailleur), drivetrain.rearDerailleur, RoleKind.REAR_DERAILLEUR, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(rearDerailleur = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_crankset), drivetrain.crankset, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_crankset), drivetrain.crankset, RoleKind.CRANKSET, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(crankset = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_rear_cluster), drivetrain.rearCluster, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_rear_cluster), drivetrain.rearCluster, RoleKind.REAR_CLUSTER, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(rearCluster = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_chain), drivetrain.chain, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_chain), drivetrain.chain, RoleKind.PLAIN, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(chain = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_belt), drivetrain.belt, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_belt), drivetrain.belt, RoleKind.PLAIN, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(belt = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_gear_unit), drivetrain.gearUnit, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_gear_unit), drivetrain.gearUnit, RoleKind.PLAIN, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(gearUnit = it)))
             }
-            RoleSection(stringResource(R.string.bike_edit_bottom_bracket), drivetrain.bottomBracket, enabled) {
+            RoleSection(stringResource(R.string.bike_edit_bottom_bracket), drivetrain.bottomBracket, RoleKind.PLAIN, enabled) {
                 onChanged(profile.copy(drivetrain = drivetrain.copy(bottomBracket = it)))
             }
         }
@@ -313,28 +340,36 @@ private fun summary(vararg values: String?): String =
 private fun RoleSection(
     label: String,
     role: DrivetrainRole?,
+    kind: RoleKind,
     enabled: Boolean,
     onChanged: (DrivetrainRole) -> Unit,
 ) {
     val value = role ?: DrivetrainRole()
     ComponentSection(label, summary(value.component.manufacturer, value.component.model, value.speedCount?.toString())) {
-        RoleFields(value, enabled, onChanged)
+        RoleFields(value, kind, enabled, onChanged)
     }
 }
+
+private enum class RoleKind { PLAIN, SHIFTER, REAR_DERAILLEUR, CRANKSET, REAR_CLUSTER }
 
 @Composable
 private fun BrakeFields(
     brake: BrakeAssembly,
+    isRear: Boolean,
     enabled: Boolean,
     onChanged: (BrakeAssembly) -> Unit,
 ) {
     PresenceFields(brake.component, enabled) { onChanged(brake.copy(component = it)) }
     if (brake.component.presence != ComponentPresence.ABSENT) {
-        Field(brake.mechanism.orEmpty(), {
-            onChanged(brake.copy(mechanism = it.blankToNull()))
+        val mechanismValues =
+            listOf("disc", "rim_caliper", "rim_cantilever", "rim_v_brake", "rim_u_brake", "rim_other", "drum", "roller") +
+                (if (isRear) listOf("coaster") else emptyList()) +
+                listOf("other")
+        EnumDropdown(brake.mechanism, enumOptions(mechanismValues), {
+            onChanged(brake.copy(mechanism = it))
         }, stringResource(R.string.bike_edit_mechanism), enabled)
-        Field(brake.actuation.orEmpty(), {
-            onChanged(brake.copy(actuation = it.blankToNull()))
+        EnumDropdown(brake.actuation, enumOptions("mechanical", "hydraulic", "electronic", "other"), {
+            onChanged(brake.copy(actuation = it))
         }, stringResource(R.string.bike_edit_actuation), enabled)
         val rotor = brake.rotor ?: Rotor()
         Field(rotor.component.manufacturer.orEmpty(), {
@@ -349,33 +384,57 @@ private fun BrakeFields(
 @Composable
 private fun RoleFields(
     value: DrivetrainRole,
+    kind: RoleKind,
     enabled: Boolean,
     onChanged: (DrivetrainRole) -> Unit,
 ) {
     PresenceFields(value.component, enabled) { onChanged(value.copy(component = it)) }
     if (value.component.presence != ComponentPresence.ABSENT) {
-        Field(value.actuation.orEmpty(), {
-            onChanged(value.copy(actuation = it.blankToNull()))
-        }, stringResource(R.string.bike_edit_actuation), enabled)
-        IntField(value.speedCount, { onChanged(value.copy(speedCount = it)) }, stringResource(R.string.bike_edit_speed_count), enabled)
-        Field(value.mountType.orEmpty(), {
-            onChanged(value.copy(mountType = it.blankToNull()))
-        }, stringResource(R.string.bike_edit_mount_type), enabled)
-        IntField(
-            value.chainringCount,
-            { onChanged(value.copy(chainringCount = it)) },
-            stringResource(R.string.bike_edit_chainring_count),
-            enabled,
-        )
-        Field(value.chainringToothCounts.orEmpty(), {
-            onChanged(value.copy(chainringToothCounts = it.blankToNull()))
-        }, stringResource(R.string.bike_edit_chainring_teeth), enabled)
-        Field(value.clusterType.orEmpty(), {
-            onChanged(value.copy(clusterType = it.blankToNull()))
-        }, stringResource(R.string.bike_edit_cluster_type), enabled)
-        Field(value.driverInterface.orEmpty(), {
-            onChanged(value.copy(driverInterface = it.blankToNull()))
-        }, stringResource(R.string.bike_edit_driver_interface), enabled)
+        if (kind == RoleKind.SHIFTER) {
+            EnumDropdown(value.actuation, enumOptions("mechanical", "electronic", "hydraulic", "other"), {
+                onChanged(value.copy(actuation = it))
+            }, stringResource(R.string.bike_edit_actuation), enabled)
+            IntField(value.speedCount, { onChanged(value.copy(speedCount = it)) }, stringResource(R.string.bike_edit_speed_count), enabled)
+        }
+        if (kind == RoleKind.REAR_DERAILLEUR) {
+            EnumDropdown(value.mountType, enumOptions("hanger", "direct_mount", "full_mount", "other"), {
+                onChanged(value.copy(mountType = it))
+            }, stringResource(R.string.bike_edit_mount_type), enabled)
+        }
+        if (kind == RoleKind.CRANKSET) {
+            IntField(
+                value.chainringCount,
+                { onChanged(value.copy(chainringCount = it)) },
+                stringResource(R.string.bike_edit_chainring_count),
+                enabled,
+            )
+            Field(value.chainringToothCounts.orEmpty(), {
+                onChanged(value.copy(chainringToothCounts = it.blankToNull()))
+            }, stringResource(R.string.bike_edit_chainring_teeth), enabled)
+        }
+        if (kind == RoleKind.REAR_CLUSTER) {
+            EnumDropdown(value.clusterType, enumOptions("cassette", "freewheel", "single_sprocket", "belt_cog", "other"), {
+                onChanged(value.copy(clusterType = it))
+            }, stringResource(R.string.bike_edit_cluster_type), enabled)
+            EnumDropdown(
+                value.driverInterface,
+                enumOptions(
+                    "hg",
+                    "microspline",
+                    "xd",
+                    "xdr",
+                    "campagnolo",
+                    "threaded_freewheel",
+                    "other",
+                ),
+                {
+                    onChanged(value.copy(driverInterface = it))
+                },
+                stringResource(R.string.bike_edit_driver_interface),
+                enabled,
+            )
+            IntField(value.speedCount, { onChanged(value.copy(speedCount = it)) }, stringResource(R.string.bike_edit_speed_count), enabled)
+        }
     }
 }
 
@@ -399,16 +458,16 @@ private fun WheelFields(
         Field(tire.markedSize.orEmpty(), {
             onChanged(position.copy(tire = tire.copy(markedSize = it.blankToNull())))
         }, stringResource(R.string.bike_edit_tire_marked_size), enabled)
-        Field(tire.setup.orEmpty(), {
-            onChanged(position.copy(tire = tire.copy(setup = it.blankToNull())))
+        EnumDropdown(tire.setup, enumOptions("tubed", "tubeless", "tubular", "airless", "other"), {
+            onChanged(position.copy(tire = tire.copy(setup = it)))
         }, stringResource(R.string.bike_edit_tire_setup), enabled)
         val hub = position.hub ?: HubComponent()
-        Field(hub.axleType.orEmpty(), {
-            onChanged(position.copy(hub = hub.copy(axleType = it.blankToNull())))
+        EnumDropdown(hub.axleType, enumOptions("quick_release", "thru_axle", "bolt_on", "solid_axle", "other"), {
+            onChanged(position.copy(hub = hub.copy(axleType = it)))
         }, stringResource(R.string.bike_edit_hub_axle_type), enabled)
         if (isRear) {
-            Field(hub.driverInterface.orEmpty(), {
-                onChanged(position.copy(hub = hub.copy(driverInterface = it.blankToNull())))
+            EnumDropdown(hub.driverInterface, enumOptions("hg", "microspline", "xd", "xdr", "campagnolo", "threaded_freewheel", "other"), {
+                onChanged(position.copy(hub = hub.copy(driverInterface = it)))
             }, stringResource(R.string.bike_edit_rear_hub_driver_interface), enabled)
         }
     }
@@ -423,8 +482,8 @@ private fun SuspensionFields(
     val suspension = profile.suspension
     val fork = suspension.fork ?: Fork()
     ComponentSection(stringResource(R.string.bike_edit_fork), summary(fork.manufacturer, fork.model)) {
-        Field(fork.type.orEmpty(), {
-            onChanged(profile.copy(suspension = suspension.copy(fork = fork.copy(type = it.blankToNull()))))
+        EnumDropdown(fork.type, enumOptions("rigid", "suspension", "other"), {
+            onChanged(profile.copy(suspension = suspension.copy(fork = fork.copy(type = it))))
         }, stringResource(R.string.bike_edit_fork_type), enabled)
         Field(fork.manufacturer.orEmpty(), {
             onChanged(profile.copy(suspension = suspension.copy(fork = fork.copy(manufacturer = it.blankToNull()))))
@@ -456,8 +515,8 @@ private fun CockpitFields(
     val cockpit = profile.cockpit
     val bar = cockpit.handlebar ?: Handlebar()
     ComponentSection(stringResource(R.string.bike_edit_handlebar), summary(bar.style, bar.manufacturer)) {
-        Field(bar.style.orEmpty(), {
-            onChanged(profile.copy(cockpit = cockpit.copy(handlebar = bar.copy(style = it.blankToNull()))))
+        EnumDropdown(bar.style, enumOptions("drop", "flat", "riser", "swept", "bullhorn", "bmx", "other"), {
+            onChanged(profile.copy(cockpit = cockpit.copy(handlebar = bar.copy(style = it))))
         }, stringResource(R.string.bike_edit_handlebar_style), enabled)
         Field(bar.manufacturer.orEmpty(), {
             onChanged(profile.copy(cockpit = cockpit.copy(handlebar = bar.copy(manufacturer = it.blankToNull()))))
@@ -465,14 +524,14 @@ private fun CockpitFields(
     }
     val stem = cockpit.stem ?: Stem()
     ComponentSection(stringResource(R.string.bike_edit_stem), summary(stem.type)) {
-        Field(stem.type.orEmpty(), {
-            onChanged(profile.copy(cockpit = cockpit.copy(stem = stem.copy(type = it.blankToNull()))))
+        EnumDropdown(stem.type, enumOptions("threadless", "quill", "integrated", "other"), {
+            onChanged(profile.copy(cockpit = cockpit.copy(stem = stem.copy(type = it))))
         }, stringResource(R.string.bike_edit_stem_type), enabled)
     }
     val seatpost = profile.seating.seatpost ?: Seatpost()
     ComponentSection(stringResource(R.string.bike_edit_seatpost), summary(seatpost.type)) {
-        Field(seatpost.type.orEmpty(), {
-            onChanged(profile.copy(seating = profile.seating.copy(seatpost = seatpost.copy(type = it.blankToNull()))))
+        EnumDropdown(seatpost.type, enumOptions("rigid", "dropper", "suspension", "other"), {
+            onChanged(profile.copy(seating = profile.seating.copy(seatpost = seatpost.copy(type = it))))
         }, stringResource(R.string.bike_edit_seatpost_type), enabled)
         IntField(seatpost.diameterMm?.toInt(), {
             onChanged(profile.copy(seating = profile.seating.copy(seatpost = seatpost.copy(diameterMm = it?.toDouble()))))
@@ -488,8 +547,8 @@ private fun ElectricFields(
 ) {
     val assist = profile.electricAssist
     val presence = assist.presence
-    Field(presence?.name?.lowercase().orEmpty(), {
-        onChanged(profile.copy(electricAssist = assist.copy(presence = it.toPresence())))
+    PresenceDropdown(presence, {
+        onChanged(profile.copy(electricAssist = assist.copy(presence = it)))
     }, stringResource(R.string.bike_edit_presence), enabled)
     if (presence != ComponentPresence.ABSENT) {
         ComponentSection(stringResource(R.string.bike_edit_system), summary(assist.systemManufacturer, assist.systemModel)) {
@@ -502,8 +561,8 @@ private fun ElectricFields(
         }
         val motor = assist.motor ?: ElectricMotor()
         ComponentSection(stringResource(R.string.bike_edit_motor), summary(motor.position)) {
-            Field(motor.position.orEmpty(), {
-                onChanged(profile.copy(electricAssist = assist.copy(motor = motor.copy(position = it.blankToNull()))))
+            EnumDropdown(motor.position, enumOptions("front_hub", "rear_hub", "mid_drive", "other"), {
+                onChanged(profile.copy(electricAssist = assist.copy(motor = motor.copy(position = it))))
             }, stringResource(R.string.bike_edit_motor_position), enabled)
         }
         val battery = assist.battery ?: ElectricBattery()
@@ -521,9 +580,7 @@ private fun PresenceFields(
     enabled: Boolean,
     onChanged: (ComponentIdentity) -> Unit,
 ) {
-    Field(identity.presence?.name?.lowercase().orEmpty(), {
-        onChanged(identity.copy(presence = it.toPresence()))
-    }, stringResource(R.string.bike_edit_presence), enabled)
+    PresenceDropdown(identity.presence, { onChanged(identity.copy(presence = it)) }, stringResource(R.string.bike_edit_presence), enabled)
     if (identity.presence != ComponentPresence.ABSENT) {
         Field(identity.manufacturer.orEmpty(), {
             onChanged(identity.copy(manufacturer = it.blankToNull()))
@@ -551,6 +608,95 @@ private fun Field(
     }, isError = error != null, supportingText = error?.let { { Text(it) } }, singleLine = singleLine)
 }
 
+private data class EnumOption(val value: String, val label: String)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EnumDropdown(
+    value: String?,
+    options: List<EnumOption>,
+    onValueChange: (String?) -> Unit,
+    label: String,
+    enabled: Boolean,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (enabled) expanded = !expanded }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.value == value }?.label ?: stringResource(R.string.bike_edit_option_unknown),
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.bike_edit_option_unknown)) },
+                onClick = {
+                    expanded = false
+                    onValueChange(null)
+                },
+            )
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        expanded = false
+                        onValueChange(option.value)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PresenceDropdown(
+    value: ComponentPresence?,
+    onValueChange: (ComponentPresence) -> Unit,
+    label: String,
+    enabled: Boolean,
+) {
+    val options =
+        listOf(
+            ComponentPresence.UNKNOWN to stringResource(R.string.bike_edit_option_unknown),
+            ComponentPresence.PRESENT to stringResource(R.string.bike_edit_option_present),
+            ComponentPresence.ABSENT to stringResource(R.string.bike_edit_option_absent),
+        )
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (enabled) expanded = !expanded }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == value }?.second ?: stringResource(R.string.bike_edit_option_unknown),
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+            readOnly = true,
+            enabled = enabled,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (presence, text) ->
+                DropdownMenuItem(text = { Text(text) }, onClick = {
+                    expanded = false
+                    onValueChange(presence)
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun enumOptions(vararg values: String): List<EnumOption> = values.map { EnumOption(it, it.toDisplayLabel()) }
+
+@Composable
+private fun enumOptions(values: List<String>): List<EnumOption> = values.map { EnumOption(it, it.toDisplayLabel()) }
+
+@Composable
+private fun String.toDisplayLabel(): String =
+    replace('_', ' ').split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
+
 @Composable
 private fun IntField(
     value: Int?,
@@ -562,11 +708,3 @@ private fun IntField(
 }
 
 private fun String.blankToNull() = trim().takeIf(String::isNotEmpty)
-
-private fun String.toPresence() =
-    when (lowercase()) {
-        "unknown" -> ComponentPresence.UNKNOWN
-        "present" -> ComponentPresence.PRESENT
-        "absent" -> ComponentPresence.ABSENT
-        else -> null
-    }
