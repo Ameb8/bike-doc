@@ -1704,6 +1704,9 @@ components:
         retryable:
           type: boolean
           default: false
+        artifact_id:
+          type: string
+          nullable: true
 
     HeartbeatEventData:
       type: object

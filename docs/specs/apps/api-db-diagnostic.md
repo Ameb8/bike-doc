@@ -33,6 +33,8 @@ Diagnostic-slice application tables:
 - `repair_session_events`
 - `artifact_refs`
 - `phase_reports`
+- `observation_extraction_runs`
+- `observation_extraction_attempts`
 
 `repair_phase_sessions` is included in addition to the minimum table list
 because `api.md` requires one ADK session per product phase, while product
@@ -67,6 +69,8 @@ Required prefixes:
 | `repair_session_events` | `evt_` |
 | `artifact_refs` | `art_` |
 | `phase_reports` | `rpt_` |
+| `observation_extraction_runs` | `oer_` |
+| `observation_extraction_attempts` | `oea_` |
 
 `repair_session_events` is the only table where the internal primary key is
 not the public API `id`. The OpenAPI SSE example makes event `id` and
@@ -126,6 +130,11 @@ queried as first-class relational entities in the diagnostic slice:
 - `phase_reports.safety_flags`
 - `phase_reports.source_artifact_ids`
 - `phase_reports.payload`
+- `observation_extraction_runs.input_artifact_ids`
+- `observation_extraction_runs.preprocessing_manifest`
+- `observation_extraction_runs.validated_output`
+- `observation_extraction_runs.failure_metadata`
+- `observation_extraction_attempts.failure_metadata`
 
 Add `jsonb_typeof` checks for arrays and objects where the shape is known.
 Detailed schema validation remains in Pydantic/service code against the
@@ -464,6 +473,7 @@ CREATE TABLE repair_turns (
   message jsonb NOT NULL,
   responds_to_input_request_id text NULL,
   start_event_sequence bigint NOT NULL,
+  image_analysis_mode text NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
 
   CONSTRAINT fk_repair_turns_repair_session
@@ -485,9 +495,18 @@ CREATE TABLE repair_turns (
   CONSTRAINT ck_repair_turns_message_object
     CHECK (jsonb_typeof(message) = 'object'),
   CONSTRAINT ck_repair_turns_start_event_sequence
-    CHECK (start_event_sequence >= 1)
+    CHECK (start_event_sequence >= 1),
+  CONSTRAINT ck_repair_turns_image_analysis_mode
+    CHECK (image_analysis_mode IS NULL OR image_analysis_mode IN (
+      'off', 'pixels_only', 'shadow', 'enabled'
+    ))
 );
 ```
+
+`image_analysis_mode` is null only when image analysis does not apply to the
+turn. For an accepted image-bearing turn it is the effective deployment mode
+at acceptance time and is immutable thereafter; idempotent replay and later
+orchestration must use this stored value rather than rereading configuration.
 
 Note: `responds_to_input_request_id`, when present, refers to the `id` field
 inside the JSONB `repair_sessions.current_input_request` blob, not a row in
@@ -504,6 +523,9 @@ CREATE UNIQUE INDEX ux_repair_turns_session_client_turn
 CREATE UNIQUE INDEX ux_repair_turns_session_start_event
   ON repair_turns (repair_session_id, start_event_sequence);
 
+CREATE UNIQUE INDEX ux_repair_turns_id_session
+  ON repair_turns (id, repair_session_id);
+
 CREATE INDEX ix_repair_turns_session_created
   ON repair_turns (repair_session_id, created_at ASC, id ASC);
 
@@ -513,6 +535,41 @@ CREATE INDEX ix_repair_turns_phase_session
 
 Delete behavior: turns are owned by repair sessions and cascade with the
 session. There is no turn-delete API.
+
+### `observation_extraction_runs` and `observation_extraction_attempts`
+
+These tables reserve the durable, session-scoped evidence record used by
+extraction-enabled image-analysis modes. `off` and `pixels_only` turns create
+neither a run nor an attempt. At the pixels-only checkpoint the tables exist
+but no runtime extraction run is created.
+
+Each `observation_extraction_runs` row has an `oer_` ID and stores the accepted
+`turn_id`, `repair_session_id`, copied `shadow` or `enabled` mode, ordered
+unique `input_artifact_ids`, preprocessing/extractor/prompt/output-schema/
+provider/model versions, a byte-free preprocessing manifest, lifecycle status,
+validated output or bounded failure metadata, aggregate provider metrics, and
+diagnostic-agent-start/redaction/terminal timestamps. It has:
+
+- a composite foreign key `(turn_id, repair_session_id)` to `repair_turns`,
+  using the unique index above, with `ON DELETE CASCADE`;
+- an unconditional unique constraint on `turn_id`;
+- `pending`, `completed`, and `failed` lifecycle statuses, with timestamps
+  consistent with that status;
+- JSONB object/array checks, unique text values in `input_artifact_ids`, and a
+  4096-byte limit on failure metadata; and
+- an index for completed, non-redacted runs by repair session and creation
+  order.
+
+The run's `diagnostic_agent_started_at` marker is write-once. Once set, the
+run's status cannot change; redaction is likewise irreversible and clears the
+validated output and preprocessing manifest.
+
+Each `observation_extraction_attempts` row has an `oea_` ID, references its
+run with `ON DELETE CASCADE`, and records a positive ordered attempt number,
+provider/model identity, `pending`/`completed`/`failed` outcome, bounded
+failure metadata, timing, and optional latency/token/cost metrics. `(run_id,
+attempt_number)` is unique. Provider attempts are execution history, not
+independent visual evidence.
 
 ### `repair_session_events`
 

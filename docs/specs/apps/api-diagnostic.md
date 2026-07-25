@@ -195,6 +195,11 @@ text, artifact IDs, or both. `client_turn_id` is required for idempotency.
 four or more IDs, or with duplicate IDs, is rejected as public request
 validation before artifact lookup or turn processing.
 
+Before a turn is accepted, every referenced artifact must belong to the
+authenticated user, be attached to this repair session, have status `ready`,
+and be an `image` `diagnostic_photo` with MIME type `image/jpeg`, `image/png`,
+or `image/webp`. These checks apply even when image analysis is disabled.
+
 Request:
 
 ```json
@@ -245,8 +250,8 @@ Expected errors:
 |---:|---|---|
 | `401` | Missing or invalid bearer token. | `unauthorized` |
 | `404` | Session or referenced artifact/input request does not exist for this user. | `not_found` |
-| `409` | Session is not accepting diagnostic turns, or `client_turn_id` is reused with different payload. | `session_state_conflict` or `idempotency_conflict` |
-| `422` | `schema_version`, `client_turn_id`, or message body is invalid, including more than three or duplicate `artifact_ids`. | `validation_error` |
+| `409` | Session is not accepting diagnostic turns, `client_turn_id` is reused with different payload, or a referenced artifact is still `uploaded` or `processing`. | `session_state_conflict`, `idempotency_conflict`, or `artifact_not_ready` |
+| `422` | `schema_version`, `client_turn_id`, or message body is invalid, including more than three or duplicate `artifact_ids`; or a referenced owned artifact is not an accepted ready diagnostic image. | `validation_error` |
 
 Retrying the exact same `client_turn_id` request returns the original accepted
 turn response with `202 Accepted`.
