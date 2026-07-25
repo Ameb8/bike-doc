@@ -191,9 +191,11 @@ needs sticky routing or a durable ADK session backend.
 
 `tools/common.py` defines the internal, strict `DiagnosticToolContext`, common
 success/error envelope, input parsing, and mapping of known `AppError`
-failures. Every catalog wrapper extracts `app_context` from ADK `ToolContext`
-state and validates it; the model cannot supply or replace user, repair
-session, phase, phase-session, or turn identity. Known failures normalize to
+failures. The context validates server-owned identity plus the runner's
+artifact, profile, repair-history, and score-free visual-observation fields.
+Every catalog wrapper extracts `app_context` from ADK `ToolContext` state and
+validates it; the model cannot supply or replace user, repair session, phase,
+phase-session, or turn identity. Known failures normalize to
 codes such as `not_found`, `invalid_phase`, `stale_session`,
 `validation_error`, `artifact_not_found`, `report_validation_failed`, and
 `safety_policy_violation`.

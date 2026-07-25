@@ -18,6 +18,10 @@ from bike_doc_api.core.errors import (
     ValidationAppError,
 )
 from bike_doc_api.schemas.common import RepairSessionPhase
+from bike_doc_api.schemas.observation_extraction import (
+    ArtifactProcessingStatus,
+    DiagnosticVisualObservationProjection,
+)
 
 ToolErrorCode = Literal[
     "not_found",
@@ -47,6 +51,9 @@ class DiagnosticToolContext(BaseModel):
     bike_profile: Mapping[str, Any] | None = None
     repair_history: tuple[Mapping[str, Any], ...] = ()
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
+    current_observations: tuple[DiagnosticVisualObservationProjection, ...] = ()
+    prior_observations: tuple[DiagnosticVisualObservationProjection, ...] = ()
+    artifact_processing_statuses: tuple[ArtifactProcessingStatus, ...] = ()
 
 
 class PlanningToolContext(BaseModel):
