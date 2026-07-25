@@ -14,6 +14,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
+ImageAnalysisMode = Literal["off", "pixels_only", "shadow", "enabled"]
+
 
 class ProfileInferenceFieldPolicySettings(BaseModel):
     """Deployment data for one canonical field/evidence policy."""
@@ -96,6 +98,7 @@ class Settings(BaseSettings):
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_gcs_bucket: str | None = None
     artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
+    image_analysis_mode: ImageAnalysisMode = "off"
     diagnostic_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     diagnostic_agent_model: str = Field(default="gemini-2.5-flash", min_length=1)
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
@@ -212,6 +215,15 @@ class Settings(BaseSettings):
     @classmethod
     def validate_artifact_storage_provider(cls, value: object) -> object:
         """Normalize the configured artifact storage provider."""
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("image_analysis_mode", mode="before")
+    @classmethod
+    def validate_image_analysis_mode(cls, value: object) -> object:
+        """Normalize the static diagnostic-image rollout mode."""
+
         if isinstance(value, str):
             return value.strip().lower()
         return value

@@ -77,6 +77,18 @@ Feature-specific settings, such as database, auth, model, storage, or provider
 configuration, should be added to `Settings` only when the corresponding feature
 is implemented.
 
+## Image-Diagnosis Rollout Setting
+
+`BIKE_DOC_API_IMAGE_ANALYSIS_MODE` controls the image-analysis mode snapshotted
+onto an accepted image-bearing diagnostic turn. It is trimmed and normalized to
+lowercase and accepts `off`, `pixels_only`, `shadow`, or `enabled`; its default
+is `off`.
+
+At the pixels-only checkpoint, only `off` and `pixels_only` are active runtime
+modes. `shadow` and `enabled` are accepted reserved rollout values for the
+subsequent observation-extraction work and must not be advertised as usable
+image-analysis modes until that work is implemented.
+
 ## Usage
 
 `create_app()` should resolve settings once and pass needed values into app

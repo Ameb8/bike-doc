@@ -18,6 +18,7 @@ from bike_doc_api.api.deps import (
     get_db_session,
     get_diagnostic_adk_session_client,
 )
+from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
@@ -38,6 +39,7 @@ def get_turn_service(
         DiagnosticADKSessionClientProtocol,
         Depends(get_diagnostic_adk_session_client),
     ],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> TurnService:
     """Build the turn service for this request."""
 
@@ -61,6 +63,7 @@ def get_turn_service(
         commit=session.commit,
         rollback=session.rollback,
         phase_session_manager=phase_session_manager,
+        image_analysis_mode=settings.image_analysis_mode,
     )
 
 

@@ -26,7 +26,11 @@ from bike_doc_api.models.artifact import (
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
 from bike_doc_api.providers.storage import StorageProvider, StoredObject
-from bike_doc_api.schemas.artifact import ArtifactRef, artifact_ref_from_model
+from bike_doc_api.schemas.artifact import (
+    ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES,
+    ArtifactRef,
+    artifact_ref_from_model,
+)
 from bike_doc_api.schemas.common import (
     ArtifactMediaType,
     ArtifactPurpose,
@@ -34,8 +38,6 @@ from bike_doc_api.schemas.common import (
 )
 
 logger = logging.getLogger(__name__)
-
-ACCEPTED_DIAGNOSTIC_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 
 class UploadFileProtocol(Protocol):
@@ -132,7 +134,7 @@ class ArtifactService:
         mime_type = _effective_mime_type(
             content=content, content_type=file.content_type
         )
-        if mime_type not in ACCEPTED_DIAGNOSTIC_MIME_TYPES:
+        if mime_type not in ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES:
             raise ValidationAppError("Unsupported diagnostic photo MIME type.")
 
         repair_session = await self._repair_sessions.get_owned(

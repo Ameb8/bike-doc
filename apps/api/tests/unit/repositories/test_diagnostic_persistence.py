@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from bike_doc_api.core.config import get_settings
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.bike import BikeProfile
+from bike_doc_api.models.observation_extraction import ObservationExtractionRun
 from bike_doc_api.models.phase_report import PhaseReport
 from bike_doc_api.models.repair_session import (
     RepairPhaseSession,
@@ -28,6 +29,9 @@ from bike_doc_api.models.user import User
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
+from bike_doc_api.repositories.observation_extraction import (
+    ObservationExtractionRunRepository,
+)
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
     RepairSessionRepository,
@@ -346,3 +350,138 @@ async def test_unique_idempotency_and_parent_constraints_are_enforced(
 
     with pytest.raises(IntegrityError):
         await db_session.flush()
+
+
+async def _create_image_turn(
+    db_session: AsyncSession,
+) -> tuple[RepairSession, RepairTurn]:
+    _, _, repair_session = await _create_user_bike_session(db_session)
+    phase_session = await RepairPhaseSessionRepository(db_session).add(
+        RepairPhaseSession(
+            repair_session_id=repair_session.id,
+            phase="diagnostic",
+            adk_session_id="adk-image-run",
+        ),
+    )
+    turn = await RepairTurnRepository(db_session).add(
+        RepairTurn(
+            repair_session_id=repair_session.id,
+            repair_phase_session_id=phase_session.id,
+            client_turn_id="image-run-turn",
+            request_hash="image-run-hash",
+            phase="diagnostic",
+            message={"artifact_ids": ["art_image"], "text": "Inspect this."},
+            start_event_sequence=1,
+            image_analysis_mode="enabled",
+        ),
+    )
+    return repair_session, turn
+
+
+def _run(*, repair_session_id: str, turn_id: str) -> ObservationExtractionRun:
+    return ObservationExtractionRun(
+        repair_session_id=repair_session_id,
+        turn_id=turn_id,
+        image_analysis_mode="enabled",
+        input_artifact_ids=["art_image"],
+        preprocessing_version="image-normalization.v1",
+        extractor_version="observation-extractor.v1",
+        prompt_version="observation-prompt.v1",
+        output_schema_version="visual-observation.v1",
+        provider="google_ai",
+        model="gemini-test",
+    )
+
+
+async def test_observation_run_creation_lookup_and_zero_observation_completion(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    runs = ObservationExtractionRunRepository(db_session)
+    run = await runs.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+
+    completed = await runs.mark_completed(
+        run,
+        validated_output={"image_assessments": [], "observations": []},
+    )
+
+    assert await runs.get_by_turn_id(turn.id) == completed
+    assert completed.status == "completed"
+    assert completed.provider_attempt_count == 0
+    assert completed.validated_output == {"image_assessments": [], "observations": []}
+
+
+async def test_observation_run_can_fail_before_a_provider_attempt(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    runs = ObservationExtractionRunRepository(db_session)
+    run = await runs.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+
+    failed = await runs.mark_failed(
+        run,
+        failure_metadata={"code": "image_decode_failed", "retryable": False},
+    )
+
+    assert failed.status == "failed"
+    assert failed.provider_attempt_count == 0
+    assert failed.validated_output is None
+
+
+async def test_observation_run_appends_ordered_attempts_only_for_eligible_recovery(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    runs = ObservationExtractionRunRepository(db_session)
+    run = await runs.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+
+    first = await runs.append_attempt(
+        run_id=run.id,
+        provider="google_ai",
+        model="gemini-test",
+    )
+    await runs.finish_attempt(
+        first,
+        outcome="failed",
+        failure_metadata={"code": "provider_timeout", "retryable": True},
+        latency_ms=30,
+    )
+    await runs.mark_failed(
+        run,
+        failure_metadata={"code": "provider_timeout", "retryable": True},
+    )
+    second = await runs.append_attempt(
+        run_id=run.id,
+        provider="google_ai",
+        model="gemini-test",
+    )
+
+    assert (first.attempt_number, second.attempt_number) == (1, 2)
+    assert run.provider_attempt_count == 2
+    await runs.mark_diagnostic_agent_started(run)
+    await runs.mark_failed(
+        run,
+        failure_metadata={"code": "provider_timeout", "retryable": True},
+    )
+    with pytest.raises(ValueError, match="not eligible"):
+        await runs.append_attempt(
+            run_id=run.id,
+            provider="google_ai",
+            model="gemini-test",
+        )
+
+
+async def test_observation_run_unique_turn_identity_and_usable_session_reads(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    runs = ObservationExtractionRunRepository(db_session)
+    run = await runs.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+    await runs.mark_completed(run, validated_output={"observations": []})
+
+    assert await runs.list_usable_for_session(repair_session.id) == [run]
+    db_session.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+    await db_session.rollback()

@@ -44,6 +44,7 @@ from bike_doc_api.schemas.event import (
 from bike_doc_api.schemas.repair_session import (
     repair_session_from_model,
 )
+from bike_doc_api.services.diagnostic_visual_context import DiagnosticVisualContext
 
 
 class RepairPhaseSessionRepositoryProtocol(Protocol):
@@ -101,6 +102,18 @@ class EventServiceProtocol(Protocol):
         """Persist and publish one public event."""
 
 
+class DiagnosticVisualContextServiceProtocol(Protocol):
+    """Prepare app-owned current-turn visual inputs before agent invocation."""
+
+    async def prepare_turn(
+        self,
+        *,
+        user_id: str,
+        turn_id: str,
+    ) -> DiagnosticVisualContext:
+        """Return bounded visual context for one accepted turn."""
+
+
 @dataclass(frozen=True, slots=True)
 class DiagnosticTurnOrchestrator:
     """Connect accepted diagnostic turns to the internal ADK boundary."""
@@ -117,6 +130,7 @@ class DiagnosticTurnOrchestrator:
     request_diagnostic_input: RequestDiagnosticInputTool
     raise_safety_flag: RaiseSafetyFlagTool
     save_diagnostic_report: SaveDiagnosticReportTool
+    visual_context: DiagnosticVisualContextServiceProtocol
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
 
@@ -137,6 +151,11 @@ class DiagnosticTurnOrchestrator:
             if phase_session is None:
                 raise NotFoundError()
 
+            visual_context = await self.visual_context.prepare_turn(
+                user_id=user_snapshot.id,
+                turn_id=turn_snapshot.id,
+            )
+
             context = DiagnosticToolContext(
                 user_id=user_snapshot.id,
                 user_skill_level=user_snapshot.skill_level,
@@ -153,6 +172,19 @@ class DiagnosticTurnOrchestrator:
                 user_id=user_snapshot.id,
                 turn=turn_snapshot,
             )
+            await self._emit_visual_context_errors(
+                repair_session_id=turn_snapshot.repair_session_id,
+                turn_id=turn_snapshot.id,
+                visual_context=visual_context,
+            )
+            if not visual_context.invoke_agent:
+                await self._append_turn_completed(
+                    user_id=user_snapshot.id,
+                    repair_session_id=turn_snapshot.repair_session_id,
+                    turn_id=turn_snapshot.id,
+                    status=RepairSessionStatus.AWAITING_USER,
+                )
+                return
             processing_state = _TurnProcessingState()
             request = DiagnosticRunnerRequest(
                 user_id=user_snapshot.id,
@@ -166,6 +198,10 @@ class DiagnosticTurnOrchestrator:
                 bike_profile=seed.bike_profile,
                 repair_history=seed.repair_history,
                 diagnostic_artifacts=seed.diagnostic_artifacts,
+                current_images=visual_context.current_images,
+                current_observations=visual_context.current_observations,
+                prior_observations=visual_context.prior_observations,
+                artifact_processing_statuses=visual_context.artifact_processing_statuses,
             )
             async for event in self.runner.stream(request):
                 await self._process_runner_event(
@@ -351,6 +387,7 @@ class DiagnosticTurnOrchestrator:
         code: str,
         message: str,
         retryable: bool,
+        artifact_id: str | None = None,
     ) -> None:
         """Persist a public recoverable processing error."""
 
@@ -358,8 +395,32 @@ class DiagnosticTurnOrchestrator:
             repair_session_id=repair_session_id,
             turn_id=turn_id,
             event_type=RepairSessionEventType.ERROR,
-            data={"code": code, "message": message, "retryable": retryable},
+            data={
+                "code": code,
+                "message": message,
+                "retryable": retryable,
+                **({"artifact_id": artifact_id} if artifact_id is not None else {}),
+            },
         )
+
+    async def _emit_visual_context_errors(
+        self,
+        *,
+        repair_session_id: str,
+        turn_id: str,
+        visual_context: DiagnosticVisualContext,
+    ) -> None:
+        """Persist each bounded visual-preparation failure before agent work."""
+
+        for error in visual_context.recoverable_errors:
+            await self._append_recoverable_error(
+                repair_session_id=repair_session_id,
+                turn_id=turn_id,
+                code=error.code,
+                message=_visual_error_message(error.code),
+                retryable=error.retryable,
+                artifact_id=error.artifact_id,
+            )
 
     async def _append_turn_completed(
         self,
@@ -552,3 +613,14 @@ def _blocks_repair_guidance(
     if safety_state == "blocked":
         return True
     return any(flag.get("blocks_repair_instructions") is True for flag in safety_flags)
+
+
+def _visual_error_message(code: str) -> str:
+    """Map visual failures to safe, stable public messages."""
+
+    return {
+        "image_not_ready": "Image is not ready for analysis.",
+        "image_decode_failed": "Image could not be decoded.",
+        "image_normalization_failed": "Image could not be normalized.",
+        "image_analysis_unavailable": "Image analysis is unavailable for this turn.",
+    }.get(code, "Image processing could not be completed.")

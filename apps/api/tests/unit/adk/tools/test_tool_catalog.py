@@ -248,6 +248,35 @@ async def test_tool_catalog_requires_server_owned_context_from_adk_state() -> No
     assert service.calls == []
 
 
+async def test_tool_catalog_accepts_complete_runner_app_context() -> None:
+    service = _CatalogService()
+    tool = _tool_by_name(build_tool_catalog(_dependencies(service)), "get_bike_profile")
+
+    result = await tool.run_async(
+        args={},
+        tool_context=_tool_context(
+            {
+                "user_id": "usr_server",
+                "user_skill_level": "beginner",
+                "repair_session_id": "rs_server",
+                "active_phase": "diagnostic",
+                "diagnostic_session_id": "phs_server",
+                "turn_id": "turn_server",
+                "artifact_ids": ["art_photo"],
+                "bike_profile": {"id": "bike_1"},
+                "repair_history": [],
+                "diagnostic_artifacts": [],
+                "current_observations": [],
+                "prior_observations": [],
+                "artifact_processing_statuses": [],
+            },
+        ),
+    )
+
+    assert result["ok"] is True
+    assert service.calls[0][1]["repair_session_id"] == "rs_server"
+
+
 async def test_model_provided_identity_override_is_ignored_by_wrappers() -> None:
     service = _CatalogService()
     tool = _tool_by_name(build_tool_catalog(_dependencies(service)), "get_bike_profile")

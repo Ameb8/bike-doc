@@ -17,7 +17,9 @@ from bike_doc_api.adk.sessions import (
     DiagnosticPhaseSessionManager,
     LocalDiagnosticADKSessionClient,
 )
+from bike_doc_api.core.config import ImageAnalysisMode
 from bike_doc_api.core.errors import (
+    ArtifactNotReadyError,
     IdempotencyConflictError,
     NotFoundError,
     ServerError,
@@ -36,7 +38,14 @@ from bike_doc_api.models.repair_session import (
 )
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User
-from bike_doc_api.schemas.common import RepairSessionPhase, RepairSessionStatus
+from bike_doc_api.schemas.artifact import ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES
+from bike_doc_api.schemas.common import (
+    ArtifactMediaType,
+    ArtifactPurpose,
+    ArtifactStatus,
+    RepairSessionPhase,
+    RepairSessionStatus,
+)
 from bike_doc_api.schemas.event import (
     RepairSessionEventType,
     validate_repair_session_event_data,
@@ -171,6 +180,7 @@ class TurnService:
         rollback: Callable[[], Awaitable[None]] | None = None,
         phase_session_manager: DiagnosticPhaseSessionManager | None = None,
         orchestrator: DiagnosticTurnOrchestratorProtocol | None = None,
+        image_analysis_mode: ImageAnalysisMode = "off",
     ) -> None:
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
@@ -188,6 +198,7 @@ class TurnService:
             )
         )
         self._orchestrator = orchestrator
+        self._image_analysis_mode = image_analysis_mode
         self._last_acceptance_was_idempotent_replay = False
 
     @property
@@ -270,7 +281,13 @@ class TurnService:
             )
             if self._commit is not None:
                 await self._commit()
-        except (IdempotencyConflictError, NotFoundError, SessionStateConflictError):
+        except (
+            ArtifactNotReadyError,
+            IdempotencyConflictError,
+            NotFoundError,
+            SessionStateConflictError,
+            ValidationAppError,
+        ):
             await self._rollback_if_configured()
             raise
         except (PydanticValidationError, ValueError) as exc:
@@ -413,6 +430,9 @@ class TurnService:
                 message=request.message.model_dump(mode="json"),
                 responds_to_input_request_id=request.responds_to_input_request_id,
                 start_event_sequence=start_sequence,
+                image_analysis_mode=(
+                    self._image_analysis_mode if request.message.artifact_ids else None
+                ),
             ),
         )
         started_data = validate_repair_session_event_data(
@@ -441,15 +461,41 @@ class TurnService:
         repair_session: RepairSessionModel,
         artifact_ids: list[str],
     ) -> None:
-        """Validate every referenced artifact is owned and session-attached."""
+        """Validate diagnostic-image metadata before accepting a turn."""
 
+        missing_or_unavailable = False
+        not_ready = False
+        invalid_diagnostic_image = False
         for artifact_id in artifact_ids:
             artifact = await self._artifacts.get_owned(
                 artifact_id=artifact_id,
                 user_id=current_user.id,
             )
             if artifact is None or artifact.repair_session_id != repair_session.id:
-                raise NotFoundError()
+                missing_or_unavailable = True
+                continue
+            if artifact.status in {
+                ArtifactStatus.UPLOADED.value,
+                ArtifactStatus.PROCESSING.value,
+            }:
+                not_ready = True
+                continue
+            if artifact.status != ArtifactStatus.READY.value:
+                invalid_diagnostic_image = True
+                continue
+            if (
+                artifact.purpose != ArtifactPurpose.DIAGNOSTIC_PHOTO.value
+                or artifact.media_type != ArtifactMediaType.IMAGE.value
+                or artifact.mime_type not in ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES
+            ):
+                invalid_diagnostic_image = True
+
+        if missing_or_unavailable:
+            raise NotFoundError()
+        if not_ready:
+            raise ArtifactNotReadyError()
+        if invalid_diagnostic_image:
+            raise ValidationAppError("Artifact is not an accepted diagnostic image.")
 
     async def _handle_turn_integrity_race(
         self,

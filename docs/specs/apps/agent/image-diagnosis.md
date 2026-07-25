@@ -1,7 +1,7 @@
 # BikeDoc Image-Based Diagnosis Spec
 
 Status: Draft v0.1
-Last updated: 2026-07-21
+Last updated: 2026-07-24
 
 This document defines how BikeDoc uses user-submitted diagnostic images as
 actual visual evidence during the diagnostic phase. It covers image validation
@@ -33,6 +33,19 @@ The terms **must**, **must not**, **should**, **should not**, and **may** are
 normative. “Must” and “must not” define required behavior. “Should” and
 “should not” define the expected default unless a later canonical spec records
 a justified exception.
+
+## Checkpoint Implementation Status
+
+The pixels-only checkpoint implements the public three-artifact validation
+limit, pre-acceptance diagnostic-artifact validation, immutable mode snapshots,
+strict app-owned observation contracts, and current-turn pixel delivery for
+`off` and `pixels_only`. It deliberately does not execute structured
+observation extraction or create extraction runs at runtime.
+
+`BIKE_DOC_API_IMAGE_ANALYSIS_MODE` defaults to `off` and accepts `off`,
+`pixels_only`, `shadow`, and `enabled`. At this checkpoint, `shadow` and
+`enabled` are reserved rollout values only; their required extraction behavior
+remains specified below but is not active yet.
 
 ## 1. Purpose
 

@@ -76,7 +76,7 @@ request:
 ```text
 accepted turn and turn.started committed
   -> background reloads user, turn, and repair session
-  -> orchestrator resolves app phase session and builds server-owned context
+  -> orchestrator resolves app phase session and prepares current-turn visual context
   -> profile/history/artifact tools seed a DiagnosticRunnerRequest
   -> runner streams normalized ADK events
   -> orchestrator persists user-visible events and derives terminal status
@@ -85,13 +85,32 @@ accepted turn and turn.started committed
 
 `DiagnosticTurnOrchestrator.process_turn` first snapshots scalar user and turn
 fields so later commits or rollbacks cannot leave it using expired ORM state.
-It loads the diagnostic `RepairPhaseSession`, constructs a
+It loads the diagnostic `RepairPhaseSession`, asks the injected
+`DiagnosticVisualContextService` to reload and prepare just that accepted
+turn's artifact IDs, then constructs a
 `DiagnosticToolContext`, and invokes read tools to seed bike profile, relevant
 repair history, and approved diagnostic-artifact metadata. Artifact references
-attached to the accepted turn are emitted before model output. The resulting
+attached to the accepted turn and any per-artifact recoverable preparation
+errors are emitted before model output. If visual preparation says the agent
+cannot be invoked, orchestration writes the terminal awaiting-user event and
+does not call the runner. The resulting
 `DiagnosticRunnerRequest` carries the app-owned diagnostic phase-session ID,
 the opaque stored ADK session ID, the user message, allowed artifact IDs, and
-the seeded context.
+the seeded context. Its current-turn visual values are immutable normalized
+image bytes paired with artifact IDs and MIME types; the runner emits them only
+as labeled multimodal content for that accepted turn. Score-free current and
+durable prior observation projections plus per-artifact processing statuses are
+serialized in app context, preserving artifact identity without sending pixels
+again. Storage locations, provider objects, raw scores, and historical image
+bytes are not representable in this runner interface.
+
+`background.py` constructs this visual-context service with fresh repositories,
+storage, settings-driven preprocessing, and the fresh background database
+session. It never retains route/request-scoped dependencies. `off` mode keeps
+submitted artifacts visible as explicit uninspected statuses without reading
+their bytes; `pixels_only` normalizes only current-turn valid images and makes
+no extraction call. Profile inference remains a separately queued task after
+diagnostic processing, so it cannot delay the diagnostic runner.
 
 While the runner is active, assistant delta and completed-message events are
 validated and appended through `EventService`; that service persists before
@@ -172,9 +191,11 @@ needs sticky routing or a durable ADK session backend.
 
 `tools/common.py` defines the internal, strict `DiagnosticToolContext`, common
 success/error envelope, input parsing, and mapping of known `AppError`
-failures. Every catalog wrapper extracts `app_context` from ADK `ToolContext`
-state and validates it; the model cannot supply or replace user, repair
-session, phase, phase-session, or turn identity. Known failures normalize to
+failures. The context validates server-owned identity plus the runner's
+artifact, profile, repair-history, and score-free visual-observation fields.
+Every catalog wrapper extracts `app_context` from ADK `ToolContext` state and
+validates it; the model cannot supply or replace user, repair session, phase,
+phase-session, or turn identity. Known failures normalize to
 codes such as `not_found`, `invalid_phase`, `stale_session`,
 `validation_error`, `artifact_not_found`, `report_validation_failed`, and
 `safety_policy_violation`.

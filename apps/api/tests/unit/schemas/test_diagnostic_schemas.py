@@ -248,6 +248,50 @@ def test_turn_create_accepts_openapi_example_shape() -> None:
     assert turn.message.artifact_ids == ["art_123"]
 
 
+@pytest.mark.parametrize(
+    "artifact_ids",
+    [[], ["art_1"], ["art_1", "art_2"], ["art_1", "art_2", "art_3"]],
+)
+def test_turn_create_accepts_up_to_three_distinct_artifact_ids(
+    artifact_ids: list[str],
+) -> None:
+    turn = TurnCreate.model_validate(
+        {
+            "schema_version": "ai_turn.v1",
+            "client_turn_id": "mobile-turn-artifact-limit",
+            "message": {
+                "text": "Please inspect these photos.",
+                "artifact_ids": artifact_ids,
+            },
+        }
+    )
+
+    assert turn.message.artifact_ids == artifact_ids
+
+
+@pytest.mark.parametrize(
+    "artifact_ids",
+    [
+        ["art_1", "art_2", "art_3", "art_4"],
+        ["art_1", "art_1"],
+    ],
+)
+def test_turn_create_rejects_oversized_or_duplicate_artifact_ids(
+    artifact_ids: list[str],
+) -> None:
+    with pytest.raises(ValidationError):
+        TurnCreate.model_validate(
+            {
+                "schema_version": "ai_turn.v1",
+                "client_turn_id": "mobile-turn-invalid-artifacts",
+                "message": {
+                    "text": "Please inspect these photos.",
+                    "artifact_ids": artifact_ids,
+                },
+            }
+        )
+
+
 def test_turn_message_requires_artifact_ids() -> None:
     with pytest.raises(ValidationError):
         TurnCreate.model_validate(

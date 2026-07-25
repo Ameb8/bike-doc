@@ -95,6 +95,22 @@ def test_empty_optional_log_settings_are_unset(
     assert settings.log_format is None
 
 
+@pytest.mark.parametrize("configured", ["off", "pixels_only", "shadow", "enabled"])
+def test_image_analysis_mode_is_normalized_to_a_supported_mode(
+    configured: str,
+) -> None:
+    settings = Settings(
+        environment="test", image_analysis_mode=f" {configured.upper()} "
+    )
+
+    assert settings.image_analysis_mode == configured
+
+
+def test_image_analysis_mode_rejects_unknown_modes() -> None:
+    with pytest.raises(ValidationError):
+        Settings(environment="test", image_analysis_mode="sampled")
+
+
 def test_invalid_log_level_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "verbose")
 

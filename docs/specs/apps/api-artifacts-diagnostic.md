@@ -375,6 +375,10 @@ When a later turn references uploaded artifact IDs, the turn service must:
 
 - verify each artifact belongs to the authenticated user
 - verify each artifact is attached to the target repair session
+- require status `ready`; `uploaded` and `processing` artifacts return the
+  pre-acceptance `409 artifact_not_ready` error
+- require purpose `diagnostic_photo`, media type `image`, and one of the
+  accepted diagnostic MIME types before accepting the turn
 - persist any required `artifact.referenced` event according to
   `api-events-diagnostic.md`
 

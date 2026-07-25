@@ -154,6 +154,7 @@ class ErrorEventData(APIBaseModel):
     code: str
     message: str
     retryable: bool = False
+    artifact_id: str | None = None
 
 
 class HeartbeatEventData(APIBaseModel):
@@ -203,7 +204,11 @@ def validate_repair_session_event_data(
 
     public_event_type = RepairSessionEventType(event_type)
     target_model = _EVENT_DATA_MODELS[public_event_type]
-    return target_model.model_validate(data).model_dump(mode="json")
+    validated = target_model.model_validate(data)
+    return validated.model_dump(
+        mode="json",
+        exclude_none=public_event_type is RepairSessionEventType.ERROR,
+    )
 
 
 class RepairSessionEvent(APIBaseModel):

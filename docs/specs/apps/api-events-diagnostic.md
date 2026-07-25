@@ -226,6 +226,16 @@ schema:
 | `error` | `ErrorEventData` |
 | `heartbeat` | `HeartbeatEventData` |
 
+`ErrorEventData.artifact_id` is optional for general errors. For an
+artifact-specific image-processing error it is required and identifies the
+app-owned artifact affected; it must never contain a storage path, bucket,
+signed URL, or provider object. The initial image-processing code set is
+`image_not_ready`, `image_decode_failed`, `image_normalization_failed`, and
+`image_analysis_unavailable`. The backend emits a separate persisted `error`
+event for each affected artifact. `image_analysis_unavailable` for an
+image-only turn may omit `artifact_id`, because it describes the unavailable
+turn-level analysis path rather than failure of one artifact.
+
 ## Internal-To-Public Mapping
 
 ADK runner callbacks, tool outputs, and orchestration state changes are
@@ -300,6 +310,8 @@ Expected pre-stream HTTP errors:
 | `422` | `after`, `Last-Event-ID`, or `timeout_seconds` is invalid. | `validation_error` |
 
 Recoverable processing failures after the stream opens should be represented as
-persisted `error` events. Fatal infrastructure failures may terminate the
-connection without an event; clients recover by reconnecting from the last
-processed event ID.
+persisted `error` events. Per-artifact image-processing errors include the
+artifact ID as described above; `retryable` means a later attempt to process
+that same artifact may succeed, not that the accepted turn will be retried
+inline. Fatal infrastructure failures may terminate the connection without an
+event; clients recover by reconnecting from the last processed event ID.

@@ -52,6 +52,7 @@ The implementation should keep the mapping centralized in
 | Owner-scoped resource missing or not owned | `404` | `not_found` |
 | Idempotency payload conflict | `409` | `idempotency_conflict` |
 | State-machine conflict | `409` | `session_state_conflict` |
+| Referenced diagnostic artifact is still being prepared | `409` | `artifact_not_ready` |
 | Uploaded payload too large | `413` | `payload_too_large` |
 | Request, query, or public payload validation failure | `422` | `validation_error` |
 | Safety policy rejects a public decision | `422` | `blocking_safety_flag` or `safety_ack_required` |

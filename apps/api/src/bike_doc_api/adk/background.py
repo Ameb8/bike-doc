@@ -64,6 +64,10 @@ from bike_doc_api.schemas.event import RepairSessionEventType
 from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.artifacts import ArtifactService
 from bike_doc_api.services.bikes import ResolvedBikeProfileService
+from bike_doc_api.services.diagnostic_visual_context import (
+    DiagnosticVisualContextService,
+    RepairTurnRepositoryProtocol,
+)
 from bike_doc_api.services.events import EventService
 from bike_doc_api.services.profile_inference import (
     ProfileInferenceExtractor,
@@ -345,6 +349,12 @@ def _build_background_orchestrator(
         ),
         save_diagnostic_report=SaveDiagnosticReportTool(
             cast(DiagnosticReportServiceProtocol, report_service),
+        ),
+        visual_context=DiagnosticVisualContextService(
+            turns=cast(RepairTurnRepositoryProtocol, RepairTurnRepository(session)),
+            repair_sessions=repair_sessions,
+            artifacts=artifacts,
+            storage=storage,
         ),
         commit=session.commit,
         rollback=session.rollback,
