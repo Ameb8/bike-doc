@@ -1,0 +1,28 @@
+apps/api/src/bike_doc_api/adk/tools/common.py
+  s_b9a27e0bac3461::t_51ec1fbdd039e7 21-24,54-56
+apps/api/tests/unit/adk/tools/test_tool_catalog.py
+  s_b9a27e0bac3461::t_51ec1fbdd039e7 251-279
+apps/api/src/bike_doc_api/adk/ARCHITECTURE.md
+  s_b9a27e0bac3461::t_acf0cd88e8a56a 194-198
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "dac540a5d121de0a4933b47c66bfa624fb015dd7",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_b9a27e0bac3461": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9a8d-ef50-7c62-a5bb-17889d2c42ae",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
