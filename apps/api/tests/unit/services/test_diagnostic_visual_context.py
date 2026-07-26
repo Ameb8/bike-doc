@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 from types import SimpleNamespace
 from typing import Any
 
@@ -511,9 +512,13 @@ async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it()
 
 
 @pytest.mark.asyncio
-async def test_enabled_projects_current_and_prior_evidence_without_history_reads() -> (
-    None
-):
+async def test_enabled_projects_current_and_prior_evidence_without_history_reads(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(
+        logging.DEBUG,
+        logger="bike_doc_api.services.diagnostic_visual_context",
+    )
     repositories = _Repositories(mode="enabled")
     storage = _Storage()
     runs = _Runs()
@@ -615,6 +620,24 @@ async def test_enabled_projects_current_and_prior_evidence_without_history_reads
     assert context.prior_observations[0].image_assessments[0].assessability == "limited"
     assert "raw_model_score" not in repr(context)
     assert storage.requests == [("private/current.jpg", None)]
+    observation_logs = [
+        record
+        for record in caplog.records
+        if record.name == "bike_doc_api.services.diagnostic_visual_context"
+        and record.levelno == logging.DEBUG
+        and record.msg == "observation_extraction_observation observation=%s"
+    ]
+    assert len(observation_logs) == 1
+    assert observation_logs[0].observation == {
+        "artifact_ids": ["art_current"],
+        "component_or_area": "chain",
+        "position": "rear",
+        "finding": "surface rust is visible",
+        "evidence_cues": ["orange discoloration"],
+        "visibility": "clear",
+        "raw_model_score": 0.83,
+        "safety_relevant": False,
+    }
 
 
 @pytest.mark.asyncio

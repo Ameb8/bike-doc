@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -40,6 +42,7 @@ from bike_doc_api.services.observation_extraction_telemetry import (
 )
 
 _ACCEPTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
+logger = logging.getLogger(__name__)
 
 
 class RepairTurnRepositoryProtocol(Protocol):
@@ -699,6 +702,13 @@ class DiagnosticVisualContextService:
             run,
             validated_output=validated.model_dump(mode="json"),
         )
+        for observation in validated.observations:
+            observation_data = observation.model_dump(mode="json")
+            logger.debug(
+                "observation_extraction_observation observation=%s",
+                json.dumps(observation_data, separators=(",", ":"), sort_keys=True),
+                extra={"observation": observation_data},
+            )
         assessment_counts = _assessment_counts(validated)
         fields = {
             **event_fields,
