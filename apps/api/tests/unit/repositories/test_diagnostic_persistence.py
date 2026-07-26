@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -485,3 +486,28 @@ async def test_observation_run_unique_turn_identity_and_usable_session_reads(
         await db_session.flush()
 
     await db_session.rollback()
+
+
+async def test_observation_run_get_or_create_is_safe_across_concurrent_sessions(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    await db_session.commit()
+    assert db_session.bind is not None
+    session_factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
+
+    async def create() -> str:
+        async with session_factory() as session:
+            run = await ObservationExtractionRunRepository(session).get_or_create(
+                _run(repair_session_id=repair_session.id, turn_id=turn.id)
+            )
+            await session.commit()
+            return run.id
+
+    first_id, second_id = await asyncio.gather(create(), create())
+
+    assert first_id == second_id
+    assert (
+        await ObservationExtractionRunRepository(db_session).get_by_turn_id(turn.id)
+        is not None
+    )

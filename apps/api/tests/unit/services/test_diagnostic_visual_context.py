@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from bike_doc_api.core.errors import ValidationAppError
 from bike_doc_api.schemas.observation_extraction import ObservationExtractionOutput
 from bike_doc_api.services.diagnostic_visual_context import (
     DiagnosticVisualContextService,
 )
 from bike_doc_api.services.image_preprocessing import (
+    PREPROCESSING_VERSION,
     ImagePreprocessingError,
     NormalizedDiagnosticImage,
 )
@@ -70,6 +73,7 @@ class _Runs:
     def __init__(self) -> None:
         self.run: object | None = None
         self.attempts: list[object] = []
+        self._lock = asyncio.Lock()
 
     async def get_by_turn_id(self, turn_id: str) -> object | None:
         return self.run
@@ -87,6 +91,12 @@ class _Runs:
         self.run = run
         return run
 
+    async def get_or_create(self, run: object) -> object:
+        async with self._lock:
+            if self.run is None:
+                return await self.add(run)
+            return self.run
+
     async def set_preprocessing_manifest(
         self, run: object, *, manifest: list[dict[str, object]]
     ) -> object:
@@ -94,9 +104,18 @@ class _Runs:
         return run
 
     async def append_attempt(self, **values: object) -> object:
+        assert self.run is not None
+        if self.run.status == "failed":
+            if getattr(self.run, "diagnostic_agent_started_at", None) is not None:
+                raise ValueError("observation extraction attempt is not eligible")
+            if not self.run.failure_metadata["retryable"]:
+                raise ValueError("observation extraction attempt is not eligible")
+            self.run.status = "pending"
+            self.run.failure_metadata = None
+        elif self.run.provider_attempt_count:
+            raise ValueError("observation extraction attempt is not eligible")
         attempt = SimpleNamespace(**values, outcome="pending")
         self.attempts.append(attempt)
-        assert self.run is not None
         self.run.provider_attempt_count += 1
         return attempt
 
@@ -114,6 +133,10 @@ class _Runs:
         run.status = "failed"
         run.validated_output = None
         run.failure_metadata = values["failure_metadata"]
+        return run
+
+    async def mark_diagnostic_agent_started(self, run: object) -> object:
+        run.diagnostic_agent_started_at = object()
         return run
 
 
@@ -611,9 +634,216 @@ async def test_shadow_provider_failure_keeps_pixels_and_does_not_retry_on_replay
     assert runs.run.status == "failed"
     assert runs.run.failure_metadata == {
         "code": "observation_extraction_failed",
-        "retryable": False,
+        "retryable": True,
     }
     assert len(extractor.requests) == 1
+    assert len(runs.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_explicit_pre_agent_recovery_appends_one_attempt_to_the_same_run() -> (
+    None
+):
+    repositories = _Repositories(mode="enabled")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _RecoveringExtractor(_Extractor):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("temporary provider failure")
+            return await super().extract(request)
+
+    extractor = _RecoveringExtractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+    recovered = await service.recover_turn(
+        user_id="usr_current", turn_id="turn_current"
+    )
+
+    assert extractor.calls == 2
+    assert runs.run.status == "completed"
+    assert runs.run.provider_attempt_count == 2
+    assert len(runs.attempts) == 2
+    assert recovered.current_observations
+
+
+@pytest.mark.asyncio
+async def test_recovery_after_agent_start_makes_no_provider_call() -> None:
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _TimeoutExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            raise TimeoutError("temporary provider failure")
+
+    extractor = _TimeoutExtractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+    await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+    await service.mark_diagnostic_agent_started(turn_id="turn_current")
+    await service.recover_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert len(extractor.requests) == 1
+    assert runs.run.status == "failed"
+    assert runs.run.validated_output is None
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_a_changed_preprocessing_version() -> None:
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _TimeoutExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            raise TimeoutError("temporary provider failure")
+
+    extractor = _TimeoutExtractor()
+
+    async def original_preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    initial = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=original_preprocess,
+    )
+    await initial.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    async def changed_preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        image = _normalized(str(values["artifact_id"]))
+        return NormalizedDiagnosticImage(
+            artifact_id=image.artifact_id,
+            content=image.content,
+            mime_type=image.mime_type,
+            original_width=image.original_width,
+            original_height=image.original_height,
+            normalized_width=image.normalized_width,
+            normalized_height=image.normalized_height,
+            content_sha256=image.content_sha256,
+            preprocessing_version="changed-preprocessor.v2",
+        )
+
+    recovered = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        extractor_version="changed-extractor.v2",
+        prompt_version="changed-prompt.v2",
+        preprocess=changed_preprocess,
+    )
+
+    with pytest.raises(ValidationAppError, match="Snapshotted image preprocessing"):
+        await recovered.recover_turn(user_id="usr_current", turn_id="turn_current")
+    assert len(extractor.requests) == 1
+    assert runs.run.preprocessing_version == PREPROCESSING_VERSION
+    assert runs.run.extractor_version == "visual-observation-extractor.v1"
+    assert runs.run.prompt_version == "visual-observation-prompt.v1"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_preparation_creates_one_run_and_one_provider_attempt() -> (
+    None
+):
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+    extractor = _Extractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        await asyncio.sleep(0)
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    await asyncio.gather(
+        service.prepare_turn(user_id="usr_current", turn_id="turn_current"),
+        service.prepare_turn(user_id="usr_current", turn_id="turn_current"),
+    )
+
+    assert runs.run is not None
+    assert len(runs.attempts) == 1
+    assert len(extractor.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_extraction_cancellation_propagates_without_failure_or_retry() -> None:
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _CancelledExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            raise asyncio.CancelledError()
+
+    extractor = _CancelledExtractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+    assert runs.run.status == "pending"
     assert len(runs.attempts) == 1
 
 
@@ -666,5 +896,5 @@ def _normalized(artifact_id: str) -> NormalizedDiagnosticImage:
         normalized_width=100,
         normalized_height=80,
         content_sha256="a" * 64,
-        preprocessing_version="test-v1",
+        preprocessing_version=PREPROCESSING_VERSION,
     )

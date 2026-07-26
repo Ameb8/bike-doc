@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.observation_extraction import (
@@ -24,6 +25,33 @@ class ObservationExtractionRunRepository:
         self._session.add(run)
         await self._session.flush()
         return run
+
+    async def get_or_create(
+        self, run: ObservationExtractionRun
+    ) -> ObservationExtractionRun:
+        """Return the sole logical run, including when preparation races."""
+
+        values = {
+            column.name: getattr(run, column.name)
+            for column in ObservationExtractionRun.__table__.columns
+            if column.name not in {"created_at", "updated_at"}
+            and getattr(run, column.name, None) is not None
+        }
+        statement = (
+            insert(ObservationExtractionRun)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["turn_id"])
+            .returning(ObservationExtractionRun.id)
+        )
+        created_id = (await self._session.execute(statement)).scalar_one_or_none()
+        if created_id is not None:
+            created = await self._get_for_update(created_id)
+            assert created is not None
+            return created
+        existing = await self.get_by_turn_id(run.turn_id)
+        if existing is None:
+            raise RuntimeError("observation extraction run was not created")
+        return existing
 
     async def get_by_turn_id(self, turn_id: str) -> ObservationExtractionRun | None:
         """Return the one logical run for an accepted turn."""

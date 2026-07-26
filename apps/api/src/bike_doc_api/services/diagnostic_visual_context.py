@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -72,6 +73,10 @@ class ObservationExtractionRunRepositoryProtocol(Protocol):
     async def get_by_turn_id(self, turn_id: str) -> ObservationExtractionRun | None: ...
 
     async def add(self, run: ObservationExtractionRun) -> ObservationExtractionRun: ...
+
+    async def get_or_create(
+        self, run: ObservationExtractionRun
+    ) -> ObservationExtractionRun: ...
 
     async def set_preprocessing_manifest(
         self,
@@ -206,8 +211,9 @@ class DiagnosticVisualContextService:
         *,
         user_id: str,
         turn_id: str,
+        explicit_recovery: bool = False,
     ) -> DiagnosticVisualContext:
-        """Reload and prepare the current turn without exposing storage internals."""
+        """Reload one turn; recovery is opt-in and never inferred from replay."""
 
         turn = await self._turns.get(turn_id)
         if turn is None:
@@ -255,6 +261,21 @@ class DiagnosticVisualContextService:
             repair_session_id=repair_session.id,
             artifact_ids=artifact_ids,
             mode=mode,
+            explicit_recovery=explicit_recovery,
+        )
+
+    async def recover_turn(
+        self,
+        *,
+        user_id: str,
+        turn_id: str,
+    ) -> DiagnosticVisualContext:
+        """Explicitly recover eligible pre-agent extraction work for one turn."""
+
+        return await self.prepare_turn(
+            user_id=user_id,
+            turn_id=turn_id,
+            explicit_recovery=True,
         )
 
     async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
@@ -412,6 +433,7 @@ class DiagnosticVisualContextService:
         repair_session_id: str,
         artifact_ids: tuple[str, ...],
         mode: Literal["shadow", "enabled"],
+        explicit_recovery: bool,
     ) -> DiagnosticVisualContext:
         """Extract current evidence and expose it only in enabled mode."""
 
@@ -427,10 +449,16 @@ class DiagnosticVisualContextService:
             artifacts=artifacts,
             text_bearing=text_bearing,
         )
-        await self._runs.set_preprocessing_manifest(
-            run,
-            manifest=_preprocessing_manifest_for_context(context),
-        )
+        recovering = self._is_eligible_explicit_recovery(run, explicit_recovery)
+        if recovering:
+            await self._verify_recovery_identity(run=run, context=context)
+        if recovering or (
+            run.status == "pending" and (run.provider_attempt_count or 0) == 0
+        ):
+            await self._runs.set_preprocessing_manifest(
+                run,
+                manifest=_preprocessing_manifest_for_context(context),
+            )
         if not context.current_images:
             if run.status == "pending":
                 await self._runs.mark_failed(
@@ -449,7 +477,9 @@ class DiagnosticVisualContextService:
                 recoverable_errors=context.recoverable_errors,
             )
 
-        if run.status == "pending" and (run.provider_attempt_count or 0) == 0:
+        if (
+            run.status == "pending" and (run.provider_attempt_count or 0) == 0
+        ) or recovering:
             await self._extract_once(run=run, images=context.current_images)
 
         current_observations: tuple[DiagnosticVisualObservationProjection, ...] = ()
@@ -479,10 +509,7 @@ class DiagnosticVisualContextService:
         mode: Literal["shadow", "enabled"],
     ) -> ObservationExtractionRun:
         assert self._runs is not None and self._extractor is not None
-        run = await self._runs.get_by_turn_id(turn_id)
-        if run is not None:
-            return run
-        return await self._runs.add(
+        return await self._runs.get_or_create(
             ObservationExtractionRun(
                 turn_id=turn_id,
                 repair_session_id=repair_session_id,
@@ -496,6 +523,38 @@ class DiagnosticVisualContextService:
                 model=self._extractor.model,
             )
         )
+
+    @staticmethod
+    def _is_eligible_explicit_recovery(
+        run: ObservationExtractionRun,
+        explicit_recovery: bool,
+    ) -> bool:
+        return (
+            explicit_recovery
+            and run.status == "failed"
+            and run.diagnostic_agent_started_at is None
+            and bool((run.failure_metadata or {}).get("retryable"))
+        )
+
+    @staticmethod
+    async def _verify_recovery_identity(
+        *, run: ObservationExtractionRun, context: DiagnosticVisualContext
+    ) -> None:
+        """Reject a changed preprocessor instead of silently changing evidence."""
+
+        prior_hashes = {
+            item.get("artifact_id"): item.get("normalized_content_sha256")
+            for item in run.preprocessing_manifest
+            if item.get("normalized_content_sha256") is not None
+        }
+        for image in context.current_images:
+            if image.preprocessing_version != run.preprocessing_version:
+                raise ValidationAppError(
+                    "Snapshotted image preprocessing is unavailable."
+                )
+            expected_hash = prior_hashes.get(image.artifact_id)
+            if expected_hash is not None and expected_hash != image.content_sha256:
+                raise ValidationAppError("Recovered image preprocessing did not match.")
 
     async def _prior_enabled_observations(
         self,
@@ -530,11 +589,16 @@ class DiagnosticVisualContextService:
         images: tuple[NormalizedModelImage, ...],
     ) -> None:
         assert self._runs is not None and self._extractor is not None
-        attempt = await self._runs.append_attempt(
-            run_id=run.id,
-            provider=self._extractor.provider,
-            model=self._extractor.model,
-        )
+        try:
+            attempt = await self._runs.append_attempt(
+                run_id=run.id,
+                provider=run.provider,
+                model=run.model,
+            )
+        except ValueError:
+            # Another preparation or the agent-start gate won the atomic race.
+            # In either case, this pass must not start another provider call.
+            return
         started = monotonic()
         try:
             result = await self._extractor.extract(
@@ -546,8 +610,13 @@ class DiagnosticVisualContextService:
             )
 
             validated = validate_observation_output(result.output, images)
-        except Exception:
-            failure = {"code": "observation_extraction_failed", "retryable": False}
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            failure = {
+                "code": "observation_extraction_failed",
+                "retryable": isinstance(exc, (TimeoutError, ConnectionError)),
+            }
             await self._runs.finish_attempt(
                 attempt,
                 outcome="failed",
