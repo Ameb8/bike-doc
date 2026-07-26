@@ -22,6 +22,9 @@ from bike_doc_api.services.observation_extraction import (
     ObservationExtractionResult,
     ObservationExtractionUsage,
 )
+from bike_doc_api.services.observation_extraction_telemetry import (
+    RecordingObservationExtractionTelemetry,
+)
 
 
 class _Repositories:
@@ -373,6 +376,7 @@ async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it()
     storage = _Storage()
     runs = _Runs()
     extractor = _Extractor()
+    telemetry = RecordingObservationExtractionTelemetry()
 
     async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
         return _normalized(str(values["artifact_id"]))
@@ -385,6 +389,7 @@ async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it()
         runs=runs,
         extractor=extractor,
         preprocess=preprocess,
+        telemetry=telemetry,
     )
 
     context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
@@ -392,6 +397,14 @@ async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it()
     assert context.current_images[0].content == b"normalized"
     assert extractor.requests[0].images[0].content == context.current_images[0].content
     assert context.current_observations == ()
+    completed = next(
+        record
+        for record in telemetry.records
+        if record.name == "observation_extraction_completed"
+    )
+    assert completed.fields["observation_count"] == 0
+    assert completed.fields["assessability_usable_count"] == 1
+    assert completed.fields["provider"] == "fake-provider"
     assert context.prior_observations == ()
     assert runs.run.status == "completed"
     assert runs.run.validated_output["observations"] == []
@@ -880,6 +893,54 @@ async def test_shadow_invalid_extractor_output_is_never_persisted_as_observation
     context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
 
     assert context.current_images[0].content == b"normalized"
+    assert context.current_observations == ()
+    assert runs.run.status == "failed"
+    assert runs.run.validated_output is None
+
+
+@pytest.mark.asyncio
+async def test_privacy_invalid_extractor_output_is_never_persisted_or_projected() -> (
+    None
+):
+    repositories = _Repositories(mode="enabled")
+    runs = _Runs()
+
+    class _SensitiveExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            return ObservationExtractionResult(
+                output=ObservationExtractionOutput.model_validate(
+                    {
+                        "schema_version": "visual-observation.v1",
+                        "image_assessments": [
+                            {
+                                "artifact_id": "art_current",
+                                "assessability": "usable",
+                                "visible_areas": ["serial number AB1234567890"],
+                                "limitations": [],
+                            }
+                        ],
+                        "observations": [],
+                    }
+                ),
+                usage=ObservationExtractionUsage(),
+            )
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=_Storage(),
+        runs=runs,
+        extractor=_SensitiveExtractor(),
+        preprocess=preprocess,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
     assert context.current_observations == ()
     assert runs.run.status == "failed"
     assert runs.run.validated_output is None

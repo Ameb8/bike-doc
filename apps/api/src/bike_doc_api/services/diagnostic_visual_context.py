@@ -30,6 +30,14 @@ from bike_doc_api.services.observation_extraction import (
     DiagnosticObservationExtractor,
     ObservationExtractionRequest,
 )
+from bike_doc_api.services.observation_extraction_privacy import (
+    ObservationExtractionPrivacyError,
+    validate_privacy_safe_observation_output,
+)
+from bike_doc_api.services.observation_extraction_telemetry import (
+    ObservationExtractionTelemetry,
+    default_observation_extraction_telemetry,
+)
 
 _ACCEPTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
@@ -195,6 +203,7 @@ class DiagnosticVisualContextService:
         extractor_version: str = "visual-observation-extractor.v1",
         prompt_version: str = "visual-observation-prompt.v1",
         preprocess: Preprocessor = normalize_diagnostic_image_async,
+        telemetry: ObservationExtractionTelemetry | None = None,
     ) -> None:
         self._turns = turns
         self._repair_sessions = repair_sessions
@@ -205,6 +214,7 @@ class DiagnosticVisualContextService:
         self._extractor_version = extractor_version
         self._prompt_version = prompt_version
         self._preprocess = preprocess
+        self._telemetry = telemetry or default_observation_extraction_telemetry()
 
     async def prepare_turn(
         self,
@@ -215,6 +225,7 @@ class DiagnosticVisualContextService:
     ) -> DiagnosticVisualContext:
         """Reload one turn; recovery is opt-in and never inferred from replay."""
 
+        turn_started = monotonic()
         turn = await self._turns.get(turn_id)
         if turn is None:
             raise NotFoundError()
@@ -262,6 +273,7 @@ class DiagnosticVisualContextService:
             artifact_ids=artifact_ids,
             mode=mode,
             explicit_recovery=explicit_recovery,
+            turn_started=turn_started,
         )
 
     async def recover_turn(
@@ -434,6 +446,7 @@ class DiagnosticVisualContextService:
         artifact_ids: tuple[str, ...],
         mode: Literal["shadow", "enabled"],
         explicit_recovery: bool,
+        turn_started: float,
     ) -> DiagnosticVisualContext:
         """Extract current evidence and expose it only in enabled mode."""
 
@@ -480,7 +493,11 @@ class DiagnosticVisualContextService:
         if (
             run.status == "pending" and (run.provider_attempt_count or 0) == 0
         ) or recovering:
-            await self._extract_once(run=run, images=context.current_images)
+            await self._extract_once(
+                run=run,
+                images=context.current_images,
+                turn_started=turn_started,
+            )
 
         current_observations: tuple[DiagnosticVisualObservationProjection, ...] = ()
         if mode == "enabled" and run.status == "completed":
@@ -587,6 +604,7 @@ class DiagnosticVisualContextService:
         *,
         run: ObservationExtractionRun,
         images: tuple[NormalizedModelImage, ...],
+        turn_started: float,
     ) -> None:
         assert self._runs is not None and self._extractor is not None
         try:
@@ -599,6 +617,23 @@ class DiagnosticVisualContextService:
             # Another preparation or the agent-start gate won the atomic race.
             # In either case, this pass must not start another provider call.
             return
+        attempt_count = getattr(attempt, "attempt_number", run.provider_attempt_count)
+        retrying = attempt_count > 1
+        event_fields = _telemetry_fields(run, attempt_count=attempt_count)
+        self._telemetry.event(
+            "observation_extraction_retried"
+            if retrying
+            else "observation_extraction_started",
+            fields={**event_fields, "outcome": "retried" if retrying else "started"},
+        )
+        self._telemetry.metric(
+            "observation_extraction_attempts",
+            dimensions={
+                "provider": run.provider,
+                "model": run.model,
+                "mode": run.image_analysis_mode,
+            },
+        )
         started = monotonic()
         try:
             result = await self._extractor.extract(
@@ -610,9 +645,16 @@ class DiagnosticVisualContextService:
             )
 
             validated = validate_observation_output(result.output, images)
+            validate_privacy_safe_observation_output(validated.model_dump(mode="json"))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            validation_kind: str | None = None
+            failure_class = "provider"
+            if isinstance(exc, ObservationExtractionPrivacyError):
+                failure_class, validation_kind = "privacy", "privacy"
+            elif isinstance(exc, ValueError):
+                failure_class, validation_kind = "validation", "schema"
             failure = {
                 "code": "observation_extraction_failed",
                 "retryable": isinstance(exc, (TimeoutError, ConnectionError)),
@@ -624,6 +666,23 @@ class DiagnosticVisualContextService:
                 latency_ms=_elapsed_ms(started),
             )
             await self._runs.mark_failed(run, failure_metadata=failure)
+            fields = {
+                **event_fields,
+                "outcome": "failed",
+                "failure_class": failure_class,
+                "provider_latency_ms": _elapsed_ms(started),
+                "total_turn_latency_ms": _elapsed_ms(turn_started),
+            }
+            if validation_kind is not None:
+                fields["validation_kind"] = validation_kind
+            self._telemetry.event("observation_extraction_failed", fields=fields)
+            self._telemetry.metric(
+                "observation_extraction_failures",
+                dimensions={
+                    "failure_class": failure_class,
+                    "validation_kind": validation_kind or "schema",
+                },
+            )
             return
 
         usage = result.usage
@@ -639,6 +698,33 @@ class DiagnosticVisualContextService:
         await self._runs.mark_completed(
             run,
             validated_output=validated.model_dump(mode="json"),
+        )
+        assessment_counts = _assessment_counts(validated)
+        fields = {
+            **event_fields,
+            "outcome": "completed",
+            "provider_latency_ms": _elapsed_ms(started),
+            "total_turn_latency_ms": _elapsed_ms(turn_started),
+            "observation_count": len(validated.observations),
+            **assessment_counts,
+        }
+        if usage.input_tokens is not None:
+            fields["input_tokens"] = usage.input_tokens
+        if usage.output_tokens is not None:
+            fields["output_tokens"] = usage.output_tokens
+        if usage.total_tokens is not None:
+            fields["total_tokens"] = usage.total_tokens
+        if cost is not None:
+            fields["cost_microunits"] = cost
+        self._telemetry.event("observation_extraction_completed", fields=fields)
+        self._telemetry.metric(
+            "observation_extraction_observations",
+            value=len(validated.observations),
+            dimensions={
+                "provider": run.provider,
+                "model": run.model,
+                "mode": run.image_analysis_mode,
+            },
         )
 
 
@@ -751,3 +837,35 @@ def _elapsed_ms(started: float) -> int:
     """Return non-negative wall-clock independent provider latency."""
 
     return max(0, round((monotonic() - started) * 1000))
+
+
+def _telemetry_fields(
+    run: ObservationExtractionRun,
+    *,
+    attempt_count: int,
+) -> dict[str, object]:
+    """Return only app/provider version metadata, never run or artifact IDs."""
+
+    return {
+        "provider": run.provider,
+        "model": run.model,
+        "mode": run.image_analysis_mode,
+        "extractor_version": run.extractor_version,
+        "prompt_version": run.prompt_version,
+        "preprocessing_version": run.preprocessing_version,
+        "schema_version": run.output_schema_version,
+        "attempt_count": attempt_count,
+    }
+
+
+def _assessment_counts(output: ObservationExtractionOutput) -> dict[str, int]:
+    """Aggregate assessability only; individual artifact identifiers are private."""
+
+    counts = {"usable": 0, "limited": 0, "unusable": 0}
+    for assessment in output.image_assessments:
+        counts[assessment.assessability] += 1
+    return {
+        "assessability_usable_count": counts["usable"],
+        "assessability_limited_count": counts["limited"],
+        "assessability_unusable_count": counts["unusable"],
+    }

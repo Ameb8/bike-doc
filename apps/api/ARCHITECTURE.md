@@ -216,7 +216,11 @@ row maps a product phase to its opaque internal ADK session ID. Repositories
 encapsulate SQLAlchemy queries, including owner-scoped and `FOR UPDATE` reads;
 they return ORM models and do not decide public HTTP behavior.
 
-`db/session.py` is the async engine/session boundary. Alembic migrations are
+`db/session.py` is the async engine/session boundary. Artifact lifecycle callers
+use the internal `DiagnosticEvidenceInvalidationService` hook when an artifact
+becomes inaccessible. It redacts every citing observation-extraction run and
+makes citing reports ineligible for ordinary evidence reads; it is not a public
+deletion endpoint. Alembic migrations are
 the authoritative record of table, constraint, and index changes. When adding
 or changing persisted behavior, update model, repository, migration, and the
 tests/spec that define its observable semantics as appropriate.

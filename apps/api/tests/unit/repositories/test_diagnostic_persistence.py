@@ -488,6 +488,49 @@ async def test_observation_run_unique_turn_identity_and_usable_session_reads(
     await db_session.rollback()
 
 
+async def test_artifact_invalidation_hides_citing_runs_and_reports(
+    db_session: AsyncSession,
+) -> None:
+    repair_session, turn = await _create_image_turn(db_session)
+    runs = ObservationExtractionRunRepository(db_session)
+    run = await runs.add(_run(repair_session_id=repair_session.id, turn_id=turn.id))
+    await runs.mark_completed(run, validated_output={"observations": []})
+    report = await PhaseReportRepository(db_session).add(
+        PhaseReport(
+            repair_session_id=repair_session.id,
+            type="diagnostic",
+            schema_version="diagnostic_report.v1",
+            phase="diagnostic",
+            summary="Derived image evidence.",
+            safety_flags=[],
+            source_artifact_ids=["art_image"],
+            payload={},
+        )
+    )
+
+    assert (
+        await runs.redact_citing_artifact(
+            artifact_id="art_image", reason="retention_expired"
+        )
+        == 1
+    )
+    assert (
+        await PhaseReportRepository(db_session).invalidate_citing_artifact(
+            artifact_id="art_image", reason="retention_expired"
+        )
+        == 1
+    )
+
+    assert run.validated_output is None
+    assert run.preprocessing_manifest == []
+    assert await runs.list_usable_for_session(repair_session.id) == []
+    assert await PhaseReportRepository(db_session).get(report.id) is None
+    assert (
+        await PhaseReportRepository(db_session).list_for_session(repair_session.id)
+        == []
+    )
+
+
 async def test_observation_run_get_or_create_is_safe_across_concurrent_sessions(
     db_session: AsyncSession,
 ) -> None:

@@ -1,10 +1,11 @@
 """Persistence operations for diagnostic observation-extraction runs."""
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.observation_extraction import (
@@ -234,6 +235,25 @@ class ObservationExtractionRunRepository:
         run.preprocessing_manifest = []
         await self._session.flush()
         return run
+
+    async def redact_citing_artifact(self, *, artifact_id: str, reason: str) -> int:
+        """Irreversibly redact every run citing an inaccessible artifact."""
+
+        result = await self._session.execute(
+            update(ObservationExtractionRun)
+            .where(
+                ObservationExtractionRun.input_artifact_ids.contains([artifact_id]),
+                ObservationExtractionRun.redacted_at.is_(None),
+            )
+            .values(
+                redacted_at=datetime.now(UTC),
+                redaction_reason=reason,
+                validated_output=None,
+                preprocessing_manifest=[],
+            ),
+        )
+        await self._session.flush()
+        return int(cast(CursorResult[Any], result).rowcount or 0)
 
     async def list_usable_for_session(
         self,

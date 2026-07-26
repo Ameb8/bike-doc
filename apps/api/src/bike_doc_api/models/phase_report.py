@@ -64,6 +64,12 @@ class PhaseReport(Base):
             "jsonb_typeof(payload) = 'object'",
             name="ck_phase_reports_payload_object",
         ),
+        CheckConstraint(
+            "(evidence_redacted_at IS NULL AND evidence_redaction_reason IS NULL) "
+            "OR (evidence_redacted_at IS NOT NULL "
+            "AND evidence_redaction_reason IS NOT NULL)",
+            name="ck_phase_reports_evidence_redaction_pair",
+        ),
         Index(
             "ix_phase_reports_session_created",
             "repair_session_id",
@@ -125,6 +131,10 @@ class PhaseReport(Base):
         server_default=text("'[]'::jsonb"),
     )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    evidence_redacted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    evidence_redaction_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
