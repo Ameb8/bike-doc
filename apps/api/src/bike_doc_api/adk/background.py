@@ -41,16 +41,23 @@ from bike_doc_api.core.config import (
     Settings,
     get_settings,
     validate_diagnostic_runtime_configuration,
+    validate_observation_extraction_runtime_configuration,
     validate_profile_inference_runtime_configuration,
 )
 from bike_doc_api.db.session import get_session_for_database_url
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User as UserModel
+from bike_doc_api.providers.observation_extraction import (
+    GeminiDiagnosticObservationExtractor,
+)
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
+from bike_doc_api.repositories.observation_extraction import (
+    ObservationExtractionRunRepository,
+)
 from bike_doc_api.repositories.profile_inference import ProfileInferenceRunRepository
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
@@ -69,6 +76,11 @@ from bike_doc_api.services.diagnostic_visual_context import (
     RepairTurnRepositoryProtocol,
 )
 from bike_doc_api.services.events import EventService
+from bike_doc_api.services.observation_extraction import (
+    DiagnosticObservationExtractor,
+    ObservationExtractionRequest,
+    ObservationExtractionResult,
+)
 from bike_doc_api.services.profile_inference import (
     ProfileInferenceExtractor,
     ProfileInferenceService,
@@ -90,6 +102,23 @@ class _UnavailableProfileInferenceExtractor:
 
     async def extract(self, _request: object) -> dict[str, object]:
         """Raise the unavailable runtime error only inside the inference service."""
+
+        raise self._error
+
+
+class _UnavailableObservationExtractor:
+    """Persist extraction failure while allowing pixels-only diagnostic fallback."""
+
+    provider = "unavailable"
+    model = "unavailable"
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def extract(
+        self, _request: ObservationExtractionRequest
+    ) -> ObservationExtractionResult:
+        """Raise only inside the shadow extraction lifecycle."""
 
         raise self._error
 
@@ -258,6 +287,7 @@ def _build_background_orchestrator(
     events = RepairSessionEventRepository(session)
     artifacts = ArtifactRepository(session)
     storage = get_storage_provider(settings)
+    observation_extractor = _build_observation_extractor_or_unavailable(settings)
 
     turn_service = TurnService(
         repair_sessions,
@@ -355,10 +385,39 @@ def _build_background_orchestrator(
             repair_sessions=repair_sessions,
             artifacts=artifacts,
             storage=storage,
+            runs=ObservationExtractionRunRepository(session),
+            extractor=observation_extractor,
+            extractor_version=settings.observation_extraction_extractor_version,
+            prompt_version=settings.observation_extraction_prompt_version,
         ),
         commit=session.commit,
         rollback=session.rollback,
     )
+
+
+def _build_observation_extractor_or_unavailable(
+    settings: Settings,
+) -> DiagnosticObservationExtractor:
+    """Keep a bad extraction configuration from blocking pixel diagnosis."""
+
+    if settings.image_analysis_mode != "shadow":
+        return _UnavailableObservationExtractor(
+            ValueError("observation extraction is inactive for this mode"),
+        )
+    try:
+        validate_observation_extraction_runtime_configuration(settings)
+        if settings.observation_extraction_llm_provider == "vertex_ai":
+            return GeminiDiagnosticObservationExtractor.from_vertex_ai(
+                model=settings.observation_extraction_model,
+                timeout_seconds=settings.observation_extraction_timeout_seconds,
+            )
+        return GeminiDiagnosticObservationExtractor.from_google_ai(
+            model=settings.observation_extraction_model,
+            timeout_seconds=settings.observation_extraction_timeout_seconds,
+        )
+    except Exception as exc:
+        logger.exception("observation_extraction_runtime_configuration_invalid")
+        return _UnavailableObservationExtractor(exc)
 
 
 def _build_cost_estimate_service(

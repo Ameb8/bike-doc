@@ -4,18 +4,29 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from datetime import datetime
+from time import monotonic
+from typing import Any, Literal, Protocol
 
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
+from bike_doc_api.models.observation_extraction import (
+    ObservationExtractionAttempt,
+    ObservationExtractionRun,
+)
 from bike_doc_api.schemas.observation_extraction import (
     ArtifactProcessingStatus,
     DiagnosticVisualObservationProjection,
     NormalizedModelImage,
 )
 from bike_doc_api.services.image_preprocessing import (
+    PREPROCESSING_VERSION,
     ImagePreprocessingError,
     NormalizedDiagnosticImage,
     normalize_diagnostic_image_async,
+)
+from bike_doc_api.services.observation_extraction import (
+    DiagnosticObservationExtractor,
+    ObservationExtractionRequest,
 )
 
 _ACCEPTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
@@ -52,6 +63,50 @@ class StorageProviderProtocol(Protocol):
 
     async def get_object(self, *, path: str, bucket: str | None) -> bytes:
         """Read artifact bytes from app-owned private storage metadata."""
+
+
+class ObservationExtractionRunRepositoryProtocol(Protocol):
+    """Persistence boundary for one accepted turn's extraction lifecycle."""
+
+    async def get_by_turn_id(self, turn_id: str) -> ObservationExtractionRun | None: ...
+
+    async def add(self, run: ObservationExtractionRun) -> ObservationExtractionRun: ...
+
+    async def set_preprocessing_manifest(
+        self,
+        run: ObservationExtractionRun,
+        *,
+        manifest: list[dict[str, Any]],
+    ) -> ObservationExtractionRun: ...
+
+    async def append_attempt(
+        self, *, run_id: str, provider: str, model: str
+    ) -> ObservationExtractionAttempt: ...
+
+    async def finish_attempt(
+        self,
+        attempt: ObservationExtractionAttempt,
+        *,
+        outcome: str,
+        failure_metadata: dict[str, Any] | None = None,
+        latency_ms: int | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        provider_cost_microunits: int | None = None,
+        completed_at: datetime | None = None,
+    ) -> ObservationExtractionAttempt: ...
+
+    async def mark_completed(
+        self, run: ObservationExtractionRun, *, validated_output: dict[str, Any]
+    ) -> ObservationExtractionRun: ...
+
+    async def mark_failed(
+        self, run: ObservationExtractionRun, *, failure_metadata: dict[str, Any]
+    ) -> ObservationExtractionRun: ...
+
+    async def mark_diagnostic_agent_started(
+        self, run: ObservationExtractionRun
+    ) -> ObservationExtractionRun: ...
 
 
 Preprocessor = Callable[..., Awaitable[NormalizedDiagnosticImage]]
@@ -114,8 +169,8 @@ class DiagnosticVisualContext:
 class DiagnosticVisualContextService:
     """Keep mode-specific visual preparation behind one orchestration seam.
 
-    This initial implementation deliberately supports only ``off`` and
-    ``pixels_only``. It creates neither extraction runs nor provider attempts.
+    ``shadow`` performs isolated extraction and durable lifecycle recording
+    while deliberately withholding every observation from diagnostic context.
     """
 
     def __init__(
@@ -125,12 +180,20 @@ class DiagnosticVisualContextService:
         repair_sessions: RepairSessionRepositoryProtocol,
         artifacts: ArtifactRepositoryProtocol,
         storage: StorageProviderProtocol,
+        runs: ObservationExtractionRunRepositoryProtocol | None = None,
+        extractor: DiagnosticObservationExtractor | None = None,
+        extractor_version: str = "visual-observation-extractor.v1",
+        prompt_version: str = "visual-observation-prompt.v1",
         preprocess: Preprocessor = normalize_diagnostic_image_async,
     ) -> None:
         self._turns = turns
         self._repair_sessions = repair_sessions
         self._artifacts = artifacts
         self._storage = storage
+        self._runs = runs
+        self._extractor = extractor
+        self._extractor_version = extractor_version
+        self._prompt_version = prompt_version
         self._preprocess = preprocess
 
     async def prepare_turn(
@@ -152,7 +215,7 @@ class DiagnosticVisualContextService:
         mode = getattr(turn, "image_analysis_mode", None)
         if not artifact_ids:
             return _empty_context(invoke_agent=text_bearing)
-        if mode not in {"off", "pixels_only"}:
+        if mode not in {"off", "pixels_only", "shadow"}:
             raise ValidationAppError("Unsupported image-analysis mode for this turn.")
 
         artifacts = await self._revalidate_artifacts(
@@ -165,10 +228,27 @@ class DiagnosticVisualContextService:
                 artifacts=artifacts,
                 text_bearing=text_bearing,
             )
-        return await self._pixels_only_context(
+        if mode == "pixels_only":
+            return await self._pixels_only_context(
+                artifacts=artifacts,
+                text_bearing=text_bearing,
+            )
+        return await self._shadow_context(
             artifacts=artifacts,
             text_bearing=text_bearing,
+            turn_id=turn_id,
+            repair_session_id=repair_session.id,
+            artifact_ids=artifact_ids,
         )
+
+    async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
+        """Durably close a shadow run immediately before runner invocation."""
+
+        if self._runs is None:
+            return
+        run = await self._runs.get_by_turn_id(turn_id)
+        if run is not None:
+            await self._runs.mark_diagnostic_agent_started(run)
 
     async def _revalidate_artifacts(
         self,
@@ -307,6 +387,128 @@ class DiagnosticVisualContextService:
             recoverable_errors=tuple(errors),
         )
 
+    async def _shadow_context(
+        self,
+        *,
+        artifacts: tuple[ArtifactRecord, ...],
+        text_bearing: bool,
+        turn_id: str,
+        repair_session_id: str,
+        artifact_ids: tuple[str, ...],
+    ) -> DiagnosticVisualContext:
+        """Extract shadow evidence once while keeping runner behavior pixels-only."""
+
+        if self._runs is None or self._extractor is None:
+            raise ValidationAppError("Shadow image analysis is not configured.")
+        run = await self._get_or_create_shadow_run(
+            turn_id=turn_id,
+            repair_session_id=repair_session_id,
+            artifact_ids=artifact_ids,
+        )
+        context = await self._pixels_only_context(
+            artifacts=artifacts,
+            text_bearing=text_bearing,
+        )
+        await self._runs.set_preprocessing_manifest(
+            run,
+            manifest=_preprocessing_manifest_for_context(context),
+        )
+        if not context.current_images:
+            if run.status == "pending":
+                await self._runs.mark_failed(
+                    run,
+                    failure_metadata={"code": "no_usable_images", "retryable": False},
+                )
+            return context
+
+        if run.status == "pending" and (run.provider_attempt_count or 0) == 0:
+            await self._extract_shadow_once(run=run, images=context.current_images)
+
+        # Shadow must remain behaviorally indistinguishable from pixels_only.
+        return DiagnosticVisualContext(
+            invoke_agent=context.invoke_agent,
+            current_images=context.current_images,
+            current_observations=(),
+            prior_observations=(),
+            artifact_processing_statuses=context.artifact_processing_statuses,
+            recoverable_errors=context.recoverable_errors,
+        )
+
+    async def _get_or_create_shadow_run(
+        self,
+        *,
+        turn_id: str,
+        repair_session_id: str,
+        artifact_ids: tuple[str, ...],
+    ) -> ObservationExtractionRun:
+        assert self._runs is not None and self._extractor is not None
+        run = await self._runs.get_by_turn_id(turn_id)
+        if run is not None:
+            return run
+        return await self._runs.add(
+            ObservationExtractionRun(
+                turn_id=turn_id,
+                repair_session_id=repair_session_id,
+                image_analysis_mode="shadow",
+                input_artifact_ids=list(artifact_ids),
+                preprocessing_version=PREPROCESSING_VERSION,
+                extractor_version=self._extractor_version,
+                prompt_version=self._prompt_version,
+                output_schema_version="visual-observation.v1",
+                provider=self._extractor.provider,
+                model=self._extractor.model,
+            )
+        )
+
+    async def _extract_shadow_once(
+        self,
+        *,
+        run: ObservationExtractionRun,
+        images: tuple[NormalizedModelImage, ...],
+    ) -> None:
+        assert self._runs is not None and self._extractor is not None
+        attempt = await self._runs.append_attempt(
+            run_id=run.id,
+            provider=self._extractor.provider,
+            model=self._extractor.model,
+        )
+        started = monotonic()
+        try:
+            result = await self._extractor.extract(
+                ObservationExtractionRequest(images=list(images)),
+            )
+            # Adapters validate too, but lifecycle owns the trust boundary.
+            from bike_doc_api.schemas.observation_extraction import (
+                validate_observation_output,
+            )
+
+            validated = validate_observation_output(result.output, images)
+        except Exception:
+            failure = {"code": "observation_extraction_failed", "retryable": False}
+            await self._runs.finish_attempt(
+                attempt,
+                outcome="failed",
+                failure_metadata=failure,
+                latency_ms=_elapsed_ms(started),
+            )
+            await self._runs.mark_failed(run, failure_metadata=failure)
+            return
+
+        usage = result.usage
+        cost = round(usage.cost_usd * 1_000_000) if usage.cost_usd is not None else None
+        await self._runs.finish_attempt(
+            attempt,
+            outcome="completed",
+            latency_ms=_elapsed_ms(started),
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            provider_cost_microunits=cost,
+        )
+        await self._runs.mark_completed(
+            run,
+            validated_output=validated.model_dump(mode="json"),
+        )
+
 
 def _submitted_artifacts_and_text(turn: object) -> tuple[tuple[str, ...], bool]:
     """Read accepted message fields defensively without trusting mutable JSON."""
@@ -359,3 +561,46 @@ def _model_image(image: NormalizedDiagnosticImage) -> NormalizedModelImage:
         content_sha256=image.content_sha256,
         preprocessing_version=image.preprocessing_version,
     )
+
+
+def _preprocessing_manifest(image: NormalizedModelImage) -> dict[str, Any]:
+    """Build the byte-free durable record for one normalized input."""
+
+    return {
+        "artifact_id": image.artifact_id,
+        "effective_mime_type": image.mime_type,
+        "original_width": image.original_width,
+        "original_height": image.original_height,
+        "normalized_width": image.normalized_width,
+        "normalized_height": image.normalized_height,
+        "normalized_content_sha256": image.content_sha256,
+        "preprocessing_version": image.preprocessing_version,
+        "outcome": "available",
+    }
+
+
+def _preprocessing_manifest_for_context(
+    context: DiagnosticVisualContext,
+) -> list[dict[str, Any]]:
+    """Record every submitted image outcome without retaining any image bytes."""
+
+    available = {
+        image.artifact_id: _preprocessing_manifest(image)
+        for image in context.current_images
+    }
+    manifest: list[dict[str, Any]] = []
+    for status in context.artifact_processing_statuses:
+        entry = available.get(status.artifact_id)
+        if entry is None:
+            entry = {
+                "artifact_id": status.artifact_id,
+                "outcome": status.failure_code or "image_analysis_unavailable",
+            }
+        manifest.append(entry)
+    return manifest
+
+
+def _elapsed_ms(started: float) -> int:
+    """Return non-negative wall-clock independent provider latency."""
+
+    return max(0, round((monotonic() - started) * 1000))

@@ -7,12 +7,17 @@ from typing import Any
 
 import pytest
 
+from bike_doc_api.schemas.observation_extraction import ObservationExtractionOutput
 from bike_doc_api.services.diagnostic_visual_context import (
     DiagnosticVisualContextService,
 )
 from bike_doc_api.services.image_preprocessing import (
     ImagePreprocessingError,
     NormalizedDiagnosticImage,
+)
+from bike_doc_api.services.observation_extraction import (
+    ObservationExtractionResult,
+    ObservationExtractionUsage,
 )
 
 
@@ -59,6 +64,78 @@ class _Storage:
     async def get_object(self, *, path: str, bucket: str | None) -> bytes:
         self.requests.append((path, bucket))
         return b"source-bytes"
+
+
+class _Runs:
+    def __init__(self) -> None:
+        self.run: object | None = None
+        self.attempts: list[object] = []
+
+    async def get_by_turn_id(self, turn_id: str) -> object | None:
+        return self.run
+
+    async def add(self, run: object) -> object:
+        run.provider_attempt_count = 0
+        run.status = "pending"
+        self.run = run
+        return run
+
+    async def set_preprocessing_manifest(
+        self, run: object, *, manifest: list[dict[str, object]]
+    ) -> object:
+        run.preprocessing_manifest = manifest
+        return run
+
+    async def append_attempt(self, **values: object) -> object:
+        attempt = SimpleNamespace(**values, outcome="pending")
+        self.attempts.append(attempt)
+        assert self.run is not None
+        self.run.provider_attempt_count += 1
+        return attempt
+
+    async def finish_attempt(self, attempt: object, **values: object) -> object:
+        for key, value in values.items():
+            setattr(attempt, key, value)
+        return attempt
+
+    async def mark_completed(self, run: object, **values: object) -> object:
+        run.status = "completed"
+        run.validated_output = values["validated_output"]
+        return run
+
+    async def mark_failed(self, run: object, **values: object) -> object:
+        run.status = "failed"
+        run.validated_output = None
+        run.failure_metadata = values["failure_metadata"]
+        return run
+
+
+class _Extractor:
+    provider = "fake-provider"
+    model = "fake-model"
+
+    def __init__(self) -> None:
+        self.requests: list[object] = []
+
+    async def extract(self, request: object) -> ObservationExtractionResult:
+        self.requests.append(request)
+        return ObservationExtractionResult(
+            output=ObservationExtractionOutput.model_validate(
+                {
+                    "schema_version": "visual-observation.v1",
+                    "image_assessments": [
+                        {
+                            "artifact_id": "art_current",
+                            "assessability": "usable",
+                            "visible_areas": ["chain"],
+                            "limitations": [],
+                        }
+                    ],
+                    "observations": [],
+                }
+            ),
+            usage=ObservationExtractionUsage(input_tokens=11, output_tokens=7),
+        )
 
 
 @pytest.mark.asyncio
@@ -256,6 +333,152 @@ async def test_pixels_only_never_reads_unsubmitted_historical_artifacts() -> Non
     await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
 
     assert storage.requests == [("private/current.jpg", None)]
+
+
+@pytest.mark.asyncio
+async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it() -> (
+    None
+):
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+    extractor = _Extractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert context.current_images[0].content == b"normalized"
+    assert extractor.requests[0].images[0].content == context.current_images[0].content
+    assert context.current_observations == ()
+    assert context.prior_observations == ()
+    assert runs.run.status == "completed"
+    assert runs.run.validated_output["observations"] == []
+    assert runs.run.provider_attempt_count == 1
+    assert len(runs.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_shadow_all_invalid_images_fail_without_provider_attempt() -> None:
+    repositories = _Repositories(mode="shadow", text="Describe the noise.")
+    storage = _Storage()
+    runs = _Runs()
+    extractor = _Extractor()
+
+    async def preprocess(**_values: Any) -> NormalizedDiagnosticImage:
+        raise ImagePreprocessingError("image_decode_failed")
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert context.invoke_agent is True
+    assert context.current_images == ()
+    assert context.artifact_processing_statuses[0].failure_code == "image_decode_failed"
+    assert extractor.requests == []
+    assert runs.run.status == "failed"
+    assert runs.run.provider_attempt_count == 0
+
+
+@pytest.mark.asyncio
+async def test_shadow_provider_failure_keeps_pixels_and_does_not_retry_on_replay() -> (
+    None
+):
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _FailingExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            raise TimeoutError("provider timed out")
+
+    extractor = _FailingExtractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    first = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+    replay = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert first.current_images[0].content == b"normalized"
+    assert replay.current_images[0].content == b"normalized"
+    assert first.current_observations == replay.current_observations == ()
+    assert runs.run.status == "failed"
+    assert runs.run.failure_metadata == {
+        "code": "observation_extraction_failed",
+        "retryable": False,
+    }
+    assert len(extractor.requests) == 1
+    assert len(runs.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_shadow_invalid_extractor_output_is_never_persisted_as_observation() -> (
+    None
+):
+    repositories = _Repositories(mode="shadow")
+    storage = _Storage()
+    runs = _Runs()
+
+    class _InvalidExtractor(_Extractor):
+        async def extract(self, request: object) -> object:
+            self.requests.append(request)
+            return SimpleNamespace(
+                output=SimpleNamespace(), usage=ObservationExtractionUsage()
+            )
+
+    extractor = _InvalidExtractor()
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+        preprocess=preprocess,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert context.current_images[0].content == b"normalized"
+    assert context.current_observations == ()
+    assert runs.run.status == "failed"
+    assert runs.run.validated_output is None
+    assert runs.attempts[0].outcome == "failed"
 
 
 def _normalized(artifact_id: str) -> NormalizedDiagnosticImage:

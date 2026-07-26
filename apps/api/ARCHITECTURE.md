@@ -124,7 +124,9 @@ orchestration graph, including `DiagnosticVisualContextService` with fresh
 turn, repair-session, artifact, storage, settings, and preprocessing
 dependencies. Before building the runner request, the orchestrator prepares
 only the accepted turn's images. `pixels_only` supplies labeled normalized
-pixels, per-artifact statuses, and empty observation projections; `off` never
+pixels, per-artifact statuses, and empty observation projections; `shadow`
+also persists one isolated extraction run and attempt history but intentionally
+supplies those same empty projections; `off` never
 reads pixels and supplies uninspected statuses. An image-only turn for which
 the agent cannot be invoked persists its safe recoverable error and terminal
 awaiting-user event without invoking the runner. `DiagnosticRunner` translates

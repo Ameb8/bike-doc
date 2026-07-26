@@ -84,6 +84,18 @@ class ObservationExtractionRunRepository:
         await self._session.flush()
         return run
 
+    async def set_preprocessing_manifest(
+        self,
+        run: ObservationExtractionRun,
+        *,
+        manifest: list[dict[str, Any]],
+    ) -> ObservationExtractionRun:
+        """Persist byte-free preprocessing outcomes before provider access."""
+
+        run.preprocessing_manifest = manifest
+        await self._session.flush()
+        return run
+
     async def append_attempt(
         self,
         *,
@@ -164,6 +176,18 @@ class ObservationExtractionRunRepository:
         attempt.output_tokens = output_tokens
         attempt.provider_cost_microunits = provider_cost_microunits
         attempt.completed_at = completed_at or datetime.now(UTC)
+        run = await self._get_for_update(attempt.run_id)
+        if run is None:
+            raise ValueError("observation extraction run does not exist")
+        run.provider_latency_ms += latency_ms or 0
+        if input_tokens is not None:
+            run.input_tokens = (run.input_tokens or 0) + input_tokens
+        if output_tokens is not None:
+            run.output_tokens = (run.output_tokens or 0) + output_tokens
+        if provider_cost_microunits is not None:
+            run.provider_cost_microunits = (
+                run.provider_cost_microunits or 0
+            ) + provider_cost_microunits
         await self._session.flush()
         return attempt
 
