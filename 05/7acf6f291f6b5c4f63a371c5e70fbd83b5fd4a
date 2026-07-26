@@ -1,0 +1,27 @@
+apps/api/tests/unit/services/test_diagnostic_visual_context.py
+  s_cd4414ae395fd0::t_265639dada5743 515
+  s_cd4414ae395fd0::t_60d9054ea7b479 7,516-521,623-640
+apps/api/src/bike_doc_api/services/diagnostic_visual_context.py
+  s_cd4414ae395fd0::t_60d9054ea7b479 6-7,45,705-711
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "057acf6f291f6b5c4f63a371c5e70fbd83b5fd4a",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_cd4414ae395fd0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9d24-08fd-7432-92aa-70d275d0f579",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
