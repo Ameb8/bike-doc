@@ -219,6 +219,7 @@ class ObservationExtractionRunRepository:
             select(ObservationExtractionRun)
             .where(
                 ObservationExtractionRun.repair_session_id == repair_session_id,
+                ObservationExtractionRun.image_analysis_mode == "enabled",
                 ObservationExtractionRun.status == "completed",
                 ObservationExtractionRun.redacted_at.is_(None),
             )

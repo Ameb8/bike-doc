@@ -17,6 +17,7 @@ from bike_doc_api.schemas.observation_extraction import (
     ArtifactProcessingStatus,
     DiagnosticVisualObservationProjection,
     NormalizedModelImage,
+    ObservationExtractionOutput,
 )
 from bike_doc_api.services.image_preprocessing import (
     PREPROCESSING_VERSION,
@@ -107,6 +108,10 @@ class ObservationExtractionRunRepositoryProtocol(Protocol):
     async def mark_diagnostic_agent_started(
         self, run: ObservationExtractionRun
     ) -> ObservationExtractionRun: ...
+
+    async def list_usable_for_session(
+        self, repair_session_id: str, *, limit: int = 50
+    ) -> list[ObservationExtractionRun]: ...
 
 
 Preprocessor = Callable[..., Awaitable[NormalizedDiagnosticImage]]
@@ -214,8 +219,18 @@ class DiagnosticVisualContextService:
         artifact_ids, text_bearing = _submitted_artifacts_and_text(turn)
         mode = getattr(turn, "image_analysis_mode", None)
         if not artifact_ids:
-            return _empty_context(invoke_agent=text_bearing)
-        if mode not in {"off", "pixels_only", "shadow"}:
+            return DiagnosticVisualContext(
+                invoke_agent=text_bearing,
+                current_images=(),
+                current_observations=(),
+                prior_observations=await self._prior_enabled_observations(
+                    repair_session_id=repair_session.id,
+                    current_turn_id=turn_id,
+                ),
+                artifact_processing_statuses=(),
+                recoverable_errors=(),
+            )
+        if mode not in {"off", "pixels_only", "shadow", "enabled"}:
             raise ValidationAppError("Unsupported image-analysis mode for this turn.")
 
         artifacts = await self._revalidate_artifacts(
@@ -233,16 +248,17 @@ class DiagnosticVisualContextService:
                 artifacts=artifacts,
                 text_bearing=text_bearing,
             )
-        return await self._shadow_context(
+        return await self._extraction_context(
             artifacts=artifacts,
             text_bearing=text_bearing,
             turn_id=turn_id,
             repair_session_id=repair_session.id,
             artifact_ids=artifact_ids,
+            mode=mode,
         )
 
     async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
-        """Durably close a shadow run immediately before runner invocation."""
+        """Durably close an extraction run immediately before runner invocation."""
 
         if self._runs is None:
             return
@@ -387,7 +403,7 @@ class DiagnosticVisualContextService:
             recoverable_errors=tuple(errors),
         )
 
-    async def _shadow_context(
+    async def _extraction_context(
         self,
         *,
         artifacts: tuple[ArtifactRecord, ...],
@@ -395,15 +411,17 @@ class DiagnosticVisualContextService:
         turn_id: str,
         repair_session_id: str,
         artifact_ids: tuple[str, ...],
+        mode: Literal["shadow", "enabled"],
     ) -> DiagnosticVisualContext:
-        """Extract shadow evidence once while keeping runner behavior pixels-only."""
+        """Extract current evidence and expose it only in enabled mode."""
 
         if self._runs is None or self._extractor is None:
-            raise ValidationAppError("Shadow image analysis is not configured.")
-        run = await self._get_or_create_shadow_run(
+            raise ValidationAppError("Observation image analysis is not configured.")
+        run = await self._get_or_create_run(
             turn_id=turn_id,
             repair_session_id=repair_session_id,
             artifact_ids=artifact_ids,
+            mode=mode,
         )
         context = await self._pixels_only_context(
             artifacts=artifacts,
@@ -419,27 +437,46 @@ class DiagnosticVisualContextService:
                     run,
                     failure_metadata={"code": "no_usable_images", "retryable": False},
                 )
-            return context
+            return DiagnosticVisualContext(
+                invoke_agent=context.invoke_agent,
+                current_images=(),
+                current_observations=(),
+                prior_observations=await self._prior_enabled_observations(
+                    repair_session_id=repair_session_id,
+                    current_turn_id=turn_id,
+                ),
+                artifact_processing_statuses=context.artifact_processing_statuses,
+                recoverable_errors=context.recoverable_errors,
+            )
 
         if run.status == "pending" and (run.provider_attempt_count or 0) == 0:
-            await self._extract_shadow_once(run=run, images=context.current_images)
+            await self._extract_once(run=run, images=context.current_images)
 
-        # Shadow must remain behaviorally indistinguishable from pixels_only.
+        current_observations: tuple[DiagnosticVisualObservationProjection, ...] = ()
+        if mode == "enabled" and run.status == "completed":
+            projection = _projection_from_run(run)
+            if projection is not None:
+                current_observations = (projection,)
+
         return DiagnosticVisualContext(
             invoke_agent=context.invoke_agent,
             current_images=context.current_images,
-            current_observations=(),
-            prior_observations=(),
+            current_observations=current_observations,
+            prior_observations=await self._prior_enabled_observations(
+                repair_session_id=repair_session_id,
+                current_turn_id=turn_id,
+            ),
             artifact_processing_statuses=context.artifact_processing_statuses,
             recoverable_errors=context.recoverable_errors,
         )
 
-    async def _get_or_create_shadow_run(
+    async def _get_or_create_run(
         self,
         *,
         turn_id: str,
         repair_session_id: str,
         artifact_ids: tuple[str, ...],
+        mode: Literal["shadow", "enabled"],
     ) -> ObservationExtractionRun:
         assert self._runs is not None and self._extractor is not None
         run = await self._runs.get_by_turn_id(turn_id)
@@ -449,7 +486,7 @@ class DiagnosticVisualContextService:
             ObservationExtractionRun(
                 turn_id=turn_id,
                 repair_session_id=repair_session_id,
-                image_analysis_mode="shadow",
+                image_analysis_mode=mode,
                 input_artifact_ids=list(artifact_ids),
                 preprocessing_version=PREPROCESSING_VERSION,
                 extractor_version=self._extractor_version,
@@ -460,7 +497,33 @@ class DiagnosticVisualContextService:
             )
         )
 
-    async def _extract_shadow_once(
+    async def _prior_enabled_observations(
+        self,
+        *,
+        repair_session_id: str,
+        current_turn_id: str,
+    ) -> tuple[DiagnosticVisualObservationProjection, ...]:
+        """Project prior enabled evidence without reading historical bytes."""
+
+        if self._runs is None:
+            return ()
+        prior_runs = await self._runs.list_usable_for_session(repair_session_id)
+        projections: list[DiagnosticVisualObservationProjection] = []
+        for run in prior_runs:
+            if (
+                run.turn_id == current_turn_id
+                or getattr(run, "repair_session_id", None) != repair_session_id
+                or getattr(run, "image_analysis_mode", None) != "enabled"
+                or getattr(run, "status", None) != "completed"
+                or getattr(run, "redacted_at", None) is not None
+            ):
+                continue
+            projection = _projection_from_run(run)
+            if projection is not None:
+                projections.append(projection)
+        return tuple(projections)
+
+    async def _extract_once(
         self,
         *,
         run: ObservationExtractionRun,
@@ -529,6 +592,21 @@ def _submitted_artifacts_and_text(turn: object) -> tuple[tuple[str, ...], bool]:
 
 def _empty_context(*, invoke_agent: bool) -> DiagnosticVisualContext:
     return DiagnosticVisualContext(invoke_agent, (), (), (), (), ())
+
+
+def _projection_from_run(
+    run: ObservationExtractionRun,
+) -> DiagnosticVisualObservationProjection | None:
+    """Revalidate durable output before exposing a score-free projection."""
+
+    if run.validated_output is None:
+        return None
+    try:
+        return ObservationExtractionOutput.model_validate(
+            run.validated_output
+        ).diagnostic_agent_projection()
+    except ValueError:
+        return None
 
 
 def _unavailable_status(

@@ -213,7 +213,9 @@ class DiagnosticVisualObservation(_StrictInternalModel):
 class DiagnosticVisualObservationProjection(_StrictInternalModel):
     """Score-free visual evidence supplied to the diagnostic agent."""
 
+    image_assessments: list[ImageAssessment] = Field(default_factory=list)
     observations: list[DiagnosticVisualObservation]
+    suggested_follow_up: SuggestedFollowUp | None = None
 
 
 class ObservationExtractionOutput(_StrictInternalModel):
@@ -228,6 +230,7 @@ class ObservationExtractionOutput(_StrictInternalModel):
         """Project validated observations without exposing extractor score data."""
 
         return DiagnosticVisualObservationProjection(
+            image_assessments=self.image_assessments,
             observations=[
                 DiagnosticVisualObservation(
                     artifact_ids=observation.artifact_ids,
@@ -240,6 +243,7 @@ class ObservationExtractionOutput(_StrictInternalModel):
                 )
                 for observation in self.observations
             ],
+            suggested_follow_up=self.suggested_follow_up,
         )
 
 

@@ -126,7 +126,10 @@ dependencies. Before building the runner request, the orchestrator prepares
 only the accepted turn's images. `pixels_only` supplies labeled normalized
 pixels, per-artifact statuses, and empty observation projections; `shadow`
 also persists one isolated extraction run and attempt history but intentionally
-supplies those same empty projections; `off` never
+supplies those same empty projections; `enabled` supplies the current run's
+validated score-free observations, assessability, and follow-up projection with
+the same pixels, plus completed non-redacted enabled projections from earlier
+turns in the repair session. Earlier turns never reload artifact bytes. `off` never
 reads pixels and supplies uninspected statuses. An image-only turn for which
 the agent cannot be invoked persists its safe recoverable error and terminal
 awaiting-user event without invoking the runner. `DiagnosticRunner` translates

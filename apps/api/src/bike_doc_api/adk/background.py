@@ -400,7 +400,7 @@ def _build_observation_extractor_or_unavailable(
 ) -> DiagnosticObservationExtractor:
     """Keep a bad extraction configuration from blocking pixel diagnosis."""
 
-    if settings.image_analysis_mode != "shadow":
+    if settings.image_analysis_mode not in {"shadow", "enabled"}:
         return _UnavailableObservationExtractor(
             ValueError("observation extraction is inactive for this mode"),
         )

@@ -74,6 +74,13 @@ class _Runs:
     async def get_by_turn_id(self, turn_id: str) -> object | None:
         return self.run
 
+    async def list_usable_for_session(
+        self, repair_session_id: str, *, limit: int = 50
+    ) -> list[object]:
+        assert repair_session_id == "rs_current"
+        assert limit == 50
+        return [self.run] if self.run is not None else []
+
     async def add(self, run: object) -> object:
         run.provider_attempt_count = 0
         run.status = "pending"
@@ -367,6 +374,174 @@ async def test_shadow_persists_a_valid_zero_observation_run_without_leaking_it()
     assert runs.run.validated_output["observations"] == []
     assert runs.run.provider_attempt_count == 1
     assert len(runs.attempts) == 1
+
+
+@pytest.mark.asyncio
+async def test_enabled_projects_current_and_prior_evidence_without_history_reads() -> (
+    None
+):
+    repositories = _Repositories(mode="enabled")
+    storage = _Storage()
+    runs = _Runs()
+
+    prior = SimpleNamespace(
+        turn_id="turn_prior",
+        repair_session_id="rs_current",
+        image_analysis_mode="enabled",
+        status="completed",
+        redacted_at=None,
+        validated_output={
+            "schema_version": "visual-observation.v1",
+            "image_assessments": [
+                {
+                    "artifact_id": "art_prior",
+                    "assessability": "limited",
+                    "visible_areas": ["rear brake"],
+                    "limitations": [
+                        {"type": "glare", "description": "pad edge obscured"}
+                    ],
+                }
+            ],
+            "observations": [
+                {
+                    "artifact_ids": ["art_prior"],
+                    "component_or_area": "rear brake",
+                    "position": "rear",
+                    "finding": "dark residue is visible",
+                    "evidence_cues": ["dark material below caliper"],
+                    "visibility": "partial",
+                    "raw_model_score": 0.91,
+                    "safety_relevant": True,
+                }
+            ],
+        },
+    )
+
+    class _RunsWithPrior(_Runs):
+        async def list_usable_for_session(
+            self, repair_session_id: str, *, limit: int = 50
+        ) -> list[object]:
+            assert repair_session_id == "rs_current"
+            return [prior, self.run] if self.run is not None else [prior]
+
+    runs = _RunsWithPrior()
+
+    class _ObservedExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            return ObservationExtractionResult(
+                output=ObservationExtractionOutput.model_validate(
+                    {
+                        "schema_version": "visual-observation.v1",
+                        "image_assessments": [
+                            {
+                                "artifact_id": "art_current",
+                                "assessability": "usable",
+                                "visible_areas": ["chain"],
+                                "limitations": [],
+                            }
+                        ],
+                        "observations": [
+                            {
+                                "artifact_ids": ["art_current"],
+                                "component_or_area": "chain",
+                                "position": "rear",
+                                "finding": "surface rust is visible",
+                                "evidence_cues": ["orange discoloration"],
+                                "visibility": "clear",
+                                "raw_model_score": 0.83,
+                                "safety_relevant": False,
+                            }
+                        ],
+                    }
+                ),
+                usage=ObservationExtractionUsage(),
+            )
+
+    async def preprocess(**values: Any) -> NormalizedDiagnosticImage:
+        return _normalized(str(values["artifact_id"]))
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=_ObservedExtractor(),
+        preprocess=preprocess,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert context.current_images[0].artifact_id == "art_current"
+    assert context.current_observations[0].observations[0].artifact_ids == [
+        "art_current"
+    ]
+    assert context.prior_observations[0].observations[0].artifact_ids == ["art_prior"]
+    assert context.prior_observations[0].image_assessments[0].assessability == "limited"
+    assert "raw_model_score" not in repr(context)
+    assert storage.requests == [("private/current.jpg", None)]
+
+
+@pytest.mark.asyncio
+async def test_prior_context_excludes_unusable_and_current_runs() -> None:
+    repositories = _Repositories(mode="pixels_only", text="A later question.")
+    repositories.turn.message["artifact_ids"] = []
+    storage = _Storage()
+
+    valid_output = {
+        "schema_version": "visual-observation.v1",
+        "image_assessments": [
+            {
+                "artifact_id": "art_prior",
+                "assessability": "usable",
+                "visible_areas": ["chain"],
+                "limitations": [],
+            }
+        ],
+        "observations": [],
+    }
+
+    def run(**values: object) -> object:
+        defaults: dict[str, object] = {
+            "repair_session_id": "rs_current",
+            "image_analysis_mode": "enabled",
+            "status": "completed",
+            "redacted_at": None,
+            "validated_output": valid_output,
+        }
+        return SimpleNamespace(**(defaults | values))
+
+    candidates = [
+        run(turn_id="turn_prior"),
+        run(turn_id="turn_current"),
+        run(turn_id="turn_shadow", image_analysis_mode="shadow"),
+        run(turn_id="turn_failed", status="failed"),
+        run(turn_id="turn_redacted", redacted_at=object()),
+        run(turn_id="turn_other", repair_session_id="rs_other"),
+        run(turn_id="turn_invalid", validated_output={"observations": []}),
+    ]
+
+    class _PriorRuns:
+        async def list_usable_for_session(
+            self, repair_session_id: str, *, limit: int = 50
+        ) -> list[object]:
+            assert repair_session_id == "rs_current"
+            return candidates
+
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=_PriorRuns(),
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    assert len(context.prior_observations) == 1
+    assert context.prior_observations[0].image_assessments[0].artifact_id == "art_prior"
+    assert storage.requests == []
 
 
 @pytest.mark.asyncio
