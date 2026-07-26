@@ -138,6 +138,12 @@ trace, model setting, or ADK session ID crosses that boundary. Profile
 inference is separately scheduled after diagnostic processing and does not
 delay it.
 
+The visual-context service seam is verified with deterministic storage and
+extractor fakes plus real encoded image fixtures for one through three current
+artifacts in every rollout mode. API, runner, event, report, safety, recovery,
+and invalidation tests cover the adjacent durable/public seams; live-model
+quality remains in the separate evaluation workflow.
+
 State-mutating tools run directly inside ADK's tool loop. The input-request,
 safety-flag, and report tools call the corresponding backend services, which
 perform the authoritative write once. The resulting normalized runner event is

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from PIL import Image
 
 from bike_doc_api.core.errors import ValidationAppError
 from bike_doc_api.schemas.observation_extraction import ObservationExtractionOutput
@@ -64,12 +66,13 @@ class _Repositories:
 class _Storage:
     provider_name = "fake"
 
-    def __init__(self) -> None:
+    def __init__(self, *, content: bytes = b"source-bytes") -> None:
         self.requests: list[tuple[str, str | None]] = []
+        self.content = content
 
     async def get_object(self, *, path: str, bucket: str | None) -> bytes:
         self.requests.append((path, bucket))
-        return b"source-bytes"
+        return self.content
 
 
 class _Runs:
@@ -169,6 +172,101 @@ class _Extractor:
             ),
             usage=ObservationExtractionUsage(input_tokens=11, output_tokens=7),
         )
+
+
+def _encoded_png() -> bytes:
+    """Return an actual encoded fixture accepted by the image normalizer."""
+
+    output = io.BytesIO()
+    Image.new("RGB", (32, 20), "steelblue").save(output, format="PNG")
+    return output.getvalue()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["off", "pixels_only", "shadow", "enabled"])
+@pytest.mark.parametrize("artifact_count", [1, 2, 3])
+async def test_rollout_modes_process_one_to_three_real_encoded_images(
+    mode: str,
+    artifact_count: int,
+) -> None:
+    """Keep the rollout matrix connected to real normalization behavior.
+
+    The extractor is deterministic, but its input crosses the real encoded-image
+    and normalization boundary. This proves that no mode can accidentally turn
+    artifact metadata into apparent visual access.
+    """
+
+    repositories = _Repositories(mode=mode)
+    repositories.artifacts["art_current"].mime_type = "image/png"
+    artifact_ids = ["art_current"]
+    for index in range(2, artifact_count + 1):
+        artifact_id = f"art_{index}"
+        repositories.artifacts[artifact_id] = SimpleNamespace(
+            **{
+                **vars(repositories.artifacts["art_current"]),
+                "id": artifact_id,
+                "storage_path": f"private/{artifact_id}.png",
+            }
+        )
+        artifact_ids.append(artifact_id)
+    repositories.turn.message["artifact_ids"] = artifact_ids
+
+    class _MatrixExtractor(_Extractor):
+        async def extract(self, request: object) -> ObservationExtractionResult:
+            self.requests.append(request)
+            images = request.images
+            return ObservationExtractionResult(
+                output=ObservationExtractionOutput.model_validate(
+                    {
+                        "schema_version": "visual-observation.v1",
+                        "image_assessments": [
+                            {
+                                "artifact_id": image.artifact_id,
+                                "assessability": "usable",
+                                "visible_areas": ["drivetrain"],
+                                "limitations": [],
+                            }
+                            for image in images
+                        ],
+                        "observations": [],
+                    }
+                ),
+                usage=ObservationExtractionUsage(),
+            )
+
+    storage = _Storage(content=_encoded_png())
+    runs = _Runs()
+    extractor = _MatrixExtractor()
+    service = DiagnosticVisualContextService(
+        turns=SimpleNamespace(get=repositories.get_turn),
+        repair_sessions=SimpleNamespace(get=repositories.get_session),
+        artifacts=SimpleNamespace(get_owned=repositories.get_artifact),
+        storage=storage,
+        runs=runs,
+        extractor=extractor,
+    )
+
+    context = await service.prepare_turn(user_id="usr_current", turn_id="turn_current")
+
+    extraction_enabled = mode in {"shadow", "enabled"}
+    pixels_enabled = mode != "off"
+    assert len(context.current_images) == (artifact_count if pixels_enabled else 0)
+    assert len(storage.requests) == (artifact_count if pixels_enabled else 0)
+    assert len(extractor.requests) == (1 if extraction_enabled else 0)
+    assert (runs.run is not None) is extraction_enabled
+    if pixels_enabled:
+        assert [image.artifact_id for image in context.current_images] == artifact_ids
+        assert all(
+            image.content.startswith(b"\xff\xd8") for image in context.current_images
+        )
+    if extraction_enabled:
+        assert runs.run is not None
+        assert runs.run.status == "completed"
+        assert runs.run.provider_attempt_count == 1
+        assert [
+            image.artifact_id for image in extractor.requests[0].images
+        ] == artifact_ids
+    assert len(context.current_observations) == (1 if mode == "enabled" else 0)
 
 
 @pytest.mark.asyncio
