@@ -9,6 +9,13 @@ Profile-inference evaluation assets are under `../profile-inference`. They use
 a versioned label schema and are evaluated by the reusable runner, rather than
 by pytest assertions over provider responses.
 
+## Real-image diagnosis
+
+`../image-diagnosis` is the paired real-image evaluator for `pixels_only` and
+`enabled` image diagnosis. Its approved media is steward-controlled rather than
+committed, and its runner loads actual image bytes for both model views. See its
+README for the required dataset fields, review workflow, and regression rules.
+
 ## Drivetrain Profile Inference
 
 Run all three drivetrain tracers before accepting a drivetrain extractor or
