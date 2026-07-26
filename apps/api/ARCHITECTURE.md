@@ -34,7 +34,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
 | `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records (including session-scoped image-observation extraction runs and ordered provider attempts), metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
-| `providers/` | Replaceable storage and price-lookup integrations | `StorageProvider`, `PriceLookupProvider` |
+| `providers/` | Replaceable storage, price-lookup, and isolated diagnostic-observation extraction integrations | `StorageProvider`, `PriceLookupProvider`, `DiagnosticObservationExtractor` |
 | `adk/` | Internal agent construction, ADK session/runner adaptation, tool adapters, and turn orchestration | `orchestration.py`, `background.py` |
 
 ### Dependency direction
