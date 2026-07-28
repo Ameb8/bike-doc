@@ -62,6 +62,7 @@ fun DiagnosticChatScreen(
         onSubmitChoiceTurn = viewModel::submitChoiceTurn,
         onPhotosSelected = viewModel::onPhotosSelected,
         onRetryPhotoUpload = viewModel::retryPhotoUpload,
+        onRemovePhotoAttachment = viewModel::removePhotoAttachment,
         onRetryMessage = viewModel::retryMessage,
         onNavigateBack = onNavigateBack,
         onViewReport = onViewReport,
@@ -76,6 +77,7 @@ private fun DiagnosticChatContent(
     onSubmitChoiceTurn: (String) -> Unit,
     onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
     onRetryPhotoUpload: (String) -> Unit,
+    onRemovePhotoAttachment: (String) -> Unit,
     onRetryMessage: (String) -> Unit,
     onNavigateBack: () -> Unit,
     onViewReport: (String, String) -> Unit,
@@ -90,6 +92,7 @@ private fun DiagnosticChatContent(
                 onSubmitChoiceTurn = onSubmitChoiceTurn,
                 onPhotosSelected = onPhotosSelected,
                 onRetryPhotoUpload = onRetryPhotoUpload,
+                onRemovePhotoAttachment = onRemovePhotoAttachment,
                 onViewReport = onViewReport,
             )
         },
@@ -268,6 +271,7 @@ private fun DiagnosticInputArea(
     onSubmitChoiceTurn: (String) -> Unit,
     onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
     onRetryPhotoUpload: (String) -> Unit,
+    onRemovePhotoAttachment: (String) -> Unit,
     onViewReport: (String, String) -> Unit,
 ) {
     val inputRequest = state.inputRequest
@@ -296,6 +300,7 @@ private fun DiagnosticInputArea(
                 onSubmitChoiceTurn = onSubmitChoiceTurn,
                 onPhotosSelected = onPhotosSelected,
                 onRetryPhotoUpload = onRetryPhotoUpload,
+                onRemovePhotoAttachment = onRemovePhotoAttachment,
             )
     }
 }
@@ -338,6 +343,7 @@ private fun ActiveInputArea(
     onSubmitChoiceTurn: (String) -> Unit,
     onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
     onRetryPhotoUpload: (String) -> Unit,
+    onRemovePhotoAttachment: (String) -> Unit,
 ) {
     val isInputDisabled = state.isTurnInFlight || state.isStreaming
     Surface(
@@ -349,11 +355,17 @@ private fun ActiveInputArea(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             InputPrompt(inputRequest = inputRequest)
+            PhotoAttachmentArea(
+                state = state,
+                onPhotosSelected = onPhotosSelected,
+                onRetryPhotoUpload = onRetryPhotoUpload,
+                onRemovePhotoAttachment = onRemovePhotoAttachment,
+            )
             when (inputRequest?.type) {
                 "decision" -> {
                     ChoiceRow(
                         inputRequest = inputRequest,
-                        enabled = !isInputDisabled,
+                        enabled = !isInputDisabled && !state.hasPhotoUploadInProgress,
                         onChoiceSelected = onSubmitChoiceTurn,
                     )
                 }
@@ -361,7 +373,7 @@ private fun ActiveInputArea(
                 "confirmation" -> {
                     ConfirmationRow(
                         inputRequest = inputRequest,
-                        enabled = !isInputDisabled,
+                        enabled = !isInputDisabled && !state.hasPhotoUploadInProgress,
                         onConfirm = onSubmitChoiceTurn,
                     )
                 }
@@ -369,7 +381,7 @@ private fun ActiveInputArea(
                 "multiple_choice" -> {
                     ChoiceRow(
                         inputRequest = inputRequest,
-                        enabled = !isInputDisabled,
+                        enabled = !isInputDisabled && !state.hasPhotoUploadInProgress,
                         onChoiceSelected = onSubmitChoiceTurn,
                     )
                     ReplyRow(
@@ -380,21 +392,11 @@ private fun ActiveInputArea(
                 }
 
                 else -> {
-                    if (inputRequest.isPhotoRequest()) {
-                        PhotoReplyArea(
-                            state = state,
-                            onDraftTextChanged = onDraftTextChanged,
-                            onSubmitTextTurn = onSubmitTextTurn,
-                            onPhotosSelected = onPhotosSelected,
-                            onRetryPhotoUpload = onRetryPhotoUpload,
-                        )
-                    } else {
-                        ReplyRow(
-                            state = state,
-                            onDraftTextChanged = onDraftTextChanged,
-                            onSubmitTextTurn = onSubmitTextTurn,
-                        )
-                    }
+                    ReplyRow(
+                        state = state,
+                        onDraftTextChanged = onDraftTextChanged,
+                        onSubmitTextTurn = onSubmitTextTurn,
+                    )
                 }
             }
         }
@@ -402,12 +404,11 @@ private fun ActiveInputArea(
 }
 
 @Composable
-private fun PhotoReplyArea(
+private fun PhotoAttachmentArea(
     state: DiagnosticChatUiState,
-    onDraftTextChanged: (String) -> Unit,
-    onSubmitTextTurn: () -> Unit,
     onPhotosSelected: (List<DiagnosticPhotoSelection>) -> Unit,
     onRetryPhotoUpload: (String) -> Unit,
+    onRemovePhotoAttachment: (String) -> Unit,
 ) {
     val context = LocalContext.current
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -438,7 +439,7 @@ private fun PhotoReplyArea(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PhotoPickerActions(
-            isEnabled = isEnabled,
+            isEnabled = isEnabled && state.canAddPhotos,
             onCameraSelected = {
                 val cameraFile = context.createDiagnosticCameraFile()
                 val cameraUri = context.fileProviderUri(cameraFile)
@@ -454,13 +455,13 @@ private fun PhotoReplyArea(
                 attachment = attachment,
                 isEnabled = isEnabled,
                 onRetryPhotoUpload = onRetryPhotoUpload,
+                onRemovePhotoAttachment = onRemovePhotoAttachment,
             )
         }
-
-        ReplyRow(
-            state = state,
-            onDraftTextChanged = onDraftTextChanged,
-            onSubmitTextTurn = onSubmitTextTurn,
+        Text(
+            text = stringResource(R.string.diagnostic_chat_photo_limit),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
@@ -495,6 +496,7 @@ private fun PhotoAttachmentRow(
     attachment: DiagnosticPhotoAttachment,
     isEnabled: Boolean,
     onRetryPhotoUpload: (String) -> Unit,
+    onRemovePhotoAttachment: (String) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -530,6 +532,12 @@ private fun PhotoAttachmentRow(
             ) {
                 Text(text = stringResource(R.string.diagnostic_chat_retry))
             }
+        }
+        TextButton(
+            onClick = { onRemovePhotoAttachment(attachment.id) },
+            enabled = isEnabled,
+        ) {
+            Text(text = stringResource(R.string.diagnostic_chat_remove_photo))
         }
     }
 }
@@ -623,12 +631,6 @@ private fun ConfirmationRow(
 }
 
 private const val CONFIRMATION_VALUE = "confirm"
-
-private fun InputRequest?.isPhotoRequest(): Boolean =
-    this?.type.equals("photo", ignoreCase = true) ||
-        this?.acceptedMediaTypes.orEmpty().any { it.startsWith("image/") } ||
-        this?.minArtifacts != null ||
-        this?.maxArtifacts != null
 
 private fun Context.toPhotoSelection(uri: Uri): DiagnosticPhotoSelection =
     DiagnosticPhotoSelection(

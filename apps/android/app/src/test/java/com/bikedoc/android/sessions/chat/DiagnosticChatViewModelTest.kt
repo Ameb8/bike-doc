@@ -27,6 +27,7 @@ import org.junit.Rule
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
+@Suppress("LargeClass")
 class DiagnosticChatViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
@@ -230,6 +231,65 @@ class DiagnosticChatViewModelTest {
                 repository.createdTurns.single().body.message.text,
             )
             assertEquals(null, repository.createdTurns.single().body.respondsToInputRequestId)
+        }
+
+    @Test
+    fun `freeform turn accepts attached photos without an image request`() =
+        runTest {
+            val session = repairSession(status = "created", currentInputRequest = null)
+            val repository =
+                FakeSessionRepository(
+                    getRepairSessionResult = ApiResult.Success(session),
+                    createTurnResult = ApiResult.Success(turnAccepted("turn-photo", repairSession(status = "running"))),
+                )
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = repository,
+                    artifactRepository =
+                        FakeArtifactRepository(
+                            ArrayDeque(listOf(ApiResult.Success(artifactRef("artifact-freeform")))),
+                        ),
+                    photoPreparer = FakeDiagnosticPhotoPreparer(),
+                    eventSource = FakeSseEventSource(),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+
+            viewModel.onPhotosSelected(listOf(photoSelection("freeform.jpg")))
+            viewModel.submitTextTurn()
+
+            assertEquals(listOf("artifact-freeform"), repository.createdTurns.single().body.message.artifactIds)
+            assertEquals(null, repository.createdTurns.single().body.respondsToInputRequestId)
+        }
+
+    @Test
+    fun `photo selection is capped at three attachments per turn`() =
+        runTest {
+            val session = repairSession(status = "created", currentInputRequest = null)
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    artifactRepository =
+                        FakeArtifactRepository(
+                            ArrayDeque(
+                                listOf(
+                                    ApiResult.Success(artifactRef("artifact-1")),
+                                    ApiResult.Success(artifactRef("artifact-2")),
+                                    ApiResult.Success(artifactRef("artifact-3")),
+                                ),
+                            ),
+                        ),
+                    photoPreparer = FakeDiagnosticPhotoPreparer(),
+                    eventSource = FakeSseEventSource(),
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = session.id,
+                )
+
+            viewModel.onPhotosSelected((1..4).map { photoSelection("photo-$it.jpg") })
+
+            assertEquals(3, viewModel.uiState.value.photoAttachments.size)
+            assertEquals(listOf("artifact-1", "artifact-2", "artifact-3"), viewModel.uiState.value.selectedArtifactIds)
+            assertFalse(viewModel.uiState.value.canAddPhotos)
         }
 
     @Test
@@ -736,6 +796,13 @@ private fun inputRequest(
     minArtifacts = minArtifacts,
     createdAt = "2026-07-02T00:00:00Z",
 )
+
+private fun photoSelection(name: String) =
+    DiagnosticPhotoSelection(
+        uri = "content://photos/$name",
+        displayName = name,
+        mimeType = "image/jpeg",
+    )
 
 private fun turnAccepted(
     turnId: String,

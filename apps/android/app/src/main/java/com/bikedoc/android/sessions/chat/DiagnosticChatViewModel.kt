@@ -47,6 +47,12 @@ data class DiagnosticChatUiState(
     val latestReportId: String? = null,
     val error: String? = null,
 ) {
+    val canAddPhotos: Boolean
+        get() = canAcceptUserInput && photoAttachments.size < MAX_PHOTOS_PER_TURN
+
+    val hasPhotoUploadInProgress: Boolean
+        get() = photoAttachments.any { it.status == DiagnosticPhotoUploadStatus.Uploading }
+
     val canAcceptUserInput: Boolean
         get() =
             !phaseTransitioned &&
@@ -59,6 +65,7 @@ data class DiagnosticChatUiState(
             val minimumArtifacts = inputRequest?.minArtifacts ?: if (inputRequest.isPhotoRequest()) 1 else 0
             return hasContent &&
                 selectedArtifactIds.size >= minimumArtifacts &&
+                !hasPhotoUploadInProgress &&
                 canAcceptUserInput &&
                 !isTurnInFlight &&
                 !isStreaming
@@ -143,18 +150,19 @@ class DiagnosticChatViewModel
         fun submitChoiceTurn(choiceValue: String) {
             submitTurn(
                 text = choiceValue,
-                artifactIds = emptyList(),
+                artifactIds = _uiState.value.selectedArtifactIds,
                 respondsToInputRequestId = _uiState.value.activeInputRequestId(),
             )
         }
 
         fun onPhotosSelected(selections: List<DiagnosticPhotoSelection>) {
-            if (selections.isEmpty() || !_uiState.value.inputRequest.isPhotoRequest()) {
+            val state = _uiState.value
+            if (selections.isEmpty() || !state.canAddPhotos) {
                 return
             }
 
             val attachments =
-                selections.map { selection ->
+                selections.take(MAX_PHOTOS_PER_TURN - state.photoAttachments.size).map { selection ->
                     DiagnosticPhotoAttachment(
                         id = UUID.randomUUID().toString(),
                         selection = selection,
@@ -167,6 +175,15 @@ class DiagnosticChatViewModel
                     error = null,
                 )
             attachments.forEach(::uploadAttachment)
+        }
+
+        fun removePhotoAttachment(attachmentId: String) {
+            _uiState.value =
+                _uiState.value
+                    .copy(
+                        photoAttachments =
+                            _uiState.value.photoAttachments.filterNot { it.id == attachmentId },
+                    ).syncSelectedArtifactIds()
         }
 
         fun retryPhotoUpload(attachmentId: String) {
@@ -477,6 +494,8 @@ class DiagnosticChatViewModel
             return hasContent &&
                 state.canAcceptUserInput &&
                 artifactIds.size >= minimumArtifacts &&
+                artifactIds.size <= MAX_PHOTOS_PER_TURN &&
+                !state.hasPhotoUploadInProgress &&
                 !state.isTurnInFlight &&
                 !state.isStreaming
         }
@@ -716,3 +735,5 @@ private fun DiagnosticChatUiState.syncSelectedArtifactIds(): DiagnosticChatUiSta
                 attachment.artifactId?.takeIf { attachment.status == DiagnosticPhotoUploadStatus.Ready }
             },
     )
+
+private const val MAX_PHOTOS_PER_TURN = 3

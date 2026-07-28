@@ -288,6 +288,12 @@ upload. In particular, `HEIC` and `HEIF` images must be converted on-device
 to a backend-accepted format, preferably `JPEG`, before calling
 `POST /v1/artifacts`.
 
+Users may attach diagnostic photos to any submitted diagnostic turn, whether
+the turn is freeform or responds to a text, photo, choice, decision, or
+confirmation request. The client must limit one pending turn to three photos.
+Photo uploads use the same `diagnostic_photo` artifact flow in every case;
+the resulting artifact IDs are included in the turn's `message.artifact_ids`.
+
 This is an explicit MVP contract decision. The backend does not need native
 `HEIC` / `HEIF` upload support for this version.
 

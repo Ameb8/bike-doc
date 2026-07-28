@@ -165,6 +165,8 @@
     <string name="diagnostic_chat_uploading">Uploading...</string>
     <string name="diagnostic_chat_ready">Ready</string>
     <string name="diagnostic_chat_upload_failed">Upload failed</string>
+    <string name="diagnostic_chat_photo_limit">Up to 3 photos per message.</string>
+    <string name="diagnostic_chat_remove_photo">Remove</string>
     <string name="diagnostic_chat_confirm">Confirm</string>
     <string name="diagnostic_chat_retry">Retry</string>
     <string name="diagnostic_chat_failed">Not sent</string>
