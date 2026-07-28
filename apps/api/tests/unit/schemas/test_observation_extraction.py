@@ -71,6 +71,14 @@ def test_validates_and_projects_an_artifact_backed_observation() -> None:
     validated = validate_observation_output(output, [make_image()])
 
     assert validated.diagnostic_agent_projection().model_dump() == {
+        "image_assessments": [
+            {
+                "artifact_id": "art_rear",
+                "assessability": "usable",
+                "visible_areas": ["rear brake"],
+                "limitations": [],
+            },
+        ],
         "observations": [
             {
                 "artifact_ids": ["art_rear"],
@@ -82,6 +90,10 @@ def test_validates_and_projects_an_artifact_backed_observation() -> None:
                 "safety_relevant": True,
             },
         ],
+        "suggested_follow_up": {
+            "kind": "photo",
+            "request": "Provide a straight-on caliper photo.",
+        },
     }
 
 
@@ -107,7 +119,23 @@ def test_valid_empty_observation_output_serializes_without_raw_scores() -> None:
     validated = validate_observation_output(output, [make_image()])
     serialized = validated.diagnostic_agent_projection().model_dump_json()
 
-    assert json.loads(serialized) == {"observations": []}
+    assert json.loads(serialized) == {
+        "image_assessments": [
+            {
+                "artifact_id": "art_rear",
+                "assessability": "unusable",
+                "visible_areas": [],
+                "limitations": [
+                    {
+                        "type": "darkness",
+                        "description": "The bike is not visible.",
+                    },
+                ],
+            },
+        ],
+        "observations": [],
+        "suggested_follow_up": None,
+    }
     assert "raw_model_score" not in serialized
 
 

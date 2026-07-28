@@ -99,6 +99,15 @@ class Settings(BaseSettings):
     artifact_gcs_bucket: str | None = None
     artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     image_analysis_mode: ImageAnalysisMode = "off"
+    observation_extraction_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
+    observation_extraction_model: str = Field(default="gemini-2.5-flash", min_length=1)
+    observation_extraction_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    observation_extraction_extractor_version: str = Field(
+        default="visual-observation-extractor.v1", min_length=1
+    )
+    observation_extraction_prompt_version: str = Field(
+        default="visual-observation-prompt.v1", min_length=1
+    )
     diagnostic_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     diagnostic_agent_model: str = Field(default="gemini-2.5-flash", min_length=1)
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
@@ -263,7 +272,22 @@ class Settings(BaseSettings):
             return value.strip().lower()
         return value
 
-    @field_validator("profile_inference_model", "profile_inference_extractor_version")
+    @field_validator("observation_extraction_llm_provider", mode="before")
+    @classmethod
+    def validate_observation_extraction_llm_provider(cls, value: object) -> object:
+        """Normalize the isolated diagnostic-observation provider selection."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator(
+        "profile_inference_model",
+        "profile_inference_extractor_version",
+        "observation_extraction_model",
+        "observation_extraction_extractor_version",
+        "observation_extraction_prompt_version",
+    )
     @classmethod
     def validate_profile_inference_strings(cls, value: str) -> str:
         """Reject blank model or version identifiers used for run idempotency."""
@@ -284,7 +308,9 @@ class Settings(BaseSettings):
             raise ValueError("diagnostic numeric settings must be finite")
         return value
 
-    @field_validator("profile_inference_timeout_seconds")
+    @field_validator(
+        "profile_inference_timeout_seconds", "observation_extraction_timeout_seconds"
+    )
     @classmethod
     def validate_finite_profile_inference_float(cls, value: float) -> float:
         """Reject non-finite profile-inference generation settings."""
@@ -460,6 +486,36 @@ def validate_profile_inference_runtime_configuration(
         raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_PROJECT")
     if not env.get("GOOGLE_CLOUD_LOCATION"):
         raise ValueError("vertex_ai profile inference requires GOOGLE_CLOUD_LOCATION")
+
+
+def validate_observation_extraction_runtime_configuration(
+    settings: Settings,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Validate credentials for the isolated diagnostic-observation extractor."""
+
+    if settings.environment.lower() == "test":
+        return
+    env = environ if environ is not None else os.environ
+    if settings.observation_extraction_llm_provider == "google_ai":
+        if env.get("GEMINI_API_KEY") or env.get("GOOGLE_API_KEY"):
+            return
+        raise ValueError(
+            "google_ai observation extraction requires GEMINI_API_KEY or GOOGLE_API_KEY"
+        )
+    if env.get("GOOGLE_GENAI_USE_VERTEXAI", "").strip().lower() != "true":
+        raise ValueError(
+            "vertex_ai observation extraction requires GOOGLE_GENAI_USE_VERTEXAI=true"
+        )
+    if not env.get("GOOGLE_CLOUD_PROJECT"):
+        raise ValueError(
+            "vertex_ai observation extraction requires GOOGLE_CLOUD_PROJECT"
+        )
+    if not env.get("GOOGLE_CLOUD_LOCATION"):
+        raise ValueError(
+            "vertex_ai observation extraction requires GOOGLE_CLOUD_LOCATION"
+        )
 
 
 def validate_artifact_storage_runtime_configuration(

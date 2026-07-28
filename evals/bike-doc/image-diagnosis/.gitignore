@@ -1,0 +1,3 @@
+# Approved real evaluation media stays in steward-controlled storage.
+images/
+*.result.json

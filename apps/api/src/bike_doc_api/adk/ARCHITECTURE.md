@@ -104,6 +104,16 @@ serialized in app context, preserving artifact identity without sending pixels
 again. Storage locations, provider objects, raw scores, and historical image
 bytes are not representable in this runner interface.
 
+Visual preparation is idempotent for ordinary replay: concurrent calls atomically
+reuse the one turn-keyed observation run, and a completed or failed run does not
+make another provider call. The service exposes an explicit recovery operation
+only for a retryable failed run before its write-once diagnostic-agent-start
+marker. Recovery reuses the accepted turn's snapshotted mode, versions, artifact
+identity, and run, appending one ordered provider attempt; it never creates a
+second observation record. Cancellation propagates without manufacturing a
+failed extraction state. Once the marker is set, no recovery or late extraction
+completion may alter the run.
+
 `background.py` constructs this visual-context service with fresh repositories,
 storage, settings-driven preprocessing, and the fresh background database
 session. It never retains route/request-scoped dependencies. `off` mode keeps

@@ -34,7 +34,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
 | `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records (including session-scoped image-observation extraction runs and ordered provider attempts), metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
-| `providers/` | Replaceable storage and price-lookup integrations | `StorageProvider`, `PriceLookupProvider` |
+| `providers/` | Replaceable storage, price-lookup, and isolated diagnostic-observation extraction integrations | `StorageProvider`, `PriceLookupProvider`, `DiagnosticObservationExtractor` |
 | `adk/` | Internal agent construction, ADK session/runner adaptation, tool adapters, and turn orchestration | `orchestration.py`, `background.py` |
 
 ### Dependency direction
@@ -124,7 +124,12 @@ orchestration graph, including `DiagnosticVisualContextService` with fresh
 turn, repair-session, artifact, storage, settings, and preprocessing
 dependencies. Before building the runner request, the orchestrator prepares
 only the accepted turn's images. `pixels_only` supplies labeled normalized
-pixels, per-artifact statuses, and empty observation projections; `off` never
+pixels, per-artifact statuses, and empty observation projections; `shadow`
+also persists one isolated extraction run and attempt history but intentionally
+supplies those same empty projections; `enabled` supplies the current run's
+validated score-free observations, assessability, and follow-up projection with
+the same pixels, plus completed non-redacted enabled projections from earlier
+turns in the repair session. Earlier turns never reload artifact bytes. `off` never
 reads pixels and supplies uninspected statuses. An image-only turn for which
 the agent cannot be invoked persists its safe recoverable error and terminal
 awaiting-user event without invoking the runner. `DiagnosticRunner` translates
@@ -132,6 +137,12 @@ Google ADK output into app-owned event objects; no raw ADK event, prompt, tool
 trace, model setting, or ADK session ID crosses that boundary. Profile
 inference is separately scheduled after diagnostic processing and does not
 delay it.
+
+The visual-context service seam is verified with deterministic storage and
+extractor fakes plus real encoded image fixtures for one through three current
+artifacts in every rollout mode. API, runner, event, report, safety, recovery,
+and invalidation tests cover the adjacent durable/public seams; live-model
+quality remains in the separate evaluation workflow.
 
 State-mutating tools run directly inside ADK's tool loop. The input-request,
 safety-flag, and report tools call the corresponding backend services, which
@@ -211,7 +222,11 @@ row maps a product phase to its opaque internal ADK session ID. Repositories
 encapsulate SQLAlchemy queries, including owner-scoped and `FOR UPDATE` reads;
 they return ORM models and do not decide public HTTP behavior.
 
-`db/session.py` is the async engine/session boundary. Alembic migrations are
+`db/session.py` is the async engine/session boundary. Artifact lifecycle callers
+use the internal `DiagnosticEvidenceInvalidationService` hook when an artifact
+becomes inaccessible. It redacts every citing observation-extraction run and
+makes citing reports ineligible for ordinary evidence reads; it is not a public
+deletion endpoint. Alembic migrations are
 the authoritative record of table, constraint, and index changes. When adding
 or changing persisted behavior, update model, repository, migration, and the
 tests/spec that define its observable semantics as appropriate.

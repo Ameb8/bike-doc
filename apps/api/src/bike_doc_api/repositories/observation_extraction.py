@@ -1,9 +1,11 @@
 """Persistence operations for diagnostic observation-extraction runs."""
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.observation_extraction import (
@@ -24,6 +26,33 @@ class ObservationExtractionRunRepository:
         self._session.add(run)
         await self._session.flush()
         return run
+
+    async def get_or_create(
+        self, run: ObservationExtractionRun
+    ) -> ObservationExtractionRun:
+        """Return the sole logical run, including when preparation races."""
+
+        values = {
+            column.name: getattr(run, column.name)
+            for column in ObservationExtractionRun.__table__.columns
+            if column.name not in {"created_at", "updated_at"}
+            and getattr(run, column.name, None) is not None
+        }
+        statement = (
+            insert(ObservationExtractionRun)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["turn_id"])
+            .returning(ObservationExtractionRun.id)
+        )
+        created_id = (await self._session.execute(statement)).scalar_one_or_none()
+        if created_id is not None:
+            created = await self._get_for_update(created_id)
+            assert created is not None
+            return created
+        existing = await self.get_by_turn_id(run.turn_id)
+        if existing is None:
+            raise RuntimeError("observation extraction run was not created")
+        return existing
 
     async def get_by_turn_id(self, turn_id: str) -> ObservationExtractionRun | None:
         """Return the one logical run for an accepted turn."""
@@ -81,6 +110,18 @@ class ObservationExtractionRunRepository:
         run.failure_metadata = failure_metadata
         run.failed_at = failed_at or datetime.now(UTC)
         run.completed_at = None
+        await self._session.flush()
+        return run
+
+    async def set_preprocessing_manifest(
+        self,
+        run: ObservationExtractionRun,
+        *,
+        manifest: list[dict[str, Any]],
+    ) -> ObservationExtractionRun:
+        """Persist byte-free preprocessing outcomes before provider access."""
+
+        run.preprocessing_manifest = manifest
         await self._session.flush()
         return run
 
@@ -164,6 +205,18 @@ class ObservationExtractionRunRepository:
         attempt.output_tokens = output_tokens
         attempt.provider_cost_microunits = provider_cost_microunits
         attempt.completed_at = completed_at or datetime.now(UTC)
+        run = await self._get_for_update(attempt.run_id)
+        if run is None:
+            raise ValueError("observation extraction run does not exist")
+        run.provider_latency_ms += latency_ms or 0
+        if input_tokens is not None:
+            run.input_tokens = (run.input_tokens or 0) + input_tokens
+        if output_tokens is not None:
+            run.output_tokens = (run.output_tokens or 0) + output_tokens
+        if provider_cost_microunits is not None:
+            run.provider_cost_microunits = (
+                run.provider_cost_microunits or 0
+            ) + provider_cost_microunits
         await self._session.flush()
         return attempt
 
@@ -183,6 +236,25 @@ class ObservationExtractionRunRepository:
         await self._session.flush()
         return run
 
+    async def redact_citing_artifact(self, *, artifact_id: str, reason: str) -> int:
+        """Irreversibly redact every run citing an inaccessible artifact."""
+
+        result = await self._session.execute(
+            update(ObservationExtractionRun)
+            .where(
+                ObservationExtractionRun.input_artifact_ids.contains([artifact_id]),
+                ObservationExtractionRun.redacted_at.is_(None),
+            )
+            .values(
+                redacted_at=datetime.now(UTC),
+                redaction_reason=reason,
+                validated_output=None,
+                preprocessing_manifest=[],
+            ),
+        )
+        await self._session.flush()
+        return int(cast(CursorResult[Any], result).rowcount or 0)
+
     async def list_usable_for_session(
         self,
         repair_session_id: str,
@@ -195,6 +267,7 @@ class ObservationExtractionRunRepository:
             select(ObservationExtractionRun)
             .where(
                 ObservationExtractionRun.repair_session_id == repair_session_id,
+                ObservationExtractionRun.image_analysis_mode == "enabled",
                 ObservationExtractionRun.status == "completed",
                 ObservationExtractionRun.redacted_at.is_(None),
             )

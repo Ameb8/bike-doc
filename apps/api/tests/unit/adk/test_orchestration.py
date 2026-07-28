@@ -155,6 +155,7 @@ class _VisualContext:
     def __init__(self, context: DiagnosticVisualContext | None = None) -> None:
         self.context = context or DiagnosticVisualContext(True, (), (), (), (), ())
         self.calls: list[tuple[str, str]] = []
+        self.agent_started_turn_ids: list[str] = []
 
     async def prepare_turn(
         self,
@@ -164,6 +165,9 @@ class _VisualContext:
     ) -> DiagnosticVisualContext:
         self.calls.append((user_id, turn_id))
         return self.context
+
+    async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
+        self.agent_started_turn_ids.append(turn_id)
 
 
 class _Runner:
@@ -334,8 +338,11 @@ def _orchestrator(
 async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     store = _Store()
     runner = _Runner()
+    visual_context = _VisualContext()
 
-    await _orchestrator(store=store, runner=runner).process_turn(
+    await _orchestrator(
+        store=store, runner=runner, visual_context=visual_context
+    ).process_turn(
         current_user=_user(),
         turn=_turn(artifact_ids=["art_1"]),
     )
@@ -358,6 +365,7 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert request.current_observations == ()
     assert request.prior_observations == ()
     assert request.artifact_processing_statuses == ()
+    assert visual_context.agent_started_turn_ids == ["turn_orch"]
     assert [event.type for event in store.events] == [
         "artifact.referenced",
         "turn.completed",

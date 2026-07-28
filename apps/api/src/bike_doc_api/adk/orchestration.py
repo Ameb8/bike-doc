@@ -113,6 +113,9 @@ class DiagnosticVisualContextServiceProtocol(Protocol):
     ) -> DiagnosticVisualContext:
         """Return bounded visual context for one accepted turn."""
 
+    async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
+        """Close any extraction lifecycle immediately before runner invocation."""
+
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticTurnOrchestrator:
@@ -202,6 +205,9 @@ class DiagnosticTurnOrchestrator:
                 current_observations=visual_context.current_observations,
                 prior_observations=visual_context.prior_observations,
                 artifact_processing_statuses=visual_context.artifact_processing_statuses,
+            )
+            await self.visual_context.mark_diagnostic_agent_started(
+                turn_id=turn_snapshot.id,
             )
             async for event in self.runner.stream(request):
                 await self._process_runner_event(

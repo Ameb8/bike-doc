@@ -1,0 +1,18 @@
+{
+  "schema_version": "bike_doc_image_diagnosis_eval.v1",
+  "dataset_version": "reviewed-real-images-v1.0.0",
+  "provenance": {
+    "policy_version": "bike-doc-real-image-handling.v1",
+    "approved_by": "qualified-data-steward"
+  },
+  "versions": {
+    "preprocessing_version": "image-preprocessing.v1",
+    "observation_schema_version": "visual-observation.v1",
+    "extractor_prompt_version": "visual-observation-prompt.v1",
+    "extractor_model_version": "configured-at-baseline-review",
+    "diagnostic_prompt_version": "diagnostic-image-prompt.v1",
+    "diagnostic_model_version": "configured-at-baseline-review",
+    "resolution_policy_version": "normalized-2048.v1"
+  },
+  "cases": []
+}
