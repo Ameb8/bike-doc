@@ -1,0 +1,24 @@
+README.md
+  s_e5145681e9ef17::t_a71f98fc3b8335 261-333
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "ae83008c675f35d36de9fdcd77eeb8cce48c3291",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_e5145681e9ef17": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f9d32-d123-7c62-9b77-5f36602f4660",
+        "model": "gpt-5.6-luna"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
