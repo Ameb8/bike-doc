@@ -258,6 +258,80 @@ BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS=2048
 BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS=30
 ```
 
+### Structured Observation Extraction Configuration
+
+Diagnostic image analysis can make a separate, context-free Gemini call to
+extract structured visual observations before the regular diagnostic agent
+runs. Configure the rollout mode with:
+
+```text
+BIKE_DOC_API_IMAGE_ANALYSIS_MODE=off
+```
+
+The mode is snapshotted onto each image-bearing turn. Changing `.env` affects
+new turns after the API is restarted; it does not change turns that have
+already been accepted.
+
+| Mode | Behavior |
+|---|---|
+| `off` | No image pixels are sent to either model and no extraction call is made. |
+| `pixels_only` | No extraction call is made; normalized image pixels are sent to the diagnostic agent. |
+| `shadow` | Extraction runs and is persisted for evaluation, but its observations are not supplied to the diagnostic agent. |
+| `enabled` | Extraction runs and completed observations are supplied to the diagnostic agent. |
+
+The default is `off`. Use `shadow` to measure extraction behavior without
+changing diagnostic-agent context, or `enabled` to use the extracted
+observations in diagnosis.
+
+The extraction-specific settings are:
+
+```text
+BIKE_DOC_API_OBSERVATION_EXTRACTION_LLM_PROVIDER=google_ai
+BIKE_DOC_API_OBSERVATION_EXTRACTION_MODEL=gemini-2.5-flash
+BIKE_DOC_API_OBSERVATION_EXTRACTION_TIMEOUT_SECONDS=30
+BIKE_DOC_API_OBSERVATION_EXTRACTION_EXTRACTOR_VERSION=visual-observation-extractor.v1
+BIKE_DOC_API_OBSERVATION_EXTRACTION_PROMPT_VERSION=visual-observation-prompt.v1
+```
+
+`...LLM_PROVIDER` accepts `google_ai` or `vertex_ai`. This currently changes
+the Google transport only; the implementation is Gemini-specific and does not
+provide alternate model providers. The model name can be changed to any
+Gemini model supported by the configured Google SDK. The timeout must be
+positive. Extractor and prompt versions are non-empty identifiers recorded
+with each run; update them when changing the extraction implementation or
+prompt.
+
+For Google AI Studio / Gemini API key mode, set either key:
+
+```text
+BIKE_DOC_API_OBSERVATION_EXTRACTION_LLM_PROVIDER=google_ai
+GEMINI_API_KEY=<ai-studio-api-key>
+# or GOOGLE_API_KEY=<ai-studio-api-key>
+```
+
+For Vertex AI mode, configure Vertex and usable Application Default
+Credentials:
+
+```text
+BIKE_DOC_API_OBSERVATION_EXTRACTION_LLM_PROVIDER=vertex_ai
+GOOGLE_GENAI_USE_VERTEXAI=true
+GOOGLE_CLOUD_PROJECT=<google-cloud-project-id>
+GOOGLE_CLOUD_LOCATION=<vertex-location>
+```
+
+Local Vertex runs can use `gcloud auth application-default login` or
+`GOOGLE_APPLICATION_CREDENTIALS`. Production deployments should use an
+attached service account. The regular diagnostic-agent provider credentials
+are still required because extraction and diagnosis are separate model calls.
+
+Apply the database migrations before enabling `shadow` or `enabled` so the
+`observation_extraction_runs` and `observation_extraction_attempts` tables
+exist:
+
+```bash
+uv run alembic upgrade head
+```
+
 When changing ADK agent structure or tools, validate the agent entrypoint:
 
 ```bash
