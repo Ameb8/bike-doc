@@ -1,0 +1,490 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1586pt" height="2304pt" viewBox="0.00 0.00 1586.00 2304.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 2299.6)">
+<title>public</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-2299.6 1581.63,-2299.6 1581.63,4 -4,4"/>
+<!-- alembic_version -->
+<g id="node1" class="node">
+<title>alembic_version</title>
+<polygon fill="none" stroke="black" points="743.36,-2132.3 743.36,-2181.9 908.64,-2181.9 908.64,-2132.3 743.36,-2132.3"/>
+<text xml:space="preserve" text-anchor="middle" x="826" y="-2165.3" font-family="Times,serif" font-size="14.00">alembic_version</text>
+<polyline fill="none" stroke="black" points="743.36,-2157.1 908.64,-2157.1"/>
+<text xml:space="preserve" text-anchor="start" x="751.36" y="-2140.5" font-family="Times,serif" font-size="14.00">version_num : varchar(32)</text>
+</g>
+<!-- artifact_refs -->
+<g id="node2" class="node">
+<title>artifact_refs</title>
+<polygon fill="none" stroke="black" points="392.58,-1006.7 392.58,-1417.1 629.42,-1417.1 629.42,-1006.7 392.58,-1006.7"/>
+<text xml:space="preserve" text-anchor="middle" x="511" y="-1400.5" font-family="Times,serif" font-size="14.00">artifact_refs</text>
+<polyline fill="none" stroke="black" points="392.58,-1392.3 629.42,-1392.3"/>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1375.7" font-family="Times,serif" font-size="14.00">user_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1358.9" font-family="Times,serif" font-size="14.00"> repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1342.1" font-family="Times,serif" font-size="14.00"> bike_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1325.3" font-family="Times,serif" font-size="14.00"> client_artifact_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1308.5" font-family="Times,serif" font-size="14.00"> request_hash : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1291.7" font-family="Times,serif" font-size="14.00"> purpose : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1274.9" font-family="Times,serif" font-size="14.00"> media_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1258.1" font-family="Times,serif" font-size="14.00"> mime_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1241.3" font-family="Times,serif" font-size="14.00"> filename : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1224.5" font-family="Times,serif" font-size="14.00"> byte_size : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1207.7" font-family="Times,serif" font-size="14.00"> width : integer</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1190.9" font-family="Times,serif" font-size="14.00"> height : integer</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1174.1" font-family="Times,serif" font-size="14.00"> duration_seconds : numeric(10,3)</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1157.3" font-family="Times,serif" font-size="14.00"> status : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1140.5" font-family="Times,serif" font-size="14.00"> rejection_reason : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1123.7" font-family="Times,serif" font-size="14.00"> content_sha256 : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1106.9" font-family="Times,serif" font-size="14.00"> storage_provider : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1090.1" font-family="Times,serif" font-size="14.00"> storage_bucket : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1073.3" font-family="Times,serif" font-size="14.00"> storage_path : text</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1056.5" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1039.7" font-family="Times,serif" font-size="14.00"> updated_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="392.58,-1031.5 629.42,-1031.5"/>
+<text xml:space="preserve" text-anchor="start" x="400.58" y="-1014.9" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- bike_profiles -->
+<g id="node5" class="node">
+<title>bike_profiles</title>
+<polygon fill="none" stroke="black" points="185.58,-212.7 185.58,-555.9 422.42,-555.9 422.42,-212.7 185.58,-212.7"/>
+<text xml:space="preserve" text-anchor="middle" x="304" y="-539.3" font-family="Times,serif" font-size="14.00">bike_profiles</text>
+<polyline fill="none" stroke="black" points="185.58,-531.1 422.42,-531.1"/>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-514.5" font-family="Times,serif" font-size="14.00">user_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-497.7" font-family="Times,serif" font-size="14.00"> display_name : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-480.9" font-family="Times,serif" font-size="14.00"> make : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-464.1" font-family="Times,serif" font-size="14.00"> model : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-447.3" font-family="Times,serif" font-size="14.00"> model_year : integer</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-430.5" font-family="Times,serif" font-size="14.00"> bike_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-413.7" font-family="Times,serif" font-size="14.00"> frame_material : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-396.9" font-family="Times,serif" font-size="14.00"> drivetrain : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-380.1" font-family="Times,serif" font-size="14.00"> brake_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-363.3" font-family="Times,serif" font-size="14.00"> wheel_size : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-346.5" font-family="Times,serif" font-size="14.00"> tire_size : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-329.7" font-family="Times,serif" font-size="14.00"> notes : text</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-312.9" font-family="Times,serif" font-size="14.00"> deleted_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-296.1" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-279.3" font-family="Times,serif" font-size="14.00"> updated_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-262.5" font-family="Times,serif" font-size="14.00"> profile_revision : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-245.7" font-family="Times,serif" font-size="14.00"> technical_profile : jsonb</text>
+<polyline fill="none" stroke="black" points="185.58,-237.5 422.42,-237.5"/>
+<text xml:space="preserve" text-anchor="start" x="193.58" y="-220.9" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- artifact_refs&#45;&gt;bike_profiles -->
+<g id="edge1" class="edge">
+<title>artifact_refs-&gt;bike_profiles</title>
+<path fill="none" stroke="#595959" d="M402.53,-1006.26C402.53,-1006.26 402.53,-567.58 402.53,-567.58"/>
+<polygon fill="#595959" stroke="#595959" points="406.03,-567.58 402.53,-557.58 399.03,-567.58 406.03,-567.58"/>
+<text xml:space="preserve" text-anchor="middle" x="454.39" y="-777.1" font-family="Times,serif" font-size="14.00">bike_id:id</text>
+</g>
+<!-- repair_sessions -->
+<g id="node12" class="node">
+<title>repair_sessions</title>
+<polygon fill="none" stroke="black" points="695.58,-609.7 695.58,-952.9 932.42,-952.9 932.42,-609.7 695.58,-609.7"/>
+<text xml:space="preserve" text-anchor="middle" x="814" y="-936.3" font-family="Times,serif" font-size="14.00">repair_sessions</text>
+<polyline fill="none" stroke="black" points="695.58,-928.1 932.42,-928.1"/>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-911.5" font-family="Times,serif" font-size="14.00">user_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-894.7" font-family="Times,serif" font-size="14.00"> bike_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-877.9" font-family="Times,serif" font-size="14.00"> client_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-861.1" font-family="Times,serif" font-size="14.00"> request_hash : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-844.3" font-family="Times,serif" font-size="14.00"> phase : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-827.5" font-family="Times,serif" font-size="14.00"> status : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-810.7" font-family="Times,serif" font-size="14.00"> safety_state : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-793.9" font-family="Times,serif" font-size="14.00"> current_input_request : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-777.1" font-family="Times,serif" font-size="14.00"> execution_progress : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-760.3" font-family="Times,serif" font-size="14.00"> active_safety_flags : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-743.5" font-family="Times,serif" font-size="14.00"> latest_event_sequence : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-726.7" font-family="Times,serif" font-size="14.00"> diagnostic_report_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-709.9" font-family="Times,serif" font-size="14.00"> plan_report_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-693.1" font-family="Times,serif" font-size="14.00"> execution_report_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-676.3" font-family="Times,serif" font-size="14.00"> shop_referral_report_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-659.5" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-642.7" font-family="Times,serif" font-size="14.00"> updated_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="695.58,-634.5 932.42,-634.5"/>
+<text xml:space="preserve" text-anchor="start" x="703.58" y="-617.9" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- artifact_refs&#45;&gt;repair_sessions -->
+<g id="edge2" class="edge">
+<title>artifact_refs-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M615.44,-1006.23C615.44,-970.74 615.44,-945 615.44,-945 615.44,-945 683.83,-945 683.83,-945"/>
+<polygon fill="#595959" stroke="#595959" points="683.83,-948.5 693.83,-945 683.83,-941.5 683.83,-948.5"/>
+<text xml:space="preserve" text-anchor="middle" x="622.38" y="-975.6" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- users -->
+<g id="node14" class="node">
+<title>users</title>
+<polygon fill="none" stroke="black" points="368.54,-8.9 368.54,-150.5 601.46,-150.5 601.46,-8.9 368.54,-8.9"/>
+<text xml:space="preserve" text-anchor="middle" x="485" y="-133.9" font-family="Times,serif" font-size="14.00">users</text>
+<polyline fill="none" stroke="black" points="368.54,-125.7 601.46,-125.7"/>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-109.1" font-family="Times,serif" font-size="14.00">auth_subject : text</text>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-92.3" font-family="Times,serif" font-size="14.00"> email : text</text>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-75.5" font-family="Times,serif" font-size="14.00"> display_name : text</text>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-58.7" font-family="Times,serif" font-size="14.00"> skill_level : text</text>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-41.9" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="368.54,-33.7 601.46,-33.7"/>
+<text xml:space="preserve" text-anchor="start" x="376.54" y="-17.1" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- artifact_refs&#45;&gt;users -->
+<g id="edge3" class="edge">
+<title>artifact_refs-&gt;users</title>
+<path fill="none" stroke="#595959" d="M482.1,-1006.21C482.1,-1006.21 482.1,-162.49 482.1,-162.49"/>
+<polygon fill="#595959" stroke="#595959" points="485.6,-162.49 482.1,-152.49 478.6,-162.49 485.6,-162.49"/>
+<text xml:space="preserve" text-anchor="middle" x="513" y="-578.6" font-family="Times,serif" font-size="14.00">user_id:id</text>
+</g>
+<!-- bike_fact_claims -->
+<g id="node3" class="node">
+<title>bike_fact_claims</title>
+<polygon fill="none" stroke="black" points="146.47,-626.5 146.47,-936.1 389.53,-936.1 389.53,-626.5 146.47,-626.5"/>
+<text xml:space="preserve" text-anchor="middle" x="268" y="-919.5" font-family="Times,serif" font-size="14.00">bike_fact_claims</text>
+<polyline fill="none" stroke="black" points="146.47,-911.3 389.53,-911.3"/>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-894.7" font-family="Times,serif" font-size="14.00">bike_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-877.9" font-family="Times,serif" font-size="14.00"> field_path : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-861.1" font-family="Times,serif" font-size="14.00"> value : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-844.3" font-family="Times,serif" font-size="14.00"> source_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-827.5" font-family="Times,serif" font-size="14.00"> source_ref : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-810.7" font-family="Times,serif" font-size="14.00"> evidence_refs : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-793.9" font-family="Times,serif" font-size="14.00"> scope_assumption : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-777.1" font-family="Times,serif" font-size="14.00"> observed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-760.3" font-family="Times,serif" font-size="14.00"> evidence_basis : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-743.5" font-family="Times,serif" font-size="14.00"> visibility : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-726.7" font-family="Times,serif" font-size="14.00"> model_score : double precision</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-709.9" font-family="Times,serif" font-size="14.00"> evidence_cues : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-693.1" font-family="Times,serif" font-size="14.00"> disposition : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-676.3" font-family="Times,serif" font-size="14.00"> disposition_reason : text</text>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-659.5" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="146.47,-651.3 389.53,-651.3"/>
+<text xml:space="preserve" text-anchor="start" x="154.47" y="-634.7" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- bike_fact_claims&#45;&gt;bike_profiles -->
+<g id="edge4" class="edge">
+<title>bike_fact_claims-&gt;bike_profiles</title>
+<path fill="none" stroke="#595959" d="M287.56,-626.1C287.56,-626.1 287.56,-567.66 287.56,-567.66"/>
+<polygon fill="#595959" stroke="#595959" points="291.06,-567.66 287.56,-557.66 284.06,-567.66 291.06,-567.66"/>
+<text xml:space="preserve" text-anchor="middle" x="314.39" y="-578.6" font-family="Times,serif" font-size="14.00">bike_id:id</text>
+</g>
+<!-- bike_field_resolutions -->
+<g id="node4" class="node">
+<title>bike_field_resolutions</title>
+<polygon fill="none" stroke="black" points="44.89,-1090.7 44.89,-1333.1 357.11,-1333.1 357.11,-1090.7 44.89,-1090.7"/>
+<text xml:space="preserve" text-anchor="middle" x="201" y="-1316.5" font-family="Times,serif" font-size="14.00">bike_field_resolutions</text>
+<polyline fill="none" stroke="black" points="44.89,-1308.3 357.11,-1308.3"/>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1291.7" font-family="Times,serif" font-size="14.00">current_value : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1274.9" font-family="Times,serif" font-size="14.00"> resolution_state : text</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1258.1" font-family="Times,serif" font-size="14.00"> current_claim_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1241.3" font-family="Times,serif" font-size="14.00"> supporting_claim_ids : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1224.5" font-family="Times,serif" font-size="14.00"> conflicting_claim_ids : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1207.7" font-family="Times,serif" font-size="14.00"> effective_confidence : text</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1190.9" font-family="Times,serif" font-size="14.00"> source_type : text</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1174.1" font-family="Times,serif" font-size="14.00"> observed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1157.3" font-family="Times,serif" font-size="14.00"> resolved_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1140.5" font-family="Times,serif" font-size="14.00"> manual_clear_barrier_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="44.89,-1132.3 357.11,-1132.3"/>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1115.7" font-family="Times,serif" font-size="14.00">bike_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="52.89" y="-1098.9" font-family="Times,serif" font-size="14.00"> field_path : text</text>
+</g>
+<!-- bike_field_resolutions&#45;&gt;bike_fact_claims -->
+<g id="edge5" class="edge">
+<title>bike_field_resolutions-&gt;bike_fact_claims</title>
+<path fill="none" stroke="#595959" d="M251.79,-1090.23C251.79,-1090.23 251.79,-948.04 251.79,-948.04"/>
+<polygon fill="#595959" stroke="#595959" points="255.29,-948.04 251.79,-938.04 248.29,-948.04 255.29,-948.04"/>
+<text xml:space="preserve" text-anchor="middle" x="289.2" y="-975.6" font-family="Times,serif" font-size="14.00">current_claim_id:id</text>
+</g>
+<!-- bike_field_resolutions&#45;&gt;bike_profiles -->
+<g id="edge6" class="edge">
+<title>bike_field_resolutions-&gt;bike_profiles</title>
+<path fill="none" stroke="#595959" d="M95.68,-1090.63C95.68,-860.67 95.68,-384 95.68,-384 95.68,-384 173.72,-384 173.72,-384"/>
+<polygon fill="#595959" stroke="#595959" points="173.72,-387.5 183.72,-384 173.72,-380.5 173.72,-387.5"/>
+<text xml:space="preserve" text-anchor="middle" x="100.39" y="-777.1" font-family="Times,serif" font-size="14.00">bike_id:id</text>
+</g>
+<!-- bike_profiles&#45;&gt;users -->
+<g id="edge7" class="edge">
+<title>bike_profiles-&gt;users</title>
+<path fill="none" stroke="#595959" d="M395.48,-212.42C395.48,-212.42 395.48,-162.18 395.48,-162.18"/>
+<polygon fill="#595959" stroke="#595959" points="398.98,-162.18 395.48,-152.18 391.98,-162.18 398.98,-162.18"/>
+<text xml:space="preserve" text-anchor="middle" x="405" y="-181.6" font-family="Times,serif" font-size="14.00">user_id:id</text>
+</g>
+<!-- observation_extraction_attempts -->
+<g id="node6" class="node">
+<title>observation_extraction_attempts</title>
+<polygon fill="none" stroke="black" points="926.59,-2019.1 926.59,-2295.1 1177.41,-2295.1 1177.41,-2019.1 926.59,-2019.1"/>
+<text xml:space="preserve" text-anchor="middle" x="1052" y="-2278.5" font-family="Times,serif" font-size="14.00">observation_extraction_attempts</text>
+<polyline fill="none" stroke="black" points="926.59,-2270.3 1177.41,-2270.3"/>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2253.7" font-family="Times,serif" font-size="14.00">run_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2236.9" font-family="Times,serif" font-size="14.00"> attempt_number : integer</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2220.1" font-family="Times,serif" font-size="14.00"> provider : text</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2203.3" font-family="Times,serif" font-size="14.00"> model : text</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2186.5" font-family="Times,serif" font-size="14.00"> outcome : text</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2169.7" font-family="Times,serif" font-size="14.00"> failure_metadata : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2152.9" font-family="Times,serif" font-size="14.00"> started_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2136.1" font-family="Times,serif" font-size="14.00"> completed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2119.3" font-family="Times,serif" font-size="14.00"> latency_ms : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2102.5" font-family="Times,serif" font-size="14.00"> input_tokens : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2085.7" font-family="Times,serif" font-size="14.00"> output_tokens : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2068.9" font-family="Times,serif" font-size="14.00"> provider_cost_microunits : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2052.1" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="926.59,-2043.9 1177.41,-2043.9"/>
+<text xml:space="preserve" text-anchor="start" x="934.59" y="-2027.3" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- observation_extraction_runs -->
+<g id="node7" class="node">
+<title>observation_extraction_runs</title>
+<polygon fill="none" stroke="black" points="886.15,-1470.9 886.15,-1965.3 1217.85,-1965.3 1217.85,-1470.9 886.15,-1470.9"/>
+<text xml:space="preserve" text-anchor="middle" x="1052" y="-1948.7" font-family="Times,serif" font-size="14.00">observation_extraction_runs</text>
+<polyline fill="none" stroke="black" points="886.15,-1940.5 1217.85,-1940.5"/>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1923.9" font-family="Times,serif" font-size="14.00">turn_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1907.1" font-family="Times,serif" font-size="14.00"> repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1890.3" font-family="Times,serif" font-size="14.00"> image_analysis_mode : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1873.5" font-family="Times,serif" font-size="14.00"> input_artifact_ids : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1856.7" font-family="Times,serif" font-size="14.00"> preprocessing_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1839.9" font-family="Times,serif" font-size="14.00"> extractor_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1823.1" font-family="Times,serif" font-size="14.00"> prompt_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1806.3" font-family="Times,serif" font-size="14.00"> output_schema_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1789.5" font-family="Times,serif" font-size="14.00"> provider : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1772.7" font-family="Times,serif" font-size="14.00"> model : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1755.9" font-family="Times,serif" font-size="14.00"> preprocessing_manifest : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1739.1" font-family="Times,serif" font-size="14.00"> status : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1722.3" font-family="Times,serif" font-size="14.00"> validated_output : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1705.5" font-family="Times,serif" font-size="14.00"> failure_metadata : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1688.7" font-family="Times,serif" font-size="14.00"> provider_attempt_count : integer</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1671.9" font-family="Times,serif" font-size="14.00"> provider_latency_ms : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1655.1" font-family="Times,serif" font-size="14.00"> input_tokens : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1638.3" font-family="Times,serif" font-size="14.00"> output_tokens : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1621.5" font-family="Times,serif" font-size="14.00"> provider_cost_microunits : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1604.7" font-family="Times,serif" font-size="14.00"> diagnostic_agent_started_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1587.9" font-family="Times,serif" font-size="14.00"> redacted_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1571.1" font-family="Times,serif" font-size="14.00"> redaction_reason : text</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1554.3" font-family="Times,serif" font-size="14.00"> completed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1537.5" font-family="Times,serif" font-size="14.00"> failed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1520.7" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1503.9" font-family="Times,serif" font-size="14.00"> updated_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="886.15,-1495.7 1217.85,-1495.7"/>
+<text xml:space="preserve" text-anchor="start" x="894.15" y="-1479.1" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- observation_extraction_attempts&#45;&gt;observation_extraction_runs -->
+<g id="edge8" class="edge">
+<title>observation_extraction_attempts-&gt;observation_extraction_runs</title>
+<path fill="none" stroke="#595959" d="M1052,-2018.8C1052,-2018.8 1052,-1977.25 1052,-1977.25"/>
+<polygon fill="#595959" stroke="#595959" points="1055.5,-1977.25 1052,-1967.25 1048.5,-1977.25 1055.5,-1977.25"/>
+<text xml:space="preserve" text-anchor="middle" x="1077.67" y="-1988" font-family="Times,serif" font-size="14.00">run_id:id</text>
+</g>
+<!-- observation_extraction_runs&#45;&gt;repair_sessions -->
+<g id="edge9" class="edge">
+<title>observation_extraction_runs-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M901.57,-1470.43C901.57,-1470.43 901.57,-964.69 901.57,-964.69"/>
+<polygon fill="#595959" stroke="#595959" points="905.07,-964.69 901.57,-954.69 898.07,-964.69 905.07,-964.69"/>
+<text xml:space="preserve" text-anchor="middle" x="905.38" y="-1207.7" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- repair_turns -->
+<g id="node13" class="node">
+<title>repair_turns</title>
+<polygon fill="none" stroke="black" points="979.54,-1090.7 979.54,-1333.1 1212.46,-1333.1 1212.46,-1090.7 979.54,-1090.7"/>
+<text xml:space="preserve" text-anchor="middle" x="1096" y="-1316.5" font-family="Times,serif" font-size="14.00">repair_turns</text>
+<polyline fill="none" stroke="black" points="979.54,-1308.3 1212.46,-1308.3"/>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1291.7" font-family="Times,serif" font-size="14.00">repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1274.9" font-family="Times,serif" font-size="14.00"> repair_phase_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1258.1" font-family="Times,serif" font-size="14.00"> client_turn_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1241.3" font-family="Times,serif" font-size="14.00"> request_hash : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1224.5" font-family="Times,serif" font-size="14.00"> schema_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1207.7" font-family="Times,serif" font-size="14.00"> phase : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1190.9" font-family="Times,serif" font-size="14.00"> message : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1174.1" font-family="Times,serif" font-size="14.00"> responds_to_input_request_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1157.3" font-family="Times,serif" font-size="14.00"> start_event_sequence : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1140.5" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1123.7" font-family="Times,serif" font-size="14.00"> image_analysis_mode : text</text>
+<polyline fill="none" stroke="black" points="979.54,-1115.5 1212.46,-1115.5"/>
+<text xml:space="preserve" text-anchor="start" x="987.54" y="-1098.9" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- observation_extraction_runs&#45;&gt;repair_turns -->
+<g id="edge10" class="edge">
+<title>observation_extraction_runs-&gt;repair_turns</title>
+<path fill="none" stroke="#595959" d="M1096,-1470.56C1096,-1470.56 1096,-1344.8 1096,-1344.8"/>
+<polygon fill="#595959" stroke="#595959" points="1099.5,-1344.8 1096,-1334.8 1092.5,-1344.8 1099.5,-1344.8"/>
+<text xml:space="preserve" text-anchor="middle" x="1194.59" y="-1439.8" font-family="Times,serif" font-size="14.00">turn_id, repair_session_id:id, repair_session_id</text>
+</g>
+<!-- phase_reports -->
+<g id="node8" class="node">
+<title>phase_reports</title>
+<polygon fill="none" stroke="black" points="801.67,-254.7 801.67,-513.9 1098.33,-513.9 1098.33,-254.7 801.67,-254.7"/>
+<text xml:space="preserve" text-anchor="middle" x="950" y="-497.3" font-family="Times,serif" font-size="14.00">phase_reports</text>
+<polyline fill="none" stroke="black" points="801.67,-489.1 1098.33,-489.1"/>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-472.5" font-family="Times,serif" font-size="14.00">repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-455.7" font-family="Times,serif" font-size="14.00"> repair_phase_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-438.9" font-family="Times,serif" font-size="14.00"> type : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-422.1" font-family="Times,serif" font-size="14.00"> schema_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-405.3" font-family="Times,serif" font-size="14.00"> phase : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-388.5" font-family="Times,serif" font-size="14.00"> summary : text</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-371.7" font-family="Times,serif" font-size="14.00"> safety_flags : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-354.9" font-family="Times,serif" font-size="14.00"> source_artifact_ids : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-338.1" font-family="Times,serif" font-size="14.00"> payload : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-321.3" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-304.5" font-family="Times,serif" font-size="14.00"> evidence_redacted_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-287.7" font-family="Times,serif" font-size="14.00"> evidence_redaction_reason : text</text>
+<polyline fill="none" stroke="black" points="801.67,-279.5 1098.33,-279.5"/>
+<text xml:space="preserve" text-anchor="start" x="809.67" y="-262.9" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- repair_phase_sessions -->
+<g id="node10" class="node">
+<title>repair_phase_sessions</title>
+<polygon fill="none" stroke="black" points="833.54,-0.5 833.54,-158.9 1066.46,-158.9 1066.46,-0.5 833.54,-0.5"/>
+<text xml:space="preserve" text-anchor="middle" x="950" y="-142.3" font-family="Times,serif" font-size="14.00">repair_phase_sessions</text>
+<polyline fill="none" stroke="black" points="833.54,-134.1 1066.46,-134.1"/>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-117.5" font-family="Times,serif" font-size="14.00">repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-100.7" font-family="Times,serif" font-size="14.00"> phase : text</text>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-83.9" font-family="Times,serif" font-size="14.00"> adk_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-67.1" font-family="Times,serif" font-size="14.00"> status : text</text>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-50.3" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-33.5" font-family="Times,serif" font-size="14.00"> closed_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="833.54,-25.3 1066.46,-25.3"/>
+<text xml:space="preserve" text-anchor="start" x="841.54" y="-8.7" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- phase_reports&#45;&gt;repair_phase_sessions -->
+<g id="edge11" class="edge">
+<title>phase_reports-&gt;repair_phase_sessions</title>
+<path fill="none" stroke="#595959" d="M950,-254.24C950,-254.24 950,-170.63 950,-170.63"/>
+<polygon fill="#595959" stroke="#595959" points="953.5,-170.63 950,-160.63 946.5,-170.63 953.5,-170.63"/>
+<text xml:space="preserve" text-anchor="middle" x="1025.82" y="-181.6" font-family="Times,serif" font-size="14.00">repair_phase_session_id:id</text>
+</g>
+<!-- phase_reports&#45;&gt;repair_sessions -->
+<g id="edge12" class="edge">
+<title>phase_reports-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M910.63,-514.29C910.63,-514.29 910.63,-597.98 910.63,-597.98"/>
+<polygon fill="#595959" stroke="#595959" points="907.13,-597.98 910.63,-607.98 914.13,-597.98 907.13,-597.98"/>
+<text xml:space="preserve" text-anchor="middle" x="870.38" y="-578.6" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- profile_inference_runs -->
+<g id="node9" class="node">
+<title>profile_inference_runs</title>
+<polygon fill="none" stroke="black" points="574.59,-1546.5 574.59,-1889.7 825.41,-1889.7 825.41,-1546.5 574.59,-1546.5"/>
+<text xml:space="preserve" text-anchor="middle" x="700" y="-1873.1" font-family="Times,serif" font-size="14.00">profile_inference_runs</text>
+<polyline fill="none" stroke="black" points="574.59,-1864.9 825.41,-1864.9"/>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1848.3" font-family="Times,serif" font-size="14.00">turn_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1831.5" font-family="Times,serif" font-size="14.00"> repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1814.7" font-family="Times,serif" font-size="14.00"> bike_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1797.9" font-family="Times,serif" font-size="14.00"> inference_schema_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1781.1" font-family="Times,serif" font-size="14.00"> extractor_version : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1764.3" font-family="Times,serif" font-size="14.00"> input_artifact_ids : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1747.5" font-family="Times,serif" font-size="14.00"> status : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1730.7" font-family="Times,serif" font-size="14.00"> claim_count : integer</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1713.9" font-family="Times,serif" font-size="14.00"> failure_code : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1697.1" font-family="Times,serif" font-size="14.00"> attempt_count : integer</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1680.3" font-family="Times,serif" font-size="14.00"> started_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1663.5" font-family="Times,serif" font-size="14.00"> completed_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1646.7" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1629.9" font-family="Times,serif" font-size="14.00"> failure_class : text</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1613.1" font-family="Times,serif" font-size="14.00"> retry_count : integer</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1596.3" font-family="Times,serif" font-size="14.00"> max_attempts : integer</text>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1579.5" font-family="Times,serif" font-size="14.00"> lifecycle_outcomes : jsonb</text>
+<polyline fill="none" stroke="black" points="574.59,-1571.3 825.41,-1571.3"/>
+<text xml:space="preserve" text-anchor="start" x="582.59" y="-1554.7" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- profile_inference_runs&#45;&gt;bike_profiles -->
+<g id="edge13" class="edge">
+<title>profile_inference_runs-&gt;bike_profiles</title>
+<path fill="none" stroke="#595959" d="M662.5,-1546.07C662.5,-1217.94 662.5,-535 662.5,-535 662.5,-535 434.39,-535 434.39,-535"/>
+<polygon fill="#595959" stroke="#595959" points="434.39,-531.5 424.39,-535 434.39,-538.5 434.39,-531.5"/>
+<text xml:space="preserve" text-anchor="middle" x="28.39" y="-975.6" font-family="Times,serif" font-size="14.00">bike_id:id</text>
+</g>
+<!-- profile_inference_runs&#45;&gt;repair_sessions -->
+<g id="edge14" class="edge">
+<title>profile_inference_runs-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M738.86,-1546C738.86,-1546 738.86,-964.63 738.86,-964.63"/>
+<polygon fill="#595959" stroke="#595959" points="742.36,-964.63 738.86,-954.63 735.36,-964.63 742.36,-964.63"/>
+<text xml:space="preserve" text-anchor="middle" x="756.38" y="-1207.7" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- profile_inference_runs&#45;&gt;repair_turns -->
+<g id="edge15" class="edge">
+<title>profile_inference_runs-&gt;repair_turns</title>
+<path fill="none" stroke="#595959" d="M782.14,-1546.2C782.14,-1413.36 782.14,-1252 782.14,-1252 782.14,-1252 967.62,-1252 967.62,-1252"/>
+<polygon fill="#595959" stroke="#595959" points="967.62,-1255.5 977.62,-1252 967.62,-1248.5 967.62,-1255.5"/>
+<text xml:space="preserve" text-anchor="middle" x="783.61" y="-1439.8" font-family="Times,serif" font-size="14.00">turn_id:id</text>
+</g>
+<!-- repair_phase_sessions&#45;&gt;repair_sessions -->
+<g id="edge16" class="edge">
+<title>repair_phase_sessions-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M833.15,-155C788.73,-155 748.62,-155 748.62,-155 748.62,-155 748.62,-597.82 748.62,-597.82"/>
+<polygon fill="#595959" stroke="#595959" points="745.12,-597.82 748.62,-607.82 752.12,-597.82 745.12,-597.82"/>
+<text xml:space="preserve" text-anchor="middle" x="722.38" y="-380.1" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- repair_session_events -->
+<g id="node11" class="node">
+<title>repair_session_events</title>
+<polygon fill="none" stroke="black" points="1264.54,-1638.9 1264.54,-1797.3 1497.46,-1797.3 1497.46,-1638.9 1264.54,-1638.9"/>
+<text xml:space="preserve" text-anchor="middle" x="1381" y="-1780.7" font-family="Times,serif" font-size="14.00">repair_session_events</text>
+<polyline fill="none" stroke="black" points="1264.54,-1772.5 1497.46,-1772.5"/>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1755.9" font-family="Times,serif" font-size="14.00">repair_session_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1739.1" font-family="Times,serif" font-size="14.00"> turn_id : text</text>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1722.3" font-family="Times,serif" font-size="14.00"> sequence : bigint</text>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1705.5" font-family="Times,serif" font-size="14.00"> type : text</text>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1688.7" font-family="Times,serif" font-size="14.00"> data : jsonb</text>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1671.9" font-family="Times,serif" font-size="14.00"> created_at : timestamp with time zone</text>
+<polyline fill="none" stroke="black" points="1264.54,-1663.7 1497.46,-1663.7"/>
+<text xml:space="preserve" text-anchor="start" x="1272.54" y="-1647.1" font-family="Times,serif" font-size="14.00">id : text</text>
+</g>
+<!-- repair_session_events&#45;&gt;repair_sessions -->
+<g id="edge17" class="edge">
+<title>repair_session_events-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M1419.82,-1638.61C1419.82,-1412.34 1419.82,-781 1419.82,-781 1419.82,-781 944.12,-781 944.12,-781"/>
+<polygon fill="#595959" stroke="#595959" points="944.12,-777.5 934.12,-781 944.12,-784.5 944.12,-777.5"/>
+<text xml:space="preserve" text-anchor="middle" x="1507.38" y="-1207.7" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+<!-- repair_session_events&#45;&gt;repair_turns -->
+<g id="edge18" class="edge">
+<title>repair_session_events-&gt;repair_turns</title>
+<path fill="none" stroke="#595959" d="M1342.18,-1638.47C1342.18,-1495.94 1342.18,-1212 1342.18,-1212 1342.18,-1212 1224.47,-1212 1224.47,-1212"/>
+<polygon fill="#595959" stroke="#595959" points="1224.47,-1208.5 1214.47,-1212 1224.47,-1215.5 1224.47,-1208.5"/>
+<text xml:space="preserve" text-anchor="middle" x="1397.61" y="-1439.8" font-family="Times,serif" font-size="14.00">turn_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;bike_profiles -->
+<g id="edge19" class="edge">
+<title>repair_sessions-&gt;bike_profiles</title>
+<path fill="none" stroke="#595959" d="M695.16,-620C576.76,-620 412.47,-620 412.47,-620 412.47,-620 412.47,-567.73 412.47,-567.73"/>
+<polygon fill="#595959" stroke="#595959" points="415.97,-567.73 412.47,-557.73 408.97,-567.73 415.97,-567.73"/>
+<text xml:space="preserve" text-anchor="middle" x="592.39" y="-578.6" font-family="Times,serif" font-size="14.00">bike_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;phase_reports -->
+<g id="edge20" class="edge">
+<title>repair_sessions-&gt;phase_reports</title>
+<path fill="none" stroke="#595959" d="M845.25,-609.48C845.25,-609.48 845.25,-525.7 845.25,-525.7"/>
+<polygon fill="#595959" stroke="#595959" points="848.75,-525.7 845.25,-515.7 841.75,-525.7 848.75,-525.7"/>
+<text xml:space="preserve" text-anchor="middle" x="1015.32" y="-578.6" font-family="Times,serif" font-size="14.00">diagnostic_report_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;phase_reports -->
+<g id="edge21" class="edge">
+<title>repair_sessions-&gt;phase_reports</title>
+<path fill="none" stroke="#595959" d="M888.83,-609.48C888.83,-609.48 888.83,-525.7 888.83,-525.7"/>
+<polygon fill="#595959" stroke="#595959" points="892.33,-525.7 888.83,-515.7 885.33,-525.7 892.33,-525.7"/>
+<text xml:space="preserve" text-anchor="middle" x="1177.86" y="-578.6" font-family="Times,serif" font-size="14.00">shop_referral_report_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;phase_reports -->
+<g id="edge22" class="edge">
+<title>repair_sessions-&gt;phase_reports</title>
+<path fill="none" stroke="#595959" d="M823.46,-609.48C823.46,-609.48 823.46,-525.7 823.46,-525.7"/>
+<polygon fill="#595959" stroke="#595959" points="826.96,-525.7 823.46,-515.7 819.96,-525.7 826.96,-525.7"/>
+<text xml:space="preserve" text-anchor="middle" x="1338.76" y="-578.6" font-family="Times,serif" font-size="14.00">execution_report_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;phase_reports -->
+<g id="edge23" class="edge">
+<title>repair_sessions-&gt;phase_reports</title>
+<path fill="none" stroke="#595959" d="M867.04,-609.48C867.04,-609.48 867.04,-525.7 867.04,-525.7"/>
+<polygon fill="#595959" stroke="#595959" points="870.54,-525.7 867.04,-515.7 863.54,-525.7 870.54,-525.7"/>
+<text xml:space="preserve" text-anchor="middle" x="742.6" y="-578.6" font-family="Times,serif" font-size="14.00">plan_report_id:id</text>
+</g>
+<!-- repair_sessions&#45;&gt;users -->
+<g id="edge24" class="edge">
+<title>repair_sessions-&gt;users</title>
+<path fill="none" stroke="#595959" d="M695.39,-615C622.04,-615 541.78,-615 541.78,-615 541.78,-615 541.78,-162.3 541.78,-162.3"/>
+<polygon fill="#595959" stroke="#595959" points="545.28,-162.3 541.78,-152.3 538.28,-162.3 545.28,-162.3"/>
+<text xml:space="preserve" text-anchor="middle" x="602" y="-380.1" font-family="Times,serif" font-size="14.00">user_id:id</text>
+</g>
+<!-- repair_turns&#45;&gt;repair_phase_sessions -->
+<g id="edge25" class="edge">
+<title>repair_turns-&gt;repair_phase_sessions</title>
+<path fill="none" stroke="#595959" d="M1155.4,-1090.23C1155.4,-797.89 1155.4,-80 1155.4,-80 1155.4,-80 1078.31,-80 1078.31,-80"/>
+<polygon fill="#595959" stroke="#595959" points="1078.31,-76.5 1068.31,-80 1078.31,-83.5 1078.31,-76.5"/>
+<text xml:space="preserve" text-anchor="middle" x="1501.82" y="-578.6" font-family="Times,serif" font-size="14.00">repair_phase_session_id:id</text>
+</g>
+<!-- repair_turns&#45;&gt;repair_sessions -->
+<g id="edge26" class="edge">
+<title>repair_turns-&gt;repair_sessions</title>
+<path fill="none" stroke="#595959" d="M979.1,-1171C945.13,-1171 917,-1171 917,-1171 917,-1171 917,-964.88 917,-964.88"/>
+<polygon fill="#595959" stroke="#595959" points="920.5,-964.88 917,-954.88 913.5,-964.88 920.5,-964.88"/>
+<text xml:space="preserve" text-anchor="middle" x="1045.38" y="-975.6" font-family="Times,serif" font-size="14.00">repair_session_id:id</text>
+</g>
+</g>
+</svg>
