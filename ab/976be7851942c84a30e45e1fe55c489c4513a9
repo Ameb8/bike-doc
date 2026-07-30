@@ -1,0 +1,24 @@
+docs/specs/apps/agent/diagostic-observation-handling.md
+  s_177d67caf8b5af::t_0164db4c27f754 1-894
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "ab976be7851942c84a30e45e1fe55c489c4513a9",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_177d67caf8b5af": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb1cc-b9a4-70e0-b0a3-ef153e490b61",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
