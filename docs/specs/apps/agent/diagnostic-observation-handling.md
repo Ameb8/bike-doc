@@ -154,9 +154,9 @@ symptoms and state an appropriately calibrated confidence.
 
 ### 4.4 Contributing Factor
 
-A **contributing factor** is a supported or suspected condition that worsens,
-triggers, or combines with another condition to produce the reported symptoms,
-but is not presented as the sole or primary explanation.
+A **contributing factor** is a supported condition that worsens, triggers, or
+combines with another condition to produce the reported symptoms, but is not
+presented as the sole or primary explanation.
 
 Contributing factors can be independent conditions. For example, drivetrain
 skipping may involve both worn chain-and-cassette engagement and imperfect
@@ -165,14 +165,31 @@ derailleur indexing.
 A contributing factor is not an alternate hypothesis. Both the primary
 diagnosis and a contributing factor may be true simultaneously.
 
+An observed condition suspected of contributing simultaneously, but not yet
+connected to the symptoms by affirmative evidence, remains an observed finding
+with `possible_contributor` relevance. A condition that is merely hypothesized
+and has not itself been observed must instead be retained in
+`unresolved_uncertainties` when material. Neither must be classified as an
+alternate hypothesis unless it genuinely competes with or would materially
+revise the primary diagnosis.
+
 ### 4.5 Alternate Hypothesis
 
-An **alternate hypothesis** is a competing causal explanation that remains
-possible if the primary diagnosis is incorrect or incomplete.
+An **alternate hypothesis** is an evidence-backed competing causal explanation
+that remains possible. When a primary diagnosis is present, an alternate could
+materially revise or replace it if the primary diagnosis is incorrect or
+incomplete. When no primary diagnosis is supported, alternate hypotheses are
+the mutually competing candidate diagnoses that remain unresolved.
 
 Alternates describe mutually competing or meaningfully distinct explanations.
 They must not be used merely to hold additional conditions believed to be
 present and contributing at the same time.
+
+An alternate hypothesis requires affirmative evidence for its continued
+plausibility. Important evidence against it must be included when calibrating
+confidence. A fully eliminated explanation must be omitted from
+`alternate_hypotheses`; a material limitation left by that elimination may
+remain in `unresolved_uncertainties` when useful.
 
 ### 4.6 Incidental Finding
 
@@ -189,14 +206,20 @@ between an observed finding and the user's symptoms. Allowed values are:
 
 | Value | Meaning |
 |---|---|
-| `unknown` | The relationship has not been established. |
-| `possible_contributor` | The condition could plausibly contribute, but the available evidence does not yet support that conclusion. |
+| `unknown` | Available symptom or component context is insufficient to assess whether a mechanical relationship is plausible. |
+| `possible_contributor` | A specific plausible mechanism connecting the finding to the symptoms has been identified, but case-specific evidence does not yet support causation. |
+| `supports_primary_diagnosis` | The evidence supports the condition as part of the primary causal explanation. |
 | `supported_contributor` | The evidence supports the condition as one contributor to the symptoms. |
-| `incidental` | The condition is present or reported but does not currently appear to contribute to the complaint. |
+| `incidental` | No plausible mechanical relationship to the symptoms exists given the affected system and symptom pattern, or available evidence supports treating the finding as unrelated. |
 
 Diagnostic relevance may change as new evidence arrives. A finding must not be
 silently promoted from `unknown` or `possible_contributor` to
-`supported_contributor`.
+`supports_primary_diagnosis` or `supported_contributor`.
+
+The agent must not request evidence solely to disprove an obviously implausible
+relationship before classifying a finding as `incidental`. It should
+investigate relevance only when the relationship is both plausible and
+material.
 
 ### 4.8 Material Diagnostic Evidence
 
@@ -211,6 +234,58 @@ silently promoted from `unknown` or `possible_contributor` to
 
 A readily obtainable photo, measurement, or functional observation is
 **materially missing** when it is likely to change one of those outcomes.
+
+Evidence is **readily obtainable** only when the user can safely provide it
+during the current remote session without:
+
+- riding a bike that may be unsafe
+- specialized tools or purchasing equipment
+- disassembly beyond the user's stated skill
+- material cost
+- unreasonable time, physical effort, or accessibility burden
+
+Evidence that would be valuable but fails this test may justify retained
+uncertainty or an in-person assessment. It must not automatically block
+completion as readily obtainable evidence.
+
+### 4.9 Observation Retention and Presentation
+
+Retention, immediate communication, and report prominence are separate
+decisions.
+
+The agent may retain any concrete, evidence-backed observation that could be
+useful to the user. It must retain observations that affect diagnosis, safety,
+maintenance, uncertainty, or a condition the user explicitly asked about.
+Pure speculation must not be retained as an observed finding.
+
+The agent is not required to perform or imply an exhaustive whole-bike
+inspection. Diagnostic and safety findings must be communicated promptly.
+Unrelated, non-urgent findings may be retained without interrupting the
+diagnostic workup and should be presented as secondary other observations in
+the completed report rather than alongside the primary conclusion. The
+`incidental` relevance value provides the presentation distinction.
+
+### 4.10 Complaint Cluster
+
+A **complaint cluster** is one or more symptoms that plausibly share a bicycle
+system or causal workup.
+
+One repair session and its diagnostic report must cover exactly one complaint
+cluster. Related symptoms may be diagnosed together, such as chain skipping
+with drivetrain noise, or front-brake squeal with lever softness. Completely
+unrelated complaints, such as chain skipping and front-brake squeal, require
+separate repair sessions and diagnostic reports.
+
+When unrelated complaints are presented at the start of a session, the agent
+must identify the separate concerns and ask which complaint cluster to address
+in the current session. When an unrelated complaint arises later, the agent
+must acknowledge it, retain any concrete observation when useful, and explain
+that it requires a separate repair session. It must not investigate or diagnose
+the second complaint as part of the current report.
+
+Safety remains global. An unrelated safety concern must be escalated
+immediately even though its diagnosis is outside the current complaint
+cluster.
 
 ## 5. Guiding Decisions
 
@@ -227,10 +302,10 @@ pattern, physical measurement, functional behavior, repair history,
 contradictory or corroborating evidence, or another diagnostically meaningful
 fact.
 
-### 5.2 Communicate Before Certainty
+### 5.2 Communicate Diagnostic and Safety Findings Before Certainty
 
-The agent must not hide a meaningful finding merely because its causal role is
-uncertain. It should promptly:
+The agent must not hide a finding material to the diagnosis or safety merely
+because its causal role is uncertain. It should promptly:
 
 1. state the finding in factual language
 2. explain why it may matter
@@ -245,6 +320,9 @@ tell what was actually noticed.
 
 The diagnostic investigation should remain organized around the user's
 symptoms, not around whichever abnormality is most visually salient.
+
+The investigation must remain within the session's complaint cluster as
+defined in Section 4.10.
 
 For example, when the complaint is drivetrain skipping and a photo shows chain
 corrosion, the agent should consider whether corrosion or stiff links explain
@@ -270,6 +348,9 @@ The preferred next request is the single photo, measurement, question, or
 functional observation most likely to distinguish important hypotheses or
 change the appropriate next action.
 
+The agent must not spend diagnostic turns investigating whether an obviously
+unrelated finding is incidental.
+
 ### 5.6 Report Completion Is a Decision
 
 Finding an abnormality is not a completion condition.
@@ -278,8 +359,10 @@ The diagnostic phase completes only when:
 
 - a useful causal conclusion is supported and further readily obtainable
   evidence is unlikely to materially change it
-- the user declines or cannot provide further material evidence and a limited
-  report is still useful
+- the user declines further material evidence and a limited report is still
+  useful
+- the user cannot safely or reasonably provide further material evidence and
+  a limited report is still useful
 - an in-person assessment or safety referral is the appropriate diagnostic
   conclusion
 
@@ -288,9 +371,10 @@ content through the internal completion basis defined in Section 10.
 
 ## 6. Required Agent Behavior
 
-### 6.1 Handling a New Finding
+### 6.1 Handling a New Diagnostic or Safety Finding
 
-When the agent identifies a meaningful new finding, it must:
+When the agent identifies a new finding material to the current diagnosis or
+safety, it must:
 
 1. Describe the finding without causal overreach.
 2. Identify its current diagnostic relevance.
@@ -302,6 +386,10 @@ When the agent identifies a meaningful new finding, it must:
 
 The agent must not call `save_diagnostic_report` solely because this sequence
 identified an abnormal condition.
+
+Unrelated, non-urgent findings may be retained without performing this
+user-facing sequence immediately. They should be presented as secondary other
+observations in the completed report.
 
 ### 6.2 User-Facing Language
 
@@ -325,10 +413,17 @@ a time. The request must:
 - identify the exact question it is intended to answer
 - specify the required photo view, measurement, or functional observation
 - be reasonably obtainable by the user
+- satisfy the readily obtainable criteria in Section 4.8 when its absence
+  would block normal completion
 - avoid unsafe riding or repair actions
 
 The agent should not present an exhaustive checklist unless the user explicitly
 asks for one.
+
+After a material input request, closing the app, leaving the conversation, or
+otherwise not responding must leave the diagnostic phase awaiting user input.
+Inactivity must not cause report creation or diagnostic completion. Diagnosis
+continues in the same phase session when the user later supplies the evidence.
 
 ### 6.4 Same-Turn Completion
 
@@ -345,18 +440,35 @@ finding only when:
 This rule allows straightforward diagnoses without creating an arbitrary
 minimum-turn requirement.
 
-### 6.5 User Declines Further Input
+### 6.5 Further Input Declined or Unavailable
 
-If the user declines or cannot provide requested material evidence, the agent
-may produce a limited report when it remains useful. The report must:
+If the user declines requested material evidence or cannot safely or
+reasonably provide it, the agent may produce a limited report when it remains
+useful. The report must:
 
-- use appropriately low or unknown confidence
-- identify unresolved questions
+- use appropriately low confidence for a supported non-null diagnosis, or a
+  null primary diagnosis when no causal explanation is adequately supported
+- identify unresolved uncertainties
 - avoid unsupported causal claims
 - distinguish findings from diagnoses
 - recommend in-person assessment when required by risk or uncertainty
 
-The completion basis must use `user_declined_more_input`.
+The completion basis must use `user_declined_more_input` when the user chooses
+not to continue. It must use `requested_input_unavailable` when the user cannot
+safely or reasonably provide the material evidence but professional physical
+assessment is not yet required.
+
+`requested_input_unavailable` requires the user to communicate that the
+requested evidence cannot be provided. Inactivity or app exit is not evidence
+of unavailability. Once unavailability is known, the agent must independently
+choose the best remaining remote input, a useful limited report, or an
+in-person assessment. It does not need to ask the user for separate permission
+to create the limited report.
+
+When unavailable remote evidence makes professional physical assessment the
+necessary next diagnostic action because of safety, practical limits, or
+material uncertainty, the completion basis must instead use
+`in_person_assessment_required`.
 
 ## 7. Evidence and Causal Classification
 
@@ -371,14 +483,35 @@ An observed finding in the report must declare one of these evidence sources:
 - `repair_history`
 - `other`
 
+The source is classified by the method that produced the evidence, not the
+channel through which the user communicated it:
+
+- `measurement` covers quantitative or threshold-based instrument readings,
+  including readings relayed by the user
+- `functional_check` covers results of requested mechanical or behavioral
+  checks, including results relayed by the user
+- `repair_history` covers past service or repair facts
+- `user_report` covers symptoms, sensations, circumstances, and unstructured
+  observations not captured by a more specific source
+- `image` covers findings BikeDoc derives from an attached image
+- `other` is used only when none of the named methods applies
+
 For image-backed findings, artifact IDs must reference owned artifacts attached
-to the repair session. Historical visual projections must follow the evidence
-limitations in `image-diagnosis.md`.
+to the repair session, and at least one artifact ID is required. Findings from
+all non-image evidence sources must use `artifact_ids: []`. Historical visual
+projections must follow the evidence limitations in `image-diagnosis.md`.
+
+The tool boundary must validate ownership and repair-session attachment for the
+union of all artifact IDs referenced anywhere in the report, not only
+`key_artifact_ids`.
 
 ### 7.2 Evidence Required for Causal Language
 
-A finding may be described as a `supported_contributor` or included as a
-contributing factor only when evidence connects it to the symptoms.
+A finding may be described as `supports_primary_diagnosis` or
+`supported_contributor`, or included as a contributing factor, only when
+evidence connects it to the symptoms. `supports_primary_diagnosis` is reserved
+for findings that support the primary causal explanation;
+`supported_contributor` is reserved for supported secondary contributors.
 
 Examples of connecting evidence include:
 
@@ -417,9 +550,9 @@ condition and the absence itself is diagnostically meaningful.
 
 Before completing with `diagnosis_supported`, the agent must verify:
 
-1. The user's main reported symptoms are explained by the primary diagnosis,
-   contributing factors, or an explicit statement that a symptom remains
-   unresolved.
+1. The symptoms in the session's complaint cluster are explained by the
+   primary diagnosis, contributing factors, or an explicit statement that a
+   symptom remains unresolved.
 2. The primary diagnosis is supported by more than the mere presence of an
    abnormal finding.
 3. Meaningful simultaneous contributing conditions have been considered.
@@ -432,6 +565,9 @@ Before completing with `diagnosis_supported`, the agent must verify:
 
 These requirements do not mandate a minimum number of hypotheses, findings,
 turns, artifacts, or evidence sources.
+
+Symptoms from an unrelated complaint cluster must not be folded into the
+report as another diagnosis or contributing factor.
 
 ### 8.2 Continuing Investigation
 
@@ -454,6 +590,9 @@ The agent may complete with `in_person_assessment_required` when further remote
 diagnosis is unsafe, impractical, or unlikely to resolve the important
 uncertainty.
 
+`in_person_assessment_required` takes precedence over
+`requested_input_unavailable` when both descriptions apply.
+
 The report must clearly distinguish:
 
 - what was observed
@@ -473,8 +612,8 @@ The report schema introduced by this behavior is
 
 V2 retains the V1 envelope, server-owned diagnostic session ID, artifact
 ownership rules, safety rules, and validation timing. It adds explicit
-representation for observed findings, simultaneous contributing factors, and
-unresolved questions.
+representation for the server-owned diagnostic outcome, observed findings,
+simultaneous contributing factors, and unresolved uncertainty.
 
 The public OpenAPI contract, report schema spec, diagnostic API examples, ADK
 tool contract, backend schemas, and Android generated models must be updated
@@ -487,22 +626,34 @@ before V2 is exposed publicly.
 | Field | Type | Rules |
 |---|---|---|
 | `schema_version` | string | Must equal `diagnostic_report.v2`. |
-| `primary_diagnosis` | `Diagnosis` | Best-supported causal explanation. |
+| `diagnostic_outcome` | enum | Server-owned value copied from the validated internal `completion_reason`: `diagnosis_supported`, `user_declined_more_input`, `requested_input_unavailable`, or `in_person_assessment_required`. |
+| `reported_symptoms` | non-empty array of string | Concise user-reported symptoms in the session's single complaint cluster. Every entry must be non-blank. |
+| `primary_diagnosis` | V2 `Diagnosis` or null | Best-supported causal explanation with explicit supporting-finding references. A non-null diagnosis requires affirmative causal support and `low`, `medium`, or `high` confidence; `unknown` is not allowed. Must be non-null for `diagnosis_supported`. May be null for `user_declined_more_input`, `requested_input_unavailable`, or `in_person_assessment_required` only when no causal explanation is adequately supported. |
 | `contributing_factors` | array of `ContributingFactor` | Simultaneous contributors; use `[]` when none are supported. |
-| `observed_findings` | array of `ObservedFinding` | Meaningful findings retained from the investigation. |
-| `alternate_hypotheses` | array of `AlternateHypothesis` | Competing explanations; use `[]` when none remain meaningful. |
-| `unresolved_questions` | array of string | Material limitations retained at completion; use `[]` when none remain. |
-| `evidence_summary` | string | Concise user-readable synthesis that distinguishes findings from causal conclusions. |
-| `repair_estimate` | `RepairEstimate` | Retained from V1 until planning/report contracts are revised separately. |
-| `key_artifact_ids` | array of string | Owned diagnostic artifact IDs that materially informed the report. |
+| `observed_findings` | non-empty array of `ObservedFinding` | Meaningful findings retained from the investigation. User-reported symptoms qualify as `user_report` findings. |
+| `alternate_hypotheses` | array of V2 `AlternateHypothesis` | With a non-null primary diagnosis, competing explanations that could materially revise or replace it. With a null primary diagnosis, mutually competing evidence-backed candidate diagnoses. Use `[]` when none remain meaningful. |
+| `unresolved_uncertainties` | array of string | Concise statements of material uncertainty retained at completion and why each matters; use `[]` when none remain. |
+| `evidence_summary` | string | Concise user-readable synthesis that distinguishes findings from causal conclusions. This is the single agent-authored report summary. |
+| `key_artifact_ids` | array of string | Owned diagnostic artifact IDs that materially affected diagnosis, safety, or retained uncertainty. Every entry must appear in at least one image-backed observed finding. Image findings for secondary or incidental observations need not be included here. |
 | `user_skill_level` | `UserSkillLevel` | Same values as V1. |
 | `safety_flags` | array of `SafetyFlag` | Same safety behavior as V1. |
 | `diagnostic_session_id` | string | Server-owned phase-session/archive reference. |
-| `cost_estimate` | `PlanCostEstimate` or null | Optional server enrichment retained from V1. |
 
-This spec does not move `repair_estimate` or `cost_estimate` to the planning
-phase because doing so requires a separate phase-contract decision. Their
-presence must not be used as a reason to complete diagnosis prematurely.
+When `primary_diagnosis` is null, the report must retain the relevant observed
+findings, evidence-backed candidate diagnoses as alternate hypotheses when
+warranted, material limitations in `unresolved_uncertainties`, and a clear
+explanation of why the limited report or in-person assessment remains useful.
+Purely hypothetical possibilities without affirmative plausibility evidence
+must remain only in `unresolved_uncertainties`. A null primary diagnosis must
+not be used with `diagnosis_supported`.
+
+V2 does not contain `repair_estimate` or `cost_estimate`. The diagnostic agent
+must not determine repair scope, required tools or parts, repair time, or
+repair cost as part of its report or completion decision. The planning phase
+owns those estimates and consumes the completed diagnostic report as its
+diagnostic source of truth. Product presentation may show planning estimates
+alongside diagnosis information without making them part of the diagnostic
+report.
 
 ### 9.3 Observed Finding
 
@@ -510,18 +661,45 @@ presence must not be used as a reason to complete diagnosis prematurely.
 
 | Field | Type | Rules |
 |---|---|---|
+| `finding_id` | string | Required non-blank report-local identifier. Must be unique within `observed_findings`. |
 | `component` | string | Component or bicycle area associated with the finding. |
 | `finding` | string | Factual condition, cue, measurement, or report without causal overreach. |
 | `evidence_source` | enum | One value from Section 7.1. |
+| `evidence_source_detail` | string or null | Required and non-blank when `evidence_source` is `other`; otherwise must be null. Describes the source, not diagnostic reasoning. |
 | `relationship_to_symptoms` | `DiagnosticRelevance` | Current evidence-backed relevance. |
-| `artifact_ids` | array of string | Required for image-backed findings; otherwise normally `[]`. |
+| `artifact_ids` | array of string | One or more owned repair-session artifact IDs for image findings; exactly `[]` for all non-image findings. |
 
 Findings should be concise and deduplicated. The report need not contain every
-minor observation from the session. It must retain findings that materially
-informed the diagnosis, remain relevant to maintenance or safety, or help
-explain uncertainty.
+minor observation from the session or imply an exhaustive inspection. It must
+retain findings that materially informed the diagnosis, remain relevant to
+maintenance or safety, help explain uncertainty, or address a condition the
+user explicitly asked about. It may retain any other concrete, evidence-backed
+observation that could be useful. Unrelated, non-urgent findings should be
+presented as secondary other observations based on their `incidental`
+relevance.
 
-### 9.4 Contributing Factor
+Every completed report must contain at least one observed finding. Every
+non-null primary diagnosis must be supported by at least one finding classified
+as `supports_primary_diagnosis`. When `primary_diagnosis` is null, no finding
+may use `supports_primary_diagnosis`.
+
+### 9.4 Primary Diagnosis
+
+V2 `Diagnosis` contains:
+
+| Field | Type | Rules |
+|---|---|---|
+| `component` | string | Component or area involved. |
+| `issue` | string | Best-supported causal explanation of the complaint. |
+| `confidence` | `Confidence` | `low`, `medium`, or `high`. `unknown` is not allowed. |
+| `diy_suitability` | `DiySuitability` | Same values and safety behavior as V1. |
+| `supporting_finding_ids` | non-empty array of string | Report-local IDs of observed findings that support the diagnosis. Every ID must exist, and at least one referenced finding must use `supports_primary_diagnosis`. |
+
+The supporting references make the agent's causal-support assertion explicit
+and inspectable. They do not establish that the asserted mechanical
+relationship is true.
+
+### 9.5 Contributing Factor
 
 `ContributingFactor` contains:
 
@@ -529,79 +707,118 @@ explain uncertainty.
 |---|---|---|
 | `component` | string | Component or area involved. |
 | `issue` | string | Condition believed to contribute to the symptoms. |
-| `confidence` | `Confidence` | `unknown`, `low`, `medium`, or `high`. |
+| `confidence` | `Confidence` | `low`, `medium`, or `high`. `unknown` is not allowed because a contributing factor requires affirmative connecting evidence. |
 | `evidence_summary` | string | Concise evidence connecting the condition to the symptoms. |
+| `supporting_finding_ids` | non-empty array of string | Report-local IDs of observed findings supporting this factor. Every ID must exist, and at least one referenced finding must use `supported_contributor`. |
 
 A `ContributingFactor` must not merely duplicate an observed finding. Its
-`evidence_summary` must state why the condition is believed to contribute.
+`evidence_summary` must state the affirmative evidence connecting the
+condition to the symptoms. A merely suspected simultaneous contributor must
+remain an observed finding with `possible_contributor` relevance when the
+condition itself was observed. A purely hypothetical simultaneous contributor
+must instead remain in `unresolved_uncertainties` when material.
 
-### 9.5 Example
+Every contributing factor must be traceable to at least one observed finding
+classified as `supported_contributor` through its own
+`supporting_finding_ids`. Evaluations must verify that each factor is
+semantically supported by the referenced findings.
+
+### 9.6 Alternate Hypothesis
+
+V2 `AlternateHypothesis` contains:
+
+| Field | Type | Rules |
+|---|---|---|
+| `component` | string | Component or area involved. |
+| `issue` | string | Competing explanation that remains possible. With a null primary diagnosis, one of the unresolved candidate diagnoses. |
+| `confidence` | `Confidence` | `low`, `medium`, or `high`. `unknown` is not allowed because the alternate requires affirmative plausibility evidence. |
+| `evidence_summary` | string | Concise evidence for the alternate's continued plausibility, including important evidence against it. |
+| `supporting_finding_ids` | non-empty array of string | Report-local IDs of observed findings that provide affirmative evidence for the alternate's continued plausibility. Every ID must exist. |
+
+V2 does not include the V1 `ruled_out_by` field. A fully eliminated explanation
+must be omitted rather than retained as an alternate.
+
+### 9.7 Example
 
 ```json
 {
   "schema_version": "diagnostic_report.v2",
+  "diagnostic_outcome": "diagnosis_supported",
+  "reported_symptoms": [
+    "Chain skips under load in the three smallest rear sprockets.",
+    "Shifting hesitates at the affected sprockets."
+  ],
   "primary_diagnosis": {
     "component": "chain and cassette",
     "issue": "Wear is causing poor engagement and skipping under load.",
     "confidence": "medium",
-    "diy_suitability": "caution"
+    "diy_suitability": "caution",
+    "supporting_finding_ids": ["finding_load_dependent_skipping", "finding_chain_wear"]
   },
   "contributing_factors": [
     {
       "component": "rear derailleur",
       "issue": "Indexing is slightly out and worsens shifts on the smaller sprockets.",
       "confidence": "medium",
-      "evidence_summary": "Skipping is gear-specific and the functional check showed delayed alignment at the affected sprockets."
+      "evidence_summary": "Skipping is gear-specific and the functional check showed delayed alignment at the affected sprockets.",
+      "supporting_finding_ids": ["finding_derailleur_alignment"]
     }
   ],
   "observed_findings": [
     {
+      "finding_id": "finding_load_dependent_skipping",
+      "component": "drivetrain",
+      "finding": "The user reports that skipping occurs under load in the three smallest rear sprockets.",
+      "evidence_source": "user_report",
+      "evidence_source_detail": null,
+      "relationship_to_symptoms": "supports_primary_diagnosis",
+      "artifact_ids": []
+    },
+    {
+      "finding_id": "finding_chain_discoloration",
       "component": "chain",
       "finding": "Orange-brown discoloration is visible on several outer plates.",
       "evidence_source": "image",
+      "evidence_source_detail": null,
       "relationship_to_symptoms": "possible_contributor",
       "artifact_ids": ["art_chain_1"]
     },
     {
+      "finding_id": "finding_chain_wear",
       "component": "chain",
       "finding": "The chain checker indicates wear beyond the supported replacement threshold.",
       "evidence_source": "measurement",
+      "evidence_source_detail": null,
+      "relationship_to_symptoms": "supports_primary_diagnosis",
+      "artifact_ids": []
+    },
+    {
+      "finding_id": "finding_derailleur_alignment",
+      "component": "rear derailleur",
+      "finding": "A functional check showed delayed derailleur alignment at the sprockets where skipping occurs.",
+      "evidence_source": "functional_check",
+      "evidence_source_detail": null,
       "relationship_to_symptoms": "supported_contributor",
       "artifact_ids": []
     }
   ],
   "alternate_hypotheses": [
     {
-      "component": "rear derailleur hanger",
-      "issue": "Minor hanger misalignment may contribute to gear-specific shifting inconsistency.",
+      "component": "rear hub",
+      "issue": "Intermittent freehub engagement failure could instead explain the load-dependent skipping if drivetrain wear does not reproduce the symptom.",
       "confidence": "low",
-      "ruled_out_by": null
+      "evidence_summary": "The symptom occurs under load, which is compatible with intermittent freehub engagement, but the measured chain wear and gear-specific behavior favor the primary drivetrain diagnosis.",
+      "supporting_finding_ids": ["finding_load_dependent_skipping"]
     }
   ],
-  "unresolved_questions": [
-    "Rear derailleur hanger alignment was not physically measured."
+  "unresolved_uncertainties": [
+    "Rear derailleur hanger alignment was not physically measured, so a minor alignment issue remains possible."
   ],
   "evidence_summary": "The load-dependent symptom and chain measurement support chain-and-cassette wear as the primary cause. Slight indexing error also contributes. Visible discoloration is retained as a possible contributor but does not independently establish the cause.",
-  "repair_estimate": {
-    "difficulty": "medium",
-    "difficulty_notes": "Final repair requirements depend on confirming cassette wear and correcting indexing.",
-    "tools_required": ["chain checker", "hex keys"],
-    "parts_required": ["chain", "cassette if matched wear is confirmed"],
-    "repair_time": {
-      "low_minutes": 45,
-      "high_minutes": 120
-    },
-    "shop_repair_cost": {
-      "low_usd": 80,
-      "high_usd": 220,
-      "notes": "Estimate only; actual pricing depends on parts and local labor."
-    }
-  },
   "key_artifact_ids": ["art_chain_1"],
   "user_skill_level": "beginner",
   "safety_flags": [],
-  "diagnostic_session_id": "phs_123",
-  "cost_estimate": null
+  "diagnostic_session_id": "phs_123"
 }
 ```
 
@@ -616,7 +833,13 @@ conclusions suitable for ordinary application logs or traces under existing
 privacy policy.
 
 `completion_basis` is an internal ADK tool input. It must not be serialized in
-the public report payload.
+the public report payload. The backend must copy its validated
+`completion_reason` into the server-owned public `diagnostic_outcome`; no other
+completion-basis field is exposed.
+
+For V2, `save_diagnostic_report` must not accept a separate agent-authored
+top-level `summary`. The backend must copy `report.evidence_summary` into the
+phase-report envelope summary.
 
 ### 10.2 Shape
 
@@ -624,20 +847,14 @@ the public report payload.
 {
   "completion_basis": {
     "completion_reason": "diagnosis_supported",
-    "symptoms_addressed": [
-      "Chain skips under load in the three smallest rear sprockets."
-    ],
-    "contributors_considered": [
+    "material_hypotheses_considered": [
       "chain condition",
       "chain wear",
       "cassette wear",
       "derailleur indexing",
       "hanger alignment"
     ],
-    "remaining_uncertainties": [
-      "Hanger alignment was not physically measured."
-    ],
-    "next_evidence_likely_to_change_conclusion": false,
+    "readily_obtainable_material_evidence_missing": false,
     "why_ready": "The symptom pattern and chain measurement support the diagnosis; the remaining alignment uncertainty does not change the immediate recommendation."
   }
 }
@@ -647,29 +864,84 @@ Allowed `completion_reason` values are:
 
 - `diagnosis_supported`
 - `user_declined_more_input`
+- `requested_input_unavailable`
 - `in_person_assessment_required`
 
 ### 10.3 Validation
 
-The tool boundary must validate:
+`completion_basis` is an auditable, structurally enforced agent
+self-attestation. The tool boundary must deterministically validate:
 
-- `completion_reason` is supported
-- `symptoms_addressed` is non-empty
+- `completion_reason` is one of the allowed values
+- public `diagnostic_outcome` is server-owned and exactly matches the validated
+  `completion_reason`
+- report `reported_symptoms` is non-empty and contains only non-blank entries
+- `diagnosis_supported` has a non-empty
+  `material_hypotheses_considered`
+- `user_declined_more_input`, `requested_input_unavailable`, and
+  `in_person_assessment_required` may have an empty
+  `material_hypotheses_considered` when available evidence did not support any
+  meaningful causal hypothesis
 - every list entry is non-blank
 - `why_ready` is non-blank
+- `diagnosis_supported` has a non-null `primary_diagnosis`
+- every non-null `primary_diagnosis` has a confidence of `low`, `medium`, or
+  `high`, never `unknown`
+- `observed_findings` is non-empty
+- every observed finding has a unique, non-blank `finding_id`
+- every non-null `primary_diagnosis` has non-empty
+  `supporting_finding_ids`, every referenced ID exists, and at least one
+  referenced finding is classified as `supports_primary_diagnosis`
+- a null `primary_diagnosis` has no observed findings classified as
+  `supports_primary_diagnosis`
+- every contributing factor has non-empty `supporting_finding_ids`, every
+  referenced ID exists, and at least one referenced finding is classified as
+  `supported_contributor`
+- every alternate hypothesis has non-empty `supporting_finding_ids`, and every
+  referenced ID exists
+- a null `primary_diagnosis` is accepted only for
+  `user_declined_more_input`, `requested_input_unavailable`, or
+  `in_person_assessment_required` and only when the report retains the material
+  uncertainty and explains the limited or referral outcome
+- V2 rejects diagnostic-agent-authored `repair_estimate` and `cost_estimate`
 - normal `diagnosis_supported` completion has
-  `next_evidence_likely_to_change_conclusion: false`
+  `readily_obtainable_material_evidence_missing: false`
 - the report and completion basis are structurally compatible with the active
   diagnostic phase
 
-For `user_declined_more_input` or `in_person_assessment_required`,
-`next_evidence_likely_to_change_conclusion` may be `true`. In those cases, the
-report must retain the material limitation in `unresolved_questions`, use
-calibrated confidence, and apply required safety or referral behavior.
+The complaint-cluster grouping, finding relevance classifications, diagnosis,
+contributing-factor evidence summaries, alternate-hypothesis evidence
+summaries, considered hypotheses, and readiness rationale are agent-authored
+assertions. Structural validation must ensure that the required assertions are
+present and cross-field invariants are satisfied. It must not claim to
+determine whether the underlying bicycle evidence mechanically proves those
+assertions.
 
-The backend is not expected to prove the mechanical truth of
-`contributors_considered` or `why_ready`. Semantic quality is protected through
-the prompt and evaluations in Sections 11 and 13.
+For `user_declined_more_input`, `requested_input_unavailable`, or
+`in_person_assessment_required`,
+`readily_obtainable_material_evidence_missing` may be `true`. In those cases,
+the report must describe the corresponding evidence gap in
+`unresolved_uncertainties`, use calibrated confidence, and apply required
+safety or referral behavior. Valuable evidence that fails the readily
+obtainable test in Section 4.8 does not make this field `true`.
+
+`material_hypotheses_considered` must contain concise labels for plausible
+primary, simultaneous, and competing causal explanations that were material to
+the workup. Their final classification belongs in the report.
+
+The report's `unresolved_uncertainties` is the single canonical list of
+remaining material uncertainty. `completion_basis` must not duplicate that
+list. `why_ready` must explain why the retained uncertainties do not prevent
+the selected completion outcome.
+
+The report's `reported_symptoms` is the single canonical list of symptoms
+assessed. `completion_basis` must not duplicate that list. `why_ready` must
+explain whether each reported symptom is resolved or explicitly unresolved.
+
+The agent must make causal classifications and the completion decision in
+accordance with this spec. Their semantic truthfulness and diagnostic quality
+are protected through the prompt and evaluations in Sections 11 and 13, not
+through deterministic backend adjudication.
 
 ### 10.4 Error Behavior
 
@@ -692,7 +964,8 @@ another abnormal condition:
 
 1. Clearly tell the user what you observed.
 2. State whether its relationship to the reported symptoms is unknown,
-   possible, supported, or incidental.
+   possibly contributory, supportive of the primary diagnosis, a supported
+   secondary contributor, or incidental.
 3. Retain it as an observed finding.
 4. Continue investigating other plausible causes and simultaneous contributing
    factors when material uncertainty remains.
@@ -748,17 +1021,63 @@ state remain governed by `safety-diagnostic.md`.
 Backend and prompt-structure tests must cover:
 
 - `DiagnosticReportV2` validation
+- rejection of empty or blank `reported_symptoms`
 - rejection of unsupported diagnostic-relevance and evidence-source values
+- classification coverage distinguishing not-yet-assessable `unknown`
+  findings from mechanically unrelated `incidental` findings without requiring
+  unnecessary follow-up, and from `possible_contributor` findings with an
+  identified plausible mechanism but insufficient case-specific causal
+  evidence
+- rejection of empty `observed_findings`
+- rejection of blank or duplicate `finding_id` values
+- rejection of a non-null primary diagnosis with empty, missing, or unknown
+  `supporting_finding_ids`, or without a referenced finding classified as
+  `supports_primary_diagnosis`
+- rejection of `supports_primary_diagnosis` findings when
+  `primary_diagnosis` is null
+- rejection of a contributing factor with empty, missing, or unknown
+  `supporting_finding_ids`, or without a referenced finding classified as
+  `supported_contributor`
 - image findings requiring owned repair-session artifact IDs
-- acceptance of non-image findings with `artifact_ids: []`
+- rejection of image findings with empty artifact IDs
+- requirement for non-image findings to use `artifact_ids: []`
+- ownership and repair-session attachment validation for the union of artifact
+  IDs referenced anywhere in the report
+- rejection of `key_artifact_ids` that do not appear in an image-backed
+  observed finding
+- requirement for non-blank `evidence_source_detail` when
+  `evidence_source` is `other`, and null detail for named source types
 - separate serialization of observed findings, contributing factors, and
   alternate hypotheses
+- rejection of contributing factors with `unknown` confidence or a blank
+  evidence summary
+- rejection of V2 alternate hypotheses with `unknown` confidence, a blank
+  evidence summary, or empty, missing, or unknown `supporting_finding_ids`
+- omission of the V1 `ruled_out_by` field from V2 and rejection of fully
+  eliminated explanations as alternates
 - `completion_basis` validation
+- requirement for non-empty `material_hypotheses_considered` on
+  `diagnosis_supported`, while allowing it to be empty for limited or referral
+  completion when no meaningful causal hypothesis is supported
 - rejection of `diagnosis_supported` when
-  `next_evidence_likely_to_change_conclusion` is `true`
+  `readily_obtainable_material_evidence_missing` is `true`
 - allowance for unresolved evidence when the completion reason is
-  `user_declined_more_input` or `in_person_assessment_required`
+  `user_declined_more_input`, `requested_input_unavailable`, or
+  `in_person_assessment_required`
+- allowance for a null primary diagnosis only for
+  `user_declined_more_input`, `requested_input_unavailable`, or
+  `in_person_assessment_required`, with retained uncertainty and outcome
+  rationale
+- rejection of a null primary diagnosis for `diagnosis_supported`
+- rejection of `unknown` confidence or no finding classified as
+  `supports_primary_diagnosis` for a non-null primary diagnosis
+- rejection of diagnostic-agent-authored `repair_estimate` and `cost_estimate`
 - exclusion of `completion_basis` from the public report
+- server-owned mapping of `completion_reason` to the public
+  `diagnostic_outcome`, with rejection of mismatches or agent-supplied outcome
+  values at the tool boundary
+- exclusion of a separate agent-authored V2 tool summary and exact server
+  copying of `report.evidence_summary` into the phase-report envelope summary
 - prevention of persistence and phase transition after completion-basis
   validation failure
 - preservation of existing safety validation and artifact ownership behavior
@@ -775,10 +1094,13 @@ Agent behavior evaluations must include multi-turn cases where:
 - corrosion or stiff links and derailleur indexing both contribute
 - a clean-looking drivetrain has measurement-confirmed chain wear
 - a visually dramatic condition does not match the reported symptom
+- the user presents two related symptoms that belong to one complaint cluster
+- the user presents or later introduces two unrelated complaint clusters
 - a later measurement contradicts the initial working hypothesis
 - two independent conditions contribute to one symptom
 - a straightforward single-cause case is ready in one turn
 - the user declines further evidence
+- the user cannot safely or reasonably provide further evidence
 - an unresolved safety concern requires in-person assessment
 
 At minimum, evaluation labels should identify:
