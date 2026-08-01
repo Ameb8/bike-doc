@@ -208,6 +208,26 @@ fields:
 - `safety_flags`: all report safety flags using the V1 safety rules above, or
   `[]`
 
+The separate `completion_basis` argument is internal and concise. It must
+contain:
+
+- `completion_reason`: exactly one of `diagnosis_supported`,
+  `user_declined_more_input`, `requested_input_unavailable`, or
+  `in_person_assessment_required`
+- `material_hypotheses_considered`: concise labels for material plausible,
+  simultaneous, or competing causes considered; it must be non-empty for
+  `diagnosis_supported`
+- `readily_obtainable_material_evidence_missing`: `false` for
+  `diagnosis_supported`; it may be `true` only for a limited or referral
+  completion when the report retains the uncertainty
+- `why_ready`: a concise explanation of why remaining uncertainty does not
+  prevent the selected outcome
+
+Do not infer `requested_input_unavailable` from inactivity. Use
+`in_person_assessment_required` instead when physical assessment is necessary,
+even if a requested input is also unavailable. Never include
+`completion_basis` in the report payload.
+
 Do not include `diagnostic_session_id` in the tool input. The backend injects
 the server-owned diagnostic session ID, validates and persists the completed
 `DiagnosticReportV1`, and emits report and phase transition events. For Stage

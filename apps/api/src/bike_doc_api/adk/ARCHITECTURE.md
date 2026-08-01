@@ -220,8 +220,10 @@ once and exposes six ADK `FunctionTool`s:
 - `request_diagnostic_input` persists a structured follow-up through
   `TurnService`.
 - `raise_safety_flag` delegates to `DiagnosticSafetyService`.
-- `save_diagnostic_report` delegates to `ReportService` after the
-  agent-facing `DiagnosticReportToolPayload` is converted and validated.
+- `save_diagnostic_report` validates its internal `CompletionBasis` before it
+  delegates to `ReportService`; the basis is neither persisted nor exposed in
+  public report or tool-result serialization. It then converts and validates
+  the agent-facing `DiagnosticReportToolPayload`.
 
 The last three mutate product state directly in the ADK tool loop, exactly
 once. Their function responses are notifications to the runner and

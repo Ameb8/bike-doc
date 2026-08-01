@@ -522,7 +522,16 @@ Input schema:
     "user_skill_level": "beginner",
     "safety_flags": []
   },
-  "summary": "Likely rear shifting alignment issue; hanger damage remains possible."
+  "summary": "Likely rear shifting alignment issue; hanger damage remains possible.",
+  "completion_basis": {
+    "completion_reason": "diagnosis_supported",
+    "material_hypotheses_considered": [
+      "derailleur hanger alignment",
+      "shift cable friction"
+    ],
+    "readily_obtainable_material_evidence_missing": false,
+    "why_ready": "The symptom pattern and available evidence support the diagnosis."
+  }
 }
 ```
 
@@ -534,6 +543,18 @@ Rules:
   app-owned diagnostic phase session/archive ID.
 - The mapped report must validate against
   `docs/specs/apps/diagnostic-report-v1.md`.
+- `completion_basis` is required internal tool input and must never be persisted
+  in the report payload or returned through public report serialization. It has
+  exactly these completion reasons: `diagnosis_supported`,
+  `user_declined_more_input`, `requested_input_unavailable`, and
+  `in_person_assessment_required`.
+- Its hypothesis labels and `why_ready` must be non-blank. A
+  `diagnosis_supported` completion requires at least one considered hypothesis
+  and cannot retain readily obtainable material evidence gaps. Limited and
+  referral completions may retain such a gap.
+- `requested_input_unavailable` requires an explicit user communication; it
+  must not be inferred from inactivity. When in-person assessment is necessary,
+  `in_person_assessment_required` takes precedence.
 - `key_artifact_ids` must belong to the authenticated user and be attached to
   the repair session.
 - Report safety flags and session active safety flags must be reconciled by
@@ -572,7 +593,7 @@ Error behavior:
 | Session missing or not owned. | `not_found` |
 | Session is not in diagnostic phase. | `invalid_phase` |
 | Orchestration phase session mismatch. | `stale_session` |
-| Report payload does not map to `DiagnosticReportV1`. | `report_validation_failed` |
+| Report payload or completion basis is structurally invalid. | `report_validation_failed` |
 | Artifact ID is missing, not owned, or not attached to the session. | `artifact_not_found` |
 | Report safety flags violate server safety rules. | `safety_policy_violation` |
 

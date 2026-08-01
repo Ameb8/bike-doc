@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from bike_doc_api.adk.tools.common import (
     ArtifactToolNotFoundError,
     DiagnosticToolContext,
@@ -105,6 +107,17 @@ def _report_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _completion_basis(**overrides: Any) -> dict[str, Any]:
+    basis: dict[str, Any] = {
+        "completion_reason": "diagnosis_supported",
+        "material_hypotheses_considered": ["rear derailleur indexing"],
+        "readily_obtainable_material_evidence_missing": False,
+        "why_ready": "The symptom pattern supports the diagnosis.",
+    }
+    basis.update(overrides)
+    return basis
+
+
 async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
     service = _ReportService()
 
@@ -113,6 +126,7 @@ async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -121,7 +135,9 @@ async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
     assert result["data"]["report_id"] == "rpt_1"
     assert result["data"]["diagnostic_session_id"] == "phs_tool"
     assert result["data"]["phase_report_created_event_id"] == "evt_report"
+    assert "completion_basis" not in result["data"]
     assert service.calls[0]["payload"]["diagnostic_session_id"] == "phs_tool"
+    assert "completion_basis" not in service.calls[0]["payload"]
     assert service.calls[0]["current_user"].id == "usr_tool"
 
 
@@ -133,6 +149,7 @@ async def test_save_diagnostic_report_rejects_agent_selected_session_id() -> Non
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(diagnostic_session_id="phs_agent_chosen"),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -150,6 +167,7 @@ async def test_save_diagnostic_report_returns_field_validation_details() -> None
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(primary_diagnosis="stiff chain link"),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -174,6 +192,7 @@ async def test_save_diagnostic_report_rejects_context_mismatch() -> None:
             "repair_session_id": "rs_other",
             "summary": "Likely indexing issue.",
             "report": _report_payload(),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -198,6 +217,7 @@ async def test_save_diagnostic_report_maps_domain_errors() -> None:
                 "repair_session_id": "rs_tool",
                 "summary": "Likely indexing issue.",
                 "report": _report_payload(),
+                "completion_basis": _completion_basis(),
             },
             _context(),
         )
@@ -226,9 +246,142 @@ async def test_save_diagnostic_report_returns_active_safety_flags() -> None:
             "repair_session_id": "rs_tool",
             "summary": "Likely brake issue.",
             "report": _report_payload(key_artifact_ids=[]),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
 
     assert result["data"]["safety_state"] == "blocked"
     assert result["data"]["safety_flags"][0]["code"] == "brake_failure_suspected"
+
+
+async def test_save_report_requires_completion_basis_before_persistence() -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert result["error"]["details"]["fields"][0]["path"] == "completion_basis"
+    assert service.calls == []
+
+
+async def test_supported_completion_requires_primary_diagnosis_before_persistence() -> (
+    None
+):
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(primary_diagnosis=None),
+            "completion_basis": _completion_basis(),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert result["error"]["details"]["fields"][0]["path"] == (
+        "report.primary_diagnosis"
+    )
+    assert service.calls == []
+
+
+async def test_save_diagnostic_report_preserves_active_phase_validation() -> None:
+    service = _ReportService()
+    invalid_context = _context().model_copy(
+        update={"active_phase": RepairSessionPhase.PLANNING},
+    )
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(),
+        },
+        invalid_context,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_phase"
+    assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    ("basis", "field"),
+    [
+        (_completion_basis(material_hypotheses_considered=[]), "completion_basis"),
+        (_completion_basis(material_hypotheses_considered=["  "]), "completion_basis"),
+        (_completion_basis(why_ready="  "), "completion_basis.why_ready"),
+        (_completion_basis(completion_reason="unsupported"), "completion_basis"),
+        (
+            _completion_basis(readily_obtainable_material_evidence_missing=True),
+            "completion_basis",
+        ),
+    ],
+)
+async def test_supported_completion_rejects_invalid_basis_before_persistence(
+    basis: dict[str, Any],
+    field: str,
+) -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+            "completion_basis": basis,
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert any(
+        detail["path"].startswith(field)
+        for detail in result["error"]["details"]["fields"]
+    )
+    assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    "completion_reason",
+    [
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    ],
+)
+async def test_limited_completion_reasons_allow_material_evidence_gap(
+    completion_reason: str,
+) -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Further inspection is needed.",
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(
+                completion_reason=completion_reason,
+                material_hypotheses_considered=[],
+                readily_obtainable_material_evidence_missing=True,
+            ),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is True
+    assert len(service.calls) == 1
+    assert "completion_basis" not in service.calls[0]["payload"]

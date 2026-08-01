@@ -185,6 +185,15 @@ def _report_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _completion_basis() -> dict[str, Any]:
+    return {
+        "completion_reason": "diagnosis_supported",
+        "material_hypotheses_considered": ["rear derailleur indexing"],
+        "readily_obtainable_material_evidence_missing": False,
+        "why_ready": "The symptom pattern supports the diagnosis.",
+    }
+
+
 def _safety_flag() -> dict[str, Any]:
     return {
         "code": "brake_failure_suspected",
@@ -202,7 +211,9 @@ async def test_build_tool_catalog_returns_exact_v1_function_tools() -> None:
     assert tuple(tool.name for tool in tools) == V1_DIAGNOSTIC_TOOL_NAMES
 
 
-async def test_save_diagnostic_report_declares_nested_report_schema() -> None:
+async def test_save_diagnostic_report_declares_internal_completion_basis_schema() -> (
+    None
+):
     tool = _tool_by_name(
         build_tool_catalog(_dependencies(_CatalogService())),
         "save_diagnostic_report",
@@ -214,6 +225,17 @@ async def test_save_diagnostic_report_declares_nested_report_schema() -> None:
     assert schema["properties"]["report"] == {
         "$ref": "#/$defs/DiagnosticReportToolPayload",
     }
+    assert schema["properties"]["completion_basis"] == {
+        "$ref": "#/$defs/CompletionBasis",
+    }
+    completion_basis_schema = schema["$defs"]["CompletionBasis"]
+    assert completion_basis_schema["additionalProperties"] is False
+    assert completion_basis_schema["required"] == [
+        "completion_reason",
+        "material_hypotheses_considered",
+        "readily_obtainable_material_evidence_missing",
+        "why_ready",
+    ]
     report_schema = schema["$defs"]["DiagnosticReportToolPayload"]
     assert report_schema["additionalProperties"] is False
     assert report_schema["required"] == [
@@ -357,6 +379,7 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
         args={
             "summary": "Likely cable tension issue.",
             "report": _report_payload(diagnostic_session_id="phs_model_chosen"),
+            "completion_basis": _completion_basis(),
             "diagnostic_session_id": "adk_model_chosen",
         },
         tool_context=_tool_context(),
@@ -367,7 +390,11 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
     assert service.calls == []
 
     result = await tool.run_async(
-        args={"summary": "Likely cable tension issue.", "report": _report_payload()},
+        args={
+            "summary": "Likely cable tension issue.",
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(),
+        },
         tool_context=_tool_context(),
     )
 

@@ -31,6 +31,7 @@ from bike_doc_api.adk.tools.repair_history import (
     RepairHistoryServiceProtocol,
 )
 from bike_doc_api.adk.tools.reports import (
+    CompletionBasis,
     DiagnosticReportServiceProtocol,
     SaveDiagnosticReportTool,
 )
@@ -171,6 +172,7 @@ def build_tool_catalog(
     async def save_diagnostic_report(
         report: DiagnosticReportToolPayload,
         summary: str,
+        completion_basis: CompletionBasis,
         tool_context: ToolContext | None = None,
     ) -> dict[str, Any]:
         """Persist the completed diagnostic report for the active phase session."""
@@ -183,6 +185,7 @@ def build_tool_catalog(
                 "repair_session_id": context.repair_session_id,
                 "report": _report_payload_data(report),
                 "summary": summary,
+                "completion_basis": completion_basis.model_dump(mode="json"),
             },
             context,
         )

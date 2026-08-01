@@ -398,7 +398,9 @@ async def test_list_and_get_reports_return_public_envelopes() -> None:
 
     assert [report.id for report in listed.items] == [created.id]
     assert fetched.id == created.id
-    assert "adk" not in fetched.model_dump_json().lower()
+    public_report = fetched.model_dump_json().lower()
+    assert "adk" not in public_report
+    assert "completion_basis" not in public_report
 
 
 async def test_get_report_enriches_legacy_diagnostic_report_cost_estimate() -> None:

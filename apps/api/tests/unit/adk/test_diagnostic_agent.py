@@ -135,6 +135,11 @@ def test_diagnostic_prompt_contains_required_stage_14_instructions() -> None:
         "Set `blocks_repair_instructions: true` for every `blocking` flag",
         "Prefer shop referral",
         "diagnostic_report.v1",
+        "completion_basis",
+        "diagnosis_supported",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+        "Do not infer `requested_input_unavailable` from inactivity",
         "Do not include `diagnostic_session_id` in the tool input",
         "complete the phase only by calling `save_diagnostic_report`",
     ]
