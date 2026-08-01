@@ -140,3 +140,44 @@ def test_diagnostic_prompt_contains_required_stage_14_instructions() -> None:
     ]
     for fragment in required_fragments:
         assert fragment in prompt
+
+
+def test_diagnostic_prompt_requires_complaint_centered_finding_investigation() -> None:
+    """The instruction asset carries the observation-handling policy, not prose."""
+
+    prompt = " ".join(DIAGNOSTIC_PROMPT.split()).lower()
+
+    required_concepts = [
+        ("abnormal observation", "not automatically a diagnosis"),
+        ("retain", "observed finding"),
+        ("unknown", "possibly contributory", "supported secondary contributor"),
+        ("symptom pattern", "measurement", "functional check", "repair history"),
+        ("one complaint cluster", "separate session"),
+        ("boundary never limits safety", "material safety findings"),
+        ("simultaneous contributor", "competing alternate hypothesis"),
+        ("planning owns those decisions", "report readiness"),
+    ]
+
+    for concept in required_concepts:
+        assert all(term in prompt for term in concept)
+
+
+def test_diagnostic_prompt_requires_readiness_or_a_single_safe_follow_up() -> None:
+    """Completion is allowed only by readiness, not thin evidence or inactivity."""
+
+    prompt = " ".join(DIAGNOSTIC_PROMPT.split()).lower()
+
+    required_concepts = [
+        ("save_diagnostic_report", "merely because an abnormality was found"),
+        ("readily obtainable evidence", "materially change the conclusion"),
+        ("one targeted, high-value input", "safe and reasonably obtainable"),
+        ("continued diagnostic phase", "awaiting user input"),
+        ("inactivity or app exit", "not a declined or unavailable input"),
+        ("same-turn completion", "readiness checks"),
+        ("user declines", "cannot safely or reasonably provide"),
+        ("in-person assessment", "remote diagnosis is unsafe"),
+        ("low confidence", "not permission to stop investigating"),
+    ]
+
+    for concept in required_concepts:
+        assert all(term in prompt for term in concept)
