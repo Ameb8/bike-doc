@@ -222,8 +222,10 @@ once and exposes six ADK `FunctionTool`s:
 - `raise_safety_flag` delegates to `DiagnosticSafetyService`.
 - `save_diagnostic_report` validates its internal `CompletionBasis` before it
   delegates to `ReportService`; the basis is neither persisted nor exposed in
-  public report or tool-result serialization. It then converts and validates
-  the agent-facing `DiagnosticReportToolPayload`.
+  public report or tool-result serialization. The server-seeded tool context
+  selects `diagnostic_report.v1` or `diagnostic_report.v2`; V2 agent input
+  excludes the server-owned outcome, phase-session ID, and envelope summary.
+  `ReportService` stamps those fields and validates the public envelope.
 
 The last three mutate product state directly in the ADK tool loop, exactly
 once. Their function responses are notifications to the runner and

@@ -6,7 +6,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
@@ -222,27 +222,58 @@ class ReportService:
         current_user: User,
         repair_session_id: str,
         diagnostic_session_id: str,
-        summary: str,
+        summary: str | None,
         payload: DiagnosticReportV1 | DiagnosticReportV2 | dict[str, Any],
+        report_schema_version: Literal["diagnostic_report.v1", "diagnostic_report.v2"],
+        completion_reason: str | None = None,
         turn_id: str | None = None,
     ) -> DiagnosticReportPersistenceResult:
         """Persist a diagnostic report produced through an internal ADK tool."""
 
         payload_data = _payload_data(payload)
-        payload_data["diagnostic_session_id"] = diagnostic_session_id
-        safety_flags = _payload_safety_flags(payload_data)
-        key_artifact_ids = payload_data.get("key_artifact_ids")
-        if not isinstance(key_artifact_ids, list) or not all(
-            isinstance(artifact_id, str) for artifact_id in key_artifact_ids
-        ):
+        if payload_data.get("schema_version") != report_schema_version:
             raise ValidationAppError()
+        if report_schema_version == "diagnostic_report.v2":
+            if completion_reason not in {
+                "diagnosis_supported",
+                "user_declined_more_input",
+                "requested_input_unavailable",
+                "in_person_assessment_required",
+            }:
+                raise ValidationAppError()
+            if (
+                "diagnostic_outcome" in payload_data
+                or "diagnostic_session_id" in payload_data
+                or summary is not None
+            ):
+                raise ValidationAppError()
+            payload_data["diagnostic_outcome"] = completion_reason
+            payload_data["diagnostic_session_id"] = diagnostic_session_id
+            validated = _validate_diagnostic_payload(payload_data)
+            if not isinstance(validated, DiagnosticReportV2):
+                raise ValidationAppError()
+            summary = validated.evidence_summary
+            source_artifact_ids = _report_artifact_ids(validated)
+        else:
+            if summary is None or not summary.strip() or completion_reason is not None:
+                raise ValidationAppError()
+            if "diagnostic_session_id" in payload_data:
+                raise ValidationAppError()
+            payload_data["diagnostic_session_id"] = diagnostic_session_id
+            key_artifact_ids = payload_data.get("key_artifact_ids")
+            if not isinstance(key_artifact_ids, list) or not all(
+                isinstance(artifact_id, str) for artifact_id in key_artifact_ids
+            ):
+                raise ValidationAppError()
+            source_artifact_ids = key_artifact_ids
+        safety_flags = _payload_safety_flags(payload_data)
         return await self._persist_diagnostic_report(
             current_user=current_user,
             repair_session_id=repair_session_id,
             summary=summary,
             payload=payload_data,
             safety_flags=list(safety_flags),
-            source_artifact_ids=key_artifact_ids,
+            source_artifact_ids=source_artifact_ids,
             turn_id=turn_id,
         )
 
@@ -270,6 +301,10 @@ class ReportService:
                 flag.model_dump(mode="json") for flag in report_safety.payload_flags
             ]
             validated = _validate_diagnostic_payload(payload_data)
+            if isinstance(validated, DiagnosticReportV2):
+                # V2 image findings are retained evidence even when not designated
+                # as key artifacts; keep the envelope's invalidation set complete.
+                source_artifact_ids = _report_artifact_ids(validated)
             schema_version = validated.schema_version
             envelope = PhaseReportEnvelope(
                 id="rpt_validation_placeholder",

@@ -415,9 +415,123 @@ async def test_service_persists_and_revalidates_v2_report_artifact_evidence() ->
     )
 
     assert fetched.schema_version == "diagnostic_report.v2"
+    assert fetched.source_artifact_ids == [OWNED_ARTIFACT_ID]
     assert fetched.payload.model_dump(mode="json")["observed_findings"][1][
         "artifact_ids"
     ] == [OWNED_ARTIFACT_ID]
+
+
+async def test_tool_v2_persistence_stamps_outcome_summary_and_artifact_union() -> None:
+    store = _ReportStore()
+    payload = _v2_payload()
+    payload.pop("diagnostic_outcome")
+    payload.pop("diagnostic_session_id")
+
+    result = await _service(store).persist_diagnostic_report_from_tool(
+        current_user=_user(),
+        repair_session_id=OWNED_SESSION_ID,
+        diagnostic_session_id=PHASE_SESSION_ID,
+        summary=None,
+        payload=payload,
+        report_schema_version="diagnostic_report.v2",
+        completion_reason="diagnosis_supported",
+    )
+
+    assert result.report.summary == payload["evidence_summary"]
+    assert result.report.payload.diagnostic_outcome == "diagnosis_supported"
+    assert result.report.payload.diagnostic_session_id == PHASE_SESSION_ID
+    assert result.report.source_artifact_ids == [OWNED_ARTIFACT_ID]
+
+
+@pytest.mark.parametrize(
+    "completion_reason",
+    [
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    ],
+)
+async def test_tool_v2_persists_limited_and_referral_outcomes(
+    completion_reason: str,
+) -> None:
+    store = _ReportStore()
+    payload = _v2_payload(
+        primary_diagnosis=None,
+        observed_findings=[
+            {
+                "finding_id": "symptom",
+                "component": "drivetrain",
+                "finding": "The user reports skipping under load.",
+                "evidence_source": "user_report",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "unknown",
+                "artifact_ids": [],
+            }
+        ],
+        unresolved_uncertainties=[
+            "The remaining cause cannot be established from the available input."
+        ],
+        key_artifact_ids=[],
+    )
+    payload.pop("diagnostic_outcome")
+    payload.pop("diagnostic_session_id")
+
+    result = await _service(store).persist_diagnostic_report_from_tool(
+        current_user=_user(),
+        repair_session_id=OWNED_SESSION_ID,
+        diagnostic_session_id=PHASE_SESSION_ID,
+        summary=None,
+        payload=payload,
+        report_schema_version="diagnostic_report.v2",
+        completion_reason=completion_reason,
+    )
+
+    assert result.report.payload.diagnostic_outcome == completion_reason
+
+
+@pytest.mark.parametrize(
+    "payload_update",
+    [
+        {"diagnostic_outcome": "diagnosis_supported"},
+        {"diagnostic_session_id": "phs_agent"},
+    ],
+)
+async def test_tool_v2_rejects_agent_owned_fields_without_transition(
+    payload_update: dict[str, Any],
+) -> None:
+    store = _ReportStore()
+    payload = _v2_payload()
+    payload.pop("diagnostic_outcome")
+    payload.pop("diagnostic_session_id")
+    payload.update(payload_update)
+
+    with pytest.raises(ValidationAppError):
+        await _service(store).persist_diagnostic_report_from_tool(
+            current_user=_user(),
+            repair_session_id=OWNED_SESSION_ID,
+            diagnostic_session_id=PHASE_SESSION_ID,
+            summary=None,
+            payload=payload,
+            report_schema_version="diagnostic_report.v2",
+            completion_reason="diagnosis_supported",
+        )
+
+    assert store.reports == []
+    assert store.events == []
+    assert store.session.diagnostic_report_id is None
+
+
+async def test_v2_image_finding_artifact_must_belong_to_active_session() -> None:
+    store = _ReportStore()
+    payload = _v2_payload()
+    payload["observed_findings"][1]["artifact_ids"] = [WRONG_SESSION_ARTIFACT_ID]
+
+    with pytest.raises(NotFoundError):
+        await _persist(_service(store), payload=payload, source_artifact_ids=[])
+
+    assert store.reports == []
+    assert store.events == []
+    assert store.session.diagnostic_report_id is None
 
 
 async def test_service_rejects_invalid_stored_v2_payload_before_public_exposure() -> (

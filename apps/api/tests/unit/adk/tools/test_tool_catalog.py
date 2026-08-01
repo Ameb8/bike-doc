@@ -22,6 +22,7 @@ from bike_doc_api.schemas.common import (
 from bike_doc_api.schemas.repair_session import InputRequest
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     SafetyFlag,
 )
@@ -91,14 +92,22 @@ class _CatalogService:
 
     async def persist_diagnostic_report_from_tool(self, **kwargs: Any) -> Any:
         self._record("persist_diagnostic_report_from_tool", kwargs)
-        payload = DiagnosticReportV1.model_validate(kwargs["payload"])
+        payload_data = dict(kwargs["payload"])
+        payload_data["diagnostic_session_id"] = kwargs["diagnostic_session_id"]
+        if payload_data["schema_version"] == "diagnostic_report.v2":
+            payload_data["diagnostic_outcome"] = kwargs["completion_reason"]
+            payload = DiagnosticReportV2.model_validate(payload_data)
+            summary = payload.evidence_summary
+        else:
+            payload = DiagnosticReportV1.model_validate(payload_data)
+            summary = kwargs["summary"]
         report = PhaseReportEnvelope(
             id="rpt_1",
             repair_session_id=kwargs["repair_session_id"],
             type=PhaseReportType.DIAGNOSTIC,
-            schema_version="diagnostic_report.v1",
+            schema_version=payload.schema_version,
             phase=RepairSessionPhase.DIAGNOSTIC,
-            summary=kwargs["summary"],
+            summary=summary,
             safety_flags=payload.safety_flags,
             source_artifact_ids=payload.key_artifact_ids,
             created_at=datetime(2026, 6, 25, 12, 1, tzinfo=UTC),
@@ -223,7 +232,11 @@ async def test_save_diagnostic_report_declares_internal_completion_basis_schema(
     schema = declaration.parameters_json_schema
 
     assert schema["properties"]["report"] == {
-        "$ref": "#/$defs/DiagnosticReportToolPayload",
+        "anyOf": [
+            {"$ref": "#/$defs/DiagnosticReportToolPayload"},
+            {"$ref": "#/$defs/DiagnosticReportV2ToolPayload"},
+        ],
+        "title": "Report",
     }
     assert schema["properties"]["completion_basis"] == {
         "$ref": "#/$defs/CompletionBasis",
@@ -250,6 +263,14 @@ async def test_save_diagnostic_report_declares_internal_completion_basis_schema(
     assert report_schema["properties"]["primary_diagnosis"] == {
         "$ref": "#/$defs/Diagnosis",
     }
+    assert (
+        "diagnostic_outcome"
+        not in schema["$defs"]["DiagnosticReportV2ToolPayload"]["properties"]
+    )
+    assert (
+        "diagnostic_session_id"
+        not in schema["$defs"]["DiagnosticReportV2ToolPayload"]["properties"]
+    )
 
 
 async def test_tool_catalog_requires_server_owned_context_from_adk_state() -> None:
@@ -402,5 +423,5 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
     assert [call[0] for call in service.calls] == [
         "persist_diagnostic_report_from_tool",
     ]
-    assert service.calls[0][1]["payload"]["diagnostic_session_id"] == "phs_server"
+    assert "diagnostic_session_id" not in service.calls[0][1]["payload"]
     assert service.calls[0][1]["turn_id"] == "turn_server"

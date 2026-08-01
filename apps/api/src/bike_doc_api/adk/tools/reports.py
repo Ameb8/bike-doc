@@ -14,7 +14,10 @@ from pydantic import (
     model_validator,
 )
 
-from bike_doc_api.adk.report_schemas.diagnostic import DiagnosticReportToolPayload
+from bike_doc_api.adk.report_schemas.diagnostic import (
+    DiagnosticReportToolPayload,
+    DiagnosticReportV2ToolPayload,
+)
 from bike_doc_api.adk.tools.common import (
     DiagnosticToolContext,
     ReportValidationToolError,
@@ -29,6 +32,7 @@ from bike_doc_api.adk.tools.common import (
 from bike_doc_api.core.errors import SessionStateConflictError, ValidationAppError
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     SafetyFlag,
 )
@@ -99,7 +103,7 @@ class SaveDiagnosticReportInput(BaseModel):
 
     repair_session_id: str = Field(min_length=1)
     report: dict[str, Any]
-    summary: str = Field(min_length=1)
+    summary: str | None = None
     completion_basis: CompletionBasis
 
 
@@ -135,8 +139,10 @@ class DiagnosticReportServiceProtocol(Protocol):
         current_user: Any,
         repair_session_id: str,
         diagnostic_session_id: str,
-        summary: str,
+        summary: str | None,
         payload: dict[str, Any],
+        report_schema_version: Literal["diagnostic_report.v1", "diagnostic_report.v2"],
+        completion_reason: str | None = None,
         turn_id: str | None = None,
     ) -> DiagnosticReportPersistenceResultProtocol:
         """Persist a diagnostic report with server-owned context injected."""
@@ -182,17 +188,30 @@ class SaveDiagnosticReportTool:
             return tool_error("invalid_phase", "Diagnostic phase is not active.")
 
         async def call() -> dict[str, Any]:
+            expected_version = context.diagnostic_report_schema_version
+            if parsed.report.get("schema_version") != expected_version:
+                raise ReportValidationToolError()
             try:
-                report_payload = DiagnosticReportToolPayload.model_validate(
-                    parsed.report,
-                )
+                if expected_version == "diagnostic_report.v1":
+                    if parsed.summary is None or not parsed.summary.strip():
+                        raise ReportValidationToolError()
+                    report_payload: (
+                        DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload
+                    ) = DiagnosticReportToolPayload.model_validate(
+                        parsed.report,
+                    )
+                else:
+                    if parsed.summary is not None:
+                        raise ReportValidationToolError()
+                    report_payload = DiagnosticReportV2ToolPayload.model_validate(
+                        parsed.report,
+                    )
             except ValidationError as exc:
                 raise ReportValidationToolError(
                     validation_error_details(exc, prefix="report"),
                 ) from exc
 
             payload = report_payload.model_dump(mode="json")
-            payload["diagnostic_session_id"] = context.diagnostic_session_id
             # The completion basis is intentionally never persisted or returned.
             result = await self._service.persist_diagnostic_report_from_tool(
                 current_user=current_tool_user(context),
@@ -200,10 +219,16 @@ class SaveDiagnosticReportTool:
                 diagnostic_session_id=context.diagnostic_session_id,
                 summary=parsed.summary,
                 payload=payload,
+                report_schema_version=expected_version,
+                completion_reason=(
+                    parsed.completion_basis.completion_reason
+                    if expected_version == "diagnostic_report.v2"
+                    else None
+                ),
                 turn_id=context.turn_id,
             )
             report = result.report
-            if isinstance(report.payload, DiagnosticReportV1):
+            if isinstance(report.payload, (DiagnosticReportV1, DiagnosticReportV2)):
                 diagnostic_session_id = report.payload.diagnostic_session_id
             elif isinstance(report.payload, dict):
                 diagnostic_session_id = str(report.payload["diagnostic_session_id"])

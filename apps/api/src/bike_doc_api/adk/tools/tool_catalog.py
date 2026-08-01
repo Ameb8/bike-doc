@@ -9,7 +9,10 @@ from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
-from bike_doc_api.adk.report_schemas.diagnostic import DiagnosticReportToolPayload
+from bike_doc_api.adk.report_schemas.diagnostic import (
+    DiagnosticReportToolPayload,
+    DiagnosticReportV2ToolPayload,
+)
 from bike_doc_api.adk.tools.artifacts import (
     ArtifactServiceProtocol,
     ListDiagnosticArtifactsTool,
@@ -170,9 +173,9 @@ def build_tool_catalog(
         )
 
     async def save_diagnostic_report(
-        report: DiagnosticReportToolPayload,
-        summary: str,
+        report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload,
         completion_basis: CompletionBasis,
+        summary: str | None = None,
         tool_context: ToolContext | None = None,
     ) -> dict[str, Any]:
         """Persist the completed diagnostic report for the active phase session."""
@@ -227,10 +230,12 @@ def _context_error() -> dict[str, Any]:
     )
 
 
-def _report_payload_data(report: DiagnosticReportToolPayload | Any) -> dict[str, Any]:
+def _report_payload_data(
+    report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload | Any,
+) -> dict[str, Any]:
     """Return report data from ADK's typed or dict runtime value."""
 
-    if isinstance(report, DiagnosticReportToolPayload):
+    if isinstance(report, (DiagnosticReportToolPayload, DiagnosticReportV2ToolPayload)):
         return report.model_dump(mode="json")
     if isinstance(report, dict):
         return report
