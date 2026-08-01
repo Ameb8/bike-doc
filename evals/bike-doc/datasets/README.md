@@ -16,6 +16,14 @@ by pytest assertions over provider responses.
 committed, and its runner loads actual image bytes for both model views. See its
 README for the required dataset fields, review workflow, and regression rules.
 
+## Diagnostic observation handling
+
+`../diagnostic-observation-handling` is the inspectable multi-turn behavior
+dataset for distinguishing observed findings from causal diagnoses. It includes
+per-turn report-save permission, safety behavior, report retention, and the
+distinct limited-report/referral outcomes. Run its deterministic validator and
+fixture tests as documented in its README before changing the cases.
+
 ## Drivetrain Profile Inference
 
 Run all three drivetrain tracers before accepting a drivetrain extractor or

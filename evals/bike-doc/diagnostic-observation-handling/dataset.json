@@ -1,0 +1,107 @@
+{
+  "schema_version": "bike_doc_diagnostic_observation_eval.v1",
+  "dataset_version": "v1.0.0",
+  "cases": [
+    {
+      "id": "corrosion-and-indexing-acceptance-flow",
+      "scenario_tags": ["corroded_chain_primary_cause", "corrosion_or_stiff_links_and_indexing_contribute", "section_13_4_initial_acceptance", "section_13_4_later_acceptance"],
+      "complaint_cluster": {"id": "drivetrain-skipping", "symptoms": ["Chain skips under load"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}, {"id": "chain_wear", "source": "measurement"}, {"id": "indexing_error", "source": "functional_check"}], "diagnoses": ["worn_chain_causes_skipping"], "contributors": ["derailleur_indexing_worsens_skipping"], "alternates": ["cassette_wear"], "follow_up_requests": ["measure_chain_wear"]},
+      "turns": [
+        {"order": 1, "user_input": {"message": "This photo shows my rusty-looking chain. It skips when I pedal hard."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["cassette_wear"], "acceptable_follow_up_requests": ["measure_chain_wear"], "save_diagnostic_report_permitted": false, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": []}},
+        {"order": 2, "user_input": {"message": "A chain checker shows wear past replacement, and shifting is delayed in the affected gears."}, "expected": {"findings_to_communicate": ["chain_corrosion", "chain_wear", "indexing_error"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["worn_chain_causes_skipping"], "expected_contributing_factors": ["derailleur_indexing_worsens_skipping"], "meaningful_alternate_hypotheses": ["cassette_wear"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion", "chain_wear", "indexing_error"], "allowed_completion_outcomes": ["diagnosis_supported"]}}
+      ]
+    },
+    {
+      "id": "corroded-chain-stiff-links-primary-cause",
+      "scenario_tags": ["corroded_chain_primary_cause"],
+      "complaint_cluster": {"id": "drivetrain-skipping", "symptoms": ["Chain skips and jolts under load"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}, {"id": "stiff_links_under_load", "source": "functional_check"}], "diagnoses": ["corrosion_related_stiff_links_cause_skipping"], "contributors": [], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The chain is visibly corroded, and rotating it under load repeatedly shows stiff links jumping over the cassette."}, "expected": {"findings_to_communicate": ["chain_corrosion", "stiff_links_under_load"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["corrosion_related_stiff_links_cause_skipping"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion", "stiff_links_under_load"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "corrosion-incidental-to-cassette-wear",
+      "scenario_tags": ["corroded_chain_incidental_to_cassette_wear"],
+      "complaint_cluster": {"id": "drivetrain-skipping", "symptoms": ["Chain skips only on the smallest sprockets"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}, {"id": "cassette_shark_fin_wear", "source": "image"}], "diagnoses": ["cassette_wear_causes_gear_specific_skipping"], "contributors": [], "alternates": ["chain_wear"], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The chain is discolored, but it only skips on these two sprockets and the cassette teeth are hooked."}, "expected": {"findings_to_communicate": ["chain_corrosion", "cassette_shark_fin_wear"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": ["cassette_wear_causes_gear_specific_skipping"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["chain_wear"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion", "cassette_shark_fin_wear"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "clean-drivetrain-measured-chain-wear",
+      "scenario_tags": ["clean_drivetrain_measurement_confirmed_chain_wear"],
+      "complaint_cluster": {"id": "drivetrain-skipping", "symptoms": ["Chain skips under hard pedaling"]},
+      "labels": {"findings": [{"id": "clean_chain", "source": "image"}, {"id": "chain_wear", "source": "measurement"}], "diagnoses": ["chain_wear_causes_skipping"], "contributors": [], "alternates": ["freehub_fault"], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The drivetrain looks clean, but my chain checker is beyond the replacement mark and it skips under load."}, "expected": {"findings_to_communicate": ["chain_wear"], "forbidden_causal_assertions": ["clean_chain"], "acceptable_primary_diagnoses": ["chain_wear_causes_skipping"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["freehub_fault"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["clean_chain", "chain_wear"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "dramatic-tire-crack-unrelated-to-shifting",
+      "scenario_tags": ["dramatic_condition_does_not_match_symptom"],
+      "complaint_cluster": {"id": "rear-shifting", "symptoms": ["Rear shifts hesitate"]},
+      "labels": {"findings": [{"id": "tire_sidewall_crack", "source": "image"}, {"id": "cable_friction", "source": "functional_check"}], "diagnoses": ["cable_friction_causes_hesitant_shifting"], "contributors": [], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "My rear shifts hesitate. The photo also shows a dramatic cracked tire, but cable movement is sticky."}, "expected": {"findings_to_communicate": ["tire_sidewall_crack", "cable_friction"], "forbidden_causal_assertions": ["tire_sidewall_crack"], "acceptable_primary_diagnoses": ["cable_friction_causes_hesitant_shifting"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": true, "requires_in_person_assessment": false}, "findings_retained_in_report": ["tire_sidewall_crack", "cable_friction"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "related-skipping-and-drivetrain-noise",
+      "scenario_tags": ["related_symptoms_one_complaint_cluster"],
+      "complaint_cluster": {"id": "drivetrain", "symptoms": ["Chain skips under load", "Drivetrain clicks under load"]},
+      "labels": {"findings": [{"id": "worn_chain", "source": "measurement"}], "diagnoses": ["chain_wear_explains_related_drivetrain_symptoms"], "contributors": [], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The chain skips and clicks together under load; chain wear is measured beyond threshold."}, "expected": {"findings_to_communicate": ["worn_chain"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["chain_wear_explains_related_drivetrain_symptoms"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["worn_chain"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "unrelated-clusters-at-session-start",
+      "scenario_tags": ["unrelated_clusters_presented_initially"],
+      "complaint_cluster": {"id": "not-yet-selected", "symptoms": ["Chain skips", "Front brake squeals"]},
+      "labels": {"findings": [{"id": "chain_skip_report", "source": "user_report"}, {"id": "front_brake_squeal_report", "source": "user_report"}], "diagnoses": [], "contributors": [], "alternates": [], "follow_up_requests": ["choose_complaint_cluster"]},
+      "turns": [{"order": 1, "user_input": {"message": "My chain skips and my front brake squeals."}, "expected": {"findings_to_communicate": ["chain_skip_report", "front_brake_squeal_report"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": ["choose_complaint_cluster"], "save_diagnostic_report_permitted": false, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_skip_report", "front_brake_squeal_report"], "allowed_completion_outcomes": []}}]
+    },
+    {
+      "id": "unrelated-brake-concern-introduced-later",
+      "scenario_tags": ["unrelated_cluster_introduced_later"],
+      "complaint_cluster": {"id": "drivetrain", "symptoms": ["Chain skips"]},
+      "labels": {"findings": [{"id": "chain_wear", "source": "measurement"}, {"id": "brake_lever_to_bar", "source": "user_report"}], "diagnoses": ["chain_wear_causes_skipping"], "contributors": [], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The chain is worn past threshold and skips. Also, my front brake lever pulls to the bar."}, "expected": {"findings_to_communicate": ["chain_wear", "brake_lever_to_bar"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["chain_wear_causes_skipping"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": true, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_wear", "brake_lever_to_bar"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "later-measurement-contradicts-corrosion-hypothesis",
+      "scenario_tags": ["later_measurement_contradicts_working_hypothesis"],
+      "complaint_cluster": {"id": "drivetrain", "symptoms": ["Chain skips under load"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}, {"id": "chain_within_wear_limit", "source": "measurement"}, {"id": "freehub_slip", "source": "functional_check"}], "diagnoses": ["freehub_engagement_failure"], "contributors": [], "alternates": ["chain_condition"], "follow_up_requests": ["check_freehub_engagement"]},
+      "turns": [{"order": 1, "user_input": {"message": "My chain is rusty-looking and skips under load."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["chain_condition"], "acceptable_follow_up_requests": ["check_freehub_engagement"], "save_diagnostic_report_permitted": false, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": []}}, {"order": 2, "user_input": {"message": "The chain measures within limit; the pedals lurch while the cassette does not turn."}, "expected": {"findings_to_communicate": ["chain_corrosion", "chain_within_wear_limit", "freehub_slip"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": ["freehub_engagement_failure"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["chain_condition"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion", "chain_within_wear_limit", "freehub_slip"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "two-independent-brake-contributors",
+      "scenario_tags": ["two_independent_conditions_contribute_to_one_symptom"],
+      "complaint_cluster": {"id": "front-brake", "symptoms": ["Front brake lever feels soft"]},
+      "labels": {"findings": [{"id": "air_in_hydraulic_line", "source": "functional_check"}, {"id": "worn_brake_pads", "source": "image"}], "diagnoses": ["air_in_line_primary_cause_of_soft_lever"], "contributors": ["worn_pads_increase_lever_travel"], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "A bleed test indicates air in the line, and the pads are visibly near their limit."}, "expected": {"findings_to_communicate": ["air_in_hydraulic_line", "worn_brake_pads"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["air_in_line_primary_cause_of_soft_lever"], "expected_contributing_factors": ["worn_pads_increase_lever_travel"], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": true, "requires_in_person_assessment": false}, "findings_retained_in_report": ["air_in_hydraulic_line", "worn_brake_pads"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "straightforward-loose-pedal-one-turn",
+      "scenario_tags": ["straightforward_single_cause_one_turn"],
+      "complaint_cluster": {"id": "pedal-click", "symptoms": ["Pedal clicks once per revolution"]},
+      "labels": {"findings": [{"id": "loose_pedal", "source": "functional_check"}], "diagnoses": ["loose_pedal_causes_click"], "contributors": [], "alternates": [], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "The click is once per pedal revolution, and the right pedal is visibly loose at the crank."}, "expected": {"findings_to_communicate": ["loose_pedal"], "forbidden_causal_assertions": [], "acceptable_primary_diagnoses": ["loose_pedal_causes_click"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": [], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": true, "requires_in_person_assessment": false}, "findings_retained_in_report": ["loose_pedal"], "allowed_completion_outcomes": ["diagnosis_supported"]}}]
+    },
+    {
+      "id": "user-declines-chain-measurement",
+      "scenario_tags": ["user_declines_further_evidence"],
+      "complaint_cluster": {"id": "drivetrain", "symptoms": ["Chain skips under load"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}], "diagnoses": ["possible_chain_condition"], "contributors": [], "alternates": ["cassette_wear"], "follow_up_requests": ["measure_chain_wear"]},
+      "turns": [{"order": 1, "user_input": {"message": "My chain is corroded-looking and skips under load."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["cassette_wear"], "acceptable_follow_up_requests": ["measure_chain_wear"], "save_diagnostic_report_permitted": false, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": []}}, {"order": 2, "user_input": {"message": "I do not want to do any more checks."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": ["possible_chain_condition"], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["cassette_wear"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": ["user_declined_more_input"]}}]
+    },
+    {
+      "id": "requested-input-unavailable",
+      "scenario_tags": ["requested_input_unavailable"],
+      "complaint_cluster": {"id": "drivetrain", "symptoms": ["Chain skips under load"]},
+      "labels": {"findings": [{"id": "chain_corrosion", "source": "image"}], "diagnoses": [], "contributors": [], "alternates": ["chain_wear"], "follow_up_requests": ["measure_chain_wear"]},
+      "turns": [{"order": 1, "user_input": {"message": "My chain looks corroded and skips under load."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["chain_wear"], "acceptable_follow_up_requests": ["measure_chain_wear"], "save_diagnostic_report_permitted": false, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": []}}, {"order": 2, "user_input": {"message": "I do not own a chain checker and cannot borrow one."}, "expected": {"findings_to_communicate": ["chain_corrosion"], "forbidden_causal_assertions": ["chain_corrosion"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["chain_wear"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": false, "requires_in_person_assessment": false}, "findings_retained_in_report": ["chain_corrosion"], "allowed_completion_outcomes": ["requested_input_unavailable"]}}]
+    },
+    {
+      "id": "unresolved-brake-safety-requires-in-person",
+      "scenario_tags": ["in_person_assessment_required"],
+      "complaint_cluster": {"id": "front-brake", "symptoms": ["Front brake lever pulls to the bar"]},
+      "labels": {"findings": [{"id": "brake_lever_to_bar", "source": "user_report"}, {"id": "fluid_leak", "source": "image"}], "diagnoses": [], "contributors": [], "alternates": ["hydraulic_brake_failure"], "follow_up_requests": []},
+      "turns": [{"order": 1, "user_input": {"message": "My front brake lever pulls to the bar and there is fluid by the caliper; I cannot safely test ride it."}, "expected": {"findings_to_communicate": ["brake_lever_to_bar", "fluid_leak"], "forbidden_causal_assertions": ["fluid_leak"], "acceptable_primary_diagnoses": [], "expected_contributing_factors": [], "meaningful_alternate_hypotheses": ["hydraulic_brake_failure"], "acceptable_follow_up_requests": [], "save_diagnostic_report_permitted": true, "required_safety_behavior": {"must_raise_safety_flag": true, "requires_in_person_assessment": true}, "findings_retained_in_report": ["brake_lever_to_bar", "fluid_leak"], "allowed_completion_outcomes": ["in_person_assessment_required"]}}]
+    }
+  ]
+}
