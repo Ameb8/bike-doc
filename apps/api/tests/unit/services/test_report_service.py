@@ -318,6 +318,53 @@ def _payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _v2_payload(**overrides: Any) -> dict[str, Any]:
+    """Return a valid V2 payload with image evidence outside key artifacts."""
+
+    payload: dict[str, Any] = {
+        "schema_version": "diagnostic_report.v2",
+        "diagnostic_outcome": "diagnosis_supported",
+        "reported_symptoms": ["Chain skips under load."],
+        "primary_diagnosis": {
+            "component": "chain",
+            "issue": "Wear causes skipping.",
+            "confidence": "medium",
+            "diy_suitability": "caution",
+            "supporting_finding_ids": ["symptom"],
+        },
+        "contributing_factors": [],
+        "observed_findings": [
+            {
+                "finding_id": "symptom",
+                "component": "drivetrain",
+                "finding": "The user reports skipping under load.",
+                "evidence_source": "user_report",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supports_primary_diagnosis",
+                "artifact_ids": [],
+            },
+            {
+                "finding_id": "photo",
+                "component": "chain",
+                "finding": "Discoloration is visible.",
+                "evidence_source": "image",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "possible_contributor",
+                "artifact_ids": [OWNED_ARTIFACT_ID],
+            },
+        ],
+        "alternate_hypotheses": [],
+        "unresolved_uncertainties": [],
+        "evidence_summary": "The reported symptom supports chain wear as the cause.",
+        "key_artifact_ids": [],
+        "user_skill_level": "beginner",
+        "safety_flags": [],
+        "diagnostic_session_id": PHASE_SESSION_ID,
+    }
+    payload.update(overrides)
+    return payload
+
+
 async def _persist(
     service: ReportService,
     *,
@@ -350,6 +397,46 @@ async def test_service_persists_valid_diagnostic_report_without_adk() -> None:
     assert [event.type for event in store.events] == ["phase.report.created"]
     assert store.events[0].sequence == 1
     assert store.session.latest_event_sequence == 1
+
+
+async def test_service_persists_and_revalidates_v2_report_artifact_evidence() -> None:
+    store = _ReportStore()
+    service = _service(store)
+
+    created = await _persist(
+        service,
+        payload=_v2_payload(),
+        source_artifact_ids=[],
+    )
+    fetched = await service.get_report(
+        current_user=_user(),
+        repair_session_id=OWNED_SESSION_ID,
+        report_id=created.id,
+    )
+
+    assert fetched.schema_version == "diagnostic_report.v2"
+    assert fetched.payload.model_dump(mode="json")["observed_findings"][1][
+        "artifact_ids"
+    ] == [OWNED_ARTIFACT_ID]
+
+
+async def test_service_rejects_invalid_stored_v2_payload_before_public_exposure() -> (
+    None
+):
+    store = _ReportStore()
+    created = await _persist(
+        _service(store), payload=_v2_payload(), source_artifact_ids=[]
+    )
+    store.reports[0].payload["observed_findings"][1]["artifact_ids"] = []
+
+    with pytest.raises(Exception) as exc_info:
+        await _service(store).get_report(
+            current_user=_user(),
+            repair_session_id=OWNED_SESSION_ID,
+            report_id=created.id,
+        )
+
+    assert exc_info.type.__name__ == "ServerError"
 
 
 async def test_service_enriches_diagnostic_report_with_cost_estimate() -> None:

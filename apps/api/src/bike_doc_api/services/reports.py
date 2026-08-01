@@ -43,6 +43,7 @@ from bike_doc_api.schemas.event import (
 from bike_doc_api.schemas.report import (
     CostItemType,
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     PhaseReportList,
     PlanCostEstimate,
@@ -197,7 +198,7 @@ class ReportService:
         current_user: User,
         repair_session_id: str,
         summary: str,
-        payload: DiagnosticReportV1 | dict[str, Any],
+        payload: DiagnosticReportV1 | DiagnosticReportV2 | dict[str, Any],
         safety_flags: list[SafetyFlag | dict[str, Any]],
         source_artifact_ids: list[str],
         turn_id: str | None = None,
@@ -222,7 +223,7 @@ class ReportService:
         repair_session_id: str,
         diagnostic_session_id: str,
         summary: str,
-        payload: DiagnosticReportV1 | dict[str, Any],
+        payload: DiagnosticReportV1 | DiagnosticReportV2 | dict[str, Any],
         turn_id: str | None = None,
     ) -> DiagnosticReportPersistenceResult:
         """Persist a diagnostic report produced through an internal ADK tool."""
@@ -251,7 +252,7 @@ class ReportService:
         current_user: User,
         repair_session_id: str,
         summary: str,
-        payload: DiagnosticReportV1 | dict[str, Any],
+        payload: DiagnosticReportV1 | DiagnosticReportV2 | dict[str, Any],
         safety_flags: list[SafetyFlag | dict[str, Any]],
         source_artifact_ids: list[str],
         turn_id: str | None = None,
@@ -268,12 +269,13 @@ class ReportService:
             payload_data["safety_flags"] = [
                 flag.model_dump(mode="json") for flag in report_safety.payload_flags
             ]
-            validated = DiagnosticReportV1.model_validate(payload_data)
+            validated = _validate_diagnostic_payload(payload_data)
+            schema_version = validated.schema_version
             envelope = PhaseReportEnvelope(
                 id="rpt_validation_placeholder",
                 repair_session_id=repair_session_id,
                 type=PhaseReportType.DIAGNOSTIC,
-                schema_version=DIAGNOSTIC_SCHEMA_VERSION,
+                schema_version=schema_version,
                 phase=RepairSessionPhase.DIAGNOSTIC,
                 summary=summary,
                 safety_flags=report_safety.envelope_flags,
@@ -297,14 +299,17 @@ class ReportService:
                 repair_session=repair_session,
                 artifact_ids=[
                     *envelope.source_artifact_ids,
-                    *validated.key_artifact_ids,
+                    *_report_artifact_ids(validated),
                 ],
             )
             phase_session = await self._validate_diagnostic_session(
                 repair_session_id=repair_session.id,
                 diagnostic_session_id=validated.diagnostic_session_id,
             )
-            if validated.cost_estimate is None:
+            if (
+                isinstance(validated, DiagnosticReportV1)
+                and validated.cost_estimate is None
+            ):
                 validated = await self._with_diagnostic_cost_estimate(validated)
                 envelope = PhaseReportEnvelope(
                     id=envelope.id,
@@ -325,7 +330,7 @@ class ReportService:
                     repair_session_id=repair_session.id,
                     repair_phase_session_id=phase_session.id,
                     type=PhaseReportType.DIAGNOSTIC.value,
-                    schema_version=DIAGNOSTIC_SCHEMA_VERSION,
+                    schema_version=schema_version,
                     phase=RepairSessionPhase.DIAGNOSTIC.value,
                     summary=envelope.summary,
                     safety_flags=[
@@ -567,7 +572,7 @@ class ReportService:
                     {
                         "report_id": report.id,
                         "report_type": PhaseReportType.DIAGNOSTIC.value,
-                        "schema_version": DIAGNOSTIC_SCHEMA_VERSION,
+                        "schema_version": report.schema_version,
                         "phase": RepairSessionPhase.DIAGNOSTIC.value,
                         "summary": report.summary,
                     },
@@ -592,15 +597,15 @@ def _validate_diagnostic_envelope(envelope: PhaseReportEnvelope) -> None:
 
     if envelope.type is not PhaseReportType.DIAGNOSTIC:
         raise ValidationAppError()
-    if envelope.schema_version != DIAGNOSTIC_SCHEMA_VERSION:
+    if envelope.schema_version not in {"diagnostic_report.v1", "diagnostic_report.v2"}:
         raise ValidationAppError()
     if envelope.phase is not RepairSessionPhase.DIAGNOSTIC:
         raise ValidationAppError()
     if not envelope.summary.strip():
         raise ValidationAppError()
-    if not isinstance(envelope.payload, DiagnosticReportV1):
+    if not isinstance(envelope.payload, (DiagnosticReportV1, DiagnosticReportV2)):
         raise ValidationAppError()
-    if envelope.payload.schema_version != DIAGNOSTIC_SCHEMA_VERSION:
+    if envelope.payload.schema_version != envelope.schema_version:
         raise ValidationAppError()
     if [flag.model_dump(mode="json") for flag in envelope.payload.safety_flags] != [
         flag.model_dump(mode="json") for flag in envelope.safety_flags
@@ -629,10 +634,12 @@ def _validate_plan_envelope(envelope: PhaseReportEnvelope) -> None:
         raise ValidationAppError()
 
 
-def _payload_data(payload: DiagnosticReportV1 | dict[str, Any]) -> dict[str, Any]:
+def _payload_data(
+    payload: DiagnosticReportV1 | DiagnosticReportV2 | dict[str, Any],
+) -> dict[str, Any]:
     """Return mutable diagnostic report payload data."""
 
-    if isinstance(payload, DiagnosticReportV1):
+    if isinstance(payload, (DiagnosticReportV1, DiagnosticReportV2)):
         return payload.model_dump(mode="json")
     if isinstance(payload, dict):
         return dict(payload)
@@ -646,6 +653,34 @@ def _payload_safety_flags(payload: dict[str, Any]) -> list[SafetyFlag | dict[str
     if not isinstance(safety_flags, list):
         raise ValidationAppError()
     return safety_flags
+
+
+def _validate_diagnostic_payload(
+    payload: dict[str, Any],
+) -> DiagnosticReportV1 | DiagnosticReportV2:
+    """Parse a diagnostic payload using its declared immutable schema version."""
+
+    schema_version = payload.get("schema_version")
+    if schema_version == "diagnostic_report.v1":
+        return DiagnosticReportV1.model_validate(payload)
+    if schema_version == "diagnostic_report.v2":
+        return DiagnosticReportV2.model_validate(payload)
+    raise ValueError("unsupported diagnostic report schema version")
+
+
+def _report_artifact_ids(report: DiagnosticReportV1 | DiagnosticReportV2) -> list[str]:
+    """Return all artifact references that require owner/session validation."""
+
+    if isinstance(report, DiagnosticReportV1):
+        return report.key_artifact_ids
+    return [
+        *report.key_artifact_ids,
+        *(
+            artifact_id
+            for finding in report.observed_findings
+            for artifact_id in finding.artifact_ids
+        ),
+    ]
 
 
 def _price_requirements_from_diagnostic_report(
@@ -704,7 +739,7 @@ def _public_envelope_or_server_error(
             _validate_diagnostic_envelope(public)
             SafetyService().validate_report_safety_flags(
                 payload_flags=public.payload.safety_flags
-                if isinstance(public.payload, DiagnosticReportV1)
+                if isinstance(public.payload, (DiagnosticReportV1, DiagnosticReportV2))
                 else [],
                 envelope_flags=public.safety_flags,
             )
