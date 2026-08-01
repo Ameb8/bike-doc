@@ -567,6 +567,29 @@ Rules:
 - The service must persist `phase.report.created` and, when appropriate,
   `phase.transitioned` events.
 
+### V2 report contract (not production enabled)
+
+When app-owned orchestration selects `diagnostic_report.v2`, the report input
+uses the public `DiagnosticReportV2` shape in `docs/specs/openapi.yaml` with
+one important tool-boundary rule: the agent does **not** supply
+`diagnostic_outcome`. The service validates `completion_basis.completion_reason`
+and stamps the matching server-owned public outcome before persistence.
+
+The V2 tool input has no separate top-level `summary`; the service copies the
+validated `report.evidence_summary` into the phase-report envelope summary.
+It must include non-empty `reported_symptoms` and `observed_findings`, nullable
+`primary_diagnosis` only for a limited or referral completion, and the V2
+`contributing_factors`, `alternate_hypotheses`, and
+`unresolved_uncertainties` fields. Primary diagnoses, contributors, and
+alternates each cite non-empty report-local `supporting_finding_ids`.
+
+For V2, the tool and service must reject `repair_estimate`, `cost_estimate`,
+and alternate `ruled_out_by`. They must validate the union of artifact IDs
+across image-backed observed findings and `key_artifact_ids`, then persist an
+envelope whose `schema_version` and `payload.schema_version` are both
+`diagnostic_report.v2`. V1 remains an immutable historical input/output shape;
+the selected version must never produce a mixed payload.
+
 Output schema:
 
 ```json

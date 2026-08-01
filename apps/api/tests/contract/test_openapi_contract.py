@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 from fastapi import FastAPI
+from jsonschema import Draft7Validator, RefResolver
 
 DIAGNOSTIC_OPERATIONS = {
     "/v1/repair-sessions": {"get", "post"},
@@ -24,6 +26,31 @@ OPENAPI_PATH = Path(__file__).resolve().parents[4] / "docs/specs/openapi.yaml"
 
 def _load_canonical_openapi() -> dict[str, Any]:
     return yaml.safe_load(OPENAPI_PATH.read_text())
+
+
+def _json_schema_with_openapi_nullability(value: Any) -> Any:
+    """Translate the OpenAPI 3.0 nullable extension for schema validation."""
+
+    if isinstance(value, list):
+        return [_json_schema_with_openapi_nullability(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    normalized = {
+        key: _json_schema_with_openapi_nullability(item)
+        for key, item in value.items()
+        if key != "nullable"
+    }
+    if value.get("nullable"):
+        return {"anyOf": [normalized, {"type": "null"}]}
+    return normalized
+
+
+def _validate_canonical_schema(schema_name: str, value: object) -> list[str]:
+    openapi = _json_schema_with_openapi_nullability(deepcopy(_load_canonical_openapi()))
+    schema = {"$ref": f"#/components/schemas/{schema_name}"}
+    validator = Draft7Validator(schema, resolver=RefResolver.from_schema(openapi))
+    return sorted(error.message for error in validator.iter_errors(value))
 
 
 def _schema_refs(value: Any) -> list[str]:
@@ -98,6 +125,78 @@ def test_user_turn_artifact_id_constraints_match_canonical_contract(
     assert actual_property["items"] == canonical_property["items"] == {"type": "string"}
     assert actual_property["maxItems"] == canonical_property["maxItems"] == 3
     assert actual_property["uniqueItems"] is canonical_property["uniqueItems"] is True
+
+
+def test_diagnostic_report_v2_contract_rejects_mixed_fields() -> None:
+    """V2 examples validate while V1-only fields cannot leak into V2."""
+
+    openapi = _load_canonical_openapi()
+    schemas = openapi["components"]["schemas"]
+    mapping = schemas["PhaseReportEnvelope"]["properties"]["payload"]["discriminator"][
+        "mapping"
+    ]
+
+    assert mapping["diagnostic_report.v1"] == "#/components/schemas/DiagnosticReportV1"
+    assert mapping["diagnostic_report.v2"] == "#/components/schemas/DiagnosticReportV2"
+
+    v2 = schemas["DiagnosticReportV2"]
+    assert v2["additionalProperties"] is False
+    assert set(v2["required"]) == {
+        "schema_version",
+        "diagnostic_outcome",
+        "reported_symptoms",
+        "primary_diagnosis",
+        "contributing_factors",
+        "observed_findings",
+        "alternate_hypotheses",
+        "unresolved_uncertainties",
+        "evidence_summary",
+        "key_artifact_ids",
+        "user_skill_level",
+        "safety_flags",
+        "diagnostic_session_id",
+    }
+    assert "server-owned" in schemas["DiagnosticOutcome"]["description"].lower()
+    assert schemas["DiagnosticOutcome"]["enum"] == [
+        "diagnosis_supported",
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    ]
+
+    examples = openapi["components"]["examples"]
+    supported = examples["DiagnosticReportV2Supported"]["value"]
+    limited = examples["DiagnosticReportV2LimitedReferral"]["value"]
+
+    assert _validate_canonical_schema("DiagnosticReportV2", supported) == []
+    assert _validate_canonical_schema("DiagnosticReportV2", limited) == []
+
+    mixed = deepcopy(supported)
+    mixed["repair_estimate"] = {"difficulty": "easy"}
+    mixed["cost_estimate"] = None
+    mixed["alternate_hypotheses"][0]["ruled_out_by"] = "Not applicable in V2."
+
+    errors = _validate_canonical_schema("DiagnosticReportV2", mixed)
+    assert errors
+    assert any("repair_estimate" in error for error in errors)
+    assert any("cost_estimate" in error for error in errors)
+    assert any("ruled_out_by" in error for error in errors)
+
+    wrong_version = deepcopy(supported)
+    wrong_version["schema_version"] = "diagnostic_report.v1"
+    assert _validate_canonical_schema("DiagnosticReportV2", wrong_version)
+
+    unsupported_null_primary = deepcopy(supported)
+    unsupported_null_primary["primary_diagnosis"] = None
+    assert _validate_canonical_schema("DiagnosticReportV2", unsupported_null_primary)
+
+    image_without_artifact = deepcopy(supported)
+    image_without_artifact["observed_findings"][-1]["artifact_ids"] = []
+    assert _validate_canonical_schema("DiagnosticReportV2", image_without_artifact)
+
+    non_image_with_artifact = deepcopy(supported)
+    non_image_with_artifact["observed_findings"][0]["artifact_ids"] = ["art_chain_1"]
+    assert _validate_canonical_schema("DiagnosticReportV2", non_image_with_artifact)
 
 
 @pytest.mark.xfail(
