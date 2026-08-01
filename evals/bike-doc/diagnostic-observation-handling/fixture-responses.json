@@ -1,0 +1,430 @@
+{
+  "response_schema_version": "bike_doc_diagnostic_observation_response.v1",
+  "evaluated_configuration": {
+    "diagnostic_prompt_version": "diagnostic-observation.v1",
+    "diagnostic_model_version": "fixture-model.v1",
+    "report_schema_version": "diagnostic_report.v2",
+    "tool_contract_version": "save-diagnostic-report.v2"
+  },
+  "responses": [
+    {
+      "case_id": "corrosion-and-indexing-acceptance-flow",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "cassette_wear"
+      ],
+      "follow_up_request": "measure_chain_wear",
+      "report": null,
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "corrosion-and-indexing-acceptance-flow",
+      "turn_order": 2,
+      "communicated_findings": [
+        "chain_corrosion",
+        "chain_wear",
+        "indexing_error"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "worn_chain_causes_skipping",
+      "contributing_factors": [
+        "derailleur_indexing_worsens_skipping"
+      ],
+      "alternate_hypotheses": [
+        "cassette_wear"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "chain_corrosion",
+          "chain_wear",
+          "indexing_error"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "corroded-chain-stiff-links-primary-cause",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion",
+        "stiff_links_under_load"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "corrosion_related_stiff_links_cause_skipping",
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "chain_corrosion",
+          "stiff_links_under_load"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "corrosion-incidental-to-cassette-wear",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion",
+        "cassette_shark_fin_wear"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "cassette_wear_causes_gear_specific_skipping",
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "chain_wear"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "chain_corrosion",
+          "cassette_shark_fin_wear"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "clean-drivetrain-measured-chain-wear",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_wear"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "chain_wear_causes_skipping",
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "freehub_fault"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "clean_chain",
+          "chain_wear"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "dramatic-tire-crack-unrelated-to-shifting",
+      "turn_order": 1,
+      "communicated_findings": [
+        "tire_sidewall_crack",
+        "cable_friction"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "cable_friction_causes_hesitant_shifting",
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "tire_sidewall_crack",
+          "cable_friction"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": true,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "related-skipping-and-drivetrain-noise",
+      "turn_order": 1,
+      "communicated_findings": [
+        "worn_chain"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "chain_wear_explains_related_drivetrain_symptoms",
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "worn_chain"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "unrelated-clusters-at-session-start",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_skip_report",
+        "front_brake_squeal_report"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": "choose_complaint_cluster",
+      "report": null,
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "unrelated-brake-concern-introduced-later",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_wear",
+        "brake_lever_to_bar"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "chain_wear_causes_skipping",
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "chain_wear",
+          "brake_lever_to_bar"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": true,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "later-measurement-contradicts-corrosion-hypothesis",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "chain_condition"
+      ],
+      "follow_up_request": "check_freehub_engagement",
+      "report": null,
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "later-measurement-contradicts-corrosion-hypothesis",
+      "turn_order": 2,
+      "communicated_findings": [
+        "chain_corrosion",
+        "chain_within_wear_limit",
+        "freehub_slip"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "freehub_engagement_failure",
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "chain_condition"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "chain_corrosion",
+          "chain_within_wear_limit",
+          "freehub_slip"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "two-independent-brake-contributors",
+      "turn_order": 1,
+      "communicated_findings": [
+        "air_in_hydraulic_line",
+        "worn_brake_pads"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "air_in_line_primary_cause_of_soft_lever",
+      "contributing_factors": [
+        "worn_pads_increase_lever_travel"
+      ],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "air_in_hydraulic_line",
+          "worn_brake_pads"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": true,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "straightforward-loose-pedal-one-turn",
+      "turn_order": 1,
+      "communicated_findings": [
+        "loose_pedal"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "loose_pedal_causes_click",
+      "contributing_factors": [],
+      "alternate_hypotheses": [],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "diagnosis_supported",
+        "finding_ids": [
+          "loose_pedal"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": true,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "user-declines-chain-measurement",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "cassette_wear"
+      ],
+      "follow_up_request": "measure_chain_wear",
+      "report": null,
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "user-declines-chain-measurement",
+      "turn_order": 2,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": "possible_chain_condition",
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "cassette_wear"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "user_declined_more_input",
+        "finding_ids": [
+          "chain_corrosion"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "requested-input-unavailable",
+      "turn_order": 1,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "chain_wear"
+      ],
+      "follow_up_request": "measure_chain_wear",
+      "report": null,
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "requested-input-unavailable",
+      "turn_order": 2,
+      "communicated_findings": [
+        "chain_corrosion"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "chain_wear"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "requested_input_unavailable",
+        "finding_ids": [
+          "chain_corrosion"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": false,
+        "requires_in_person_assessment": false
+      }
+    },
+    {
+      "case_id": "unresolved-brake-safety-requires-in-person",
+      "turn_order": 1,
+      "communicated_findings": [
+        "brake_lever_to_bar",
+        "fluid_leak"
+      ],
+      "causal_assertions": [],
+      "primary_diagnosis": null,
+      "contributing_factors": [],
+      "alternate_hypotheses": [
+        "hydraulic_brake_failure"
+      ],
+      "follow_up_request": null,
+      "report": {
+        "completion_outcome": "in_person_assessment_required",
+        "finding_ids": [
+          "brake_lever_to_bar",
+          "fluid_leak"
+        ]
+      },
+      "safety": {
+        "must_raise_safety_flag": true,
+        "requires_in_person_assessment": true
+      }
+    }
+  ]
+}

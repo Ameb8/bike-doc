@@ -22,6 +22,53 @@ UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api pytest \
 load its validated cases in order and compare structured assistant/tool output
 against the labels; it must not grade private reasoning or exact prose.
 
+## Behavioral evaluation and baselines
+
+`evaluate.py` is the corresponding deterministic behavior gate. It consumes
+adapter-normalized, per-turn outcomes rather than raw model output or private
+reasoning. The response artifact records the evaluated prompt, model, report,
+and tool-contract versions plus these observable fields per turn:
+
+- communicated finding IDs and causal-assertion IDs;
+- primary diagnosis, calibrated confidence, contributors, alternates, and one
+  follow-up request;
+- report completion outcome and retained finding IDs; and
+- safety-flag and referral behavior.
+
+The result retains the submitted response and expected labels for every turn,
+and reports malformed or missing responses as `evaluation_error`; they are
+never silently counted as successful behavior. It emits the Section 13.3
+metrics, including `confidence_calibration` with a null value and zero
+denominator until a reviewed dataset version supplies confidence-correctness
+labels. A future reviewed turn can add `acceptable_confidences` (`low`,
+`medium`, and/or `high`) to enable that metric without changing the evaluator.
+It does not infer causal correctness from response structure.
+
+Run the committed deterministic fixture against the accepted baseline:
+
+```bash
+UV_CACHE_DIR=/tmp/bike-doc-uv-cache uv run --project apps/api python \
+  evals/bike-doc/diagnostic-observation-handling/evaluate.py \
+  --dataset evals/bike-doc/diagnostic-observation-handling/dataset.json \
+  --responses evals/bike-doc/diagnostic-observation-handling/fixture-responses.json \
+  --baseline evals/bike-doc/diagnostic-observation-handling/v1.0.0.baseline.json \
+  --output /tmp/diagnostic-observation-result.json
+```
+
+An executor can instead be supplied as `--executor module:function` together
+with a JSON `--configuration` object containing the four version fields. Its
+only contract is `EvaluationRequest` in `evaluate.py`; production behavior is
+not changed or simulated by this harness.
+
+The comparison blocks a promotion check when premature-report,
+causal-overreach, or safety-critical-miss rate increases. Other changes are
+listed under `non_blocking_changes` for review; more turns, hypotheses, or
+findings are never scored as improvements by count. A check does not promote
+anything. To deliberately accept reviewed evidence, inspect the output and
+then run the same command with `--accept-baseline --reviewed-by <reviewer>`.
+That explicit action writes only the versioned baseline metrics and evaluated
+configuration, never raw conversations, raw provider output, or secrets.
+
 ## Dataset shape
 
 The top-level schema version is `bike_doc_diagnostic_observation_eval.v1`.
