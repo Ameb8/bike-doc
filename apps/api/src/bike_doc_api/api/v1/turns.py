@@ -53,6 +53,7 @@ def get_turn_service(
         adk_sessions=adk_sessions,
         commit=session.commit,
         rollback=session.rollback,
+        diagnostic_report_version=settings.diagnostic_report_version,
     )
     return TurnService(
         repair_sessions,

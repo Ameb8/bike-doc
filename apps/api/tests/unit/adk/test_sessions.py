@@ -86,6 +86,40 @@ async def test_creates_diagnostic_phase_session_lazily() -> None:
     assert client.created == ["adk_created_1"]
 
 
+async def test_snapshots_configured_report_version() -> None:
+    repo = _PhaseSessionRepo()
+
+    phase_session = await DiagnosticPhaseSessionManager(
+        phase_sessions=repo,
+        adk_sessions=_ADKSessionClient(),
+        diagnostic_report_version="diagnostic_report.v2",
+    ).ensure_diagnostic_session(repair_session_id="rs_1")
+
+    assert phase_session.diagnostic_report_schema_version == "diagnostic_report.v2"
+
+
+async def test_existing_session_keeps_report_version_after_rollback() -> None:
+    repo = _PhaseSessionRepo()
+    existing = RepairPhaseSession(
+        id="phs_existing",
+        repair_session_id="rs_1",
+        phase="diagnostic",
+        adk_session_id="adk_existing",
+        diagnostic_report_schema_version="diagnostic_report.v1",
+        status="active",
+    )
+    repo.rows[("rs_1", "diagnostic")] = existing
+
+    phase_session = await DiagnosticPhaseSessionManager(
+        phase_sessions=repo,
+        adk_sessions=_ADKSessionClient(),
+        diagnostic_report_version="diagnostic_report.v2",
+    ).ensure_diagnostic_session(repair_session_id="rs_1")
+
+    assert phase_session is existing
+    assert phase_session.diagnostic_report_schema_version == "diagnostic_report.v1"
+
+
 async def test_real_adk_session_client_creates_retrievable_session() -> None:
     service = InMemorySessionService()
     client = DiagnosticADKSessionClient(service)

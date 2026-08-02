@@ -36,6 +36,10 @@ from bike_doc_api.schemas.report import (
     PhaseReportEnvelope,
     SafetyFlag,
 )
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticCompletionTelemetry,
+    default_diagnostic_completion_telemetry,
+)
 
 CompletionReason = Literal[
     "diagnosis_supported",
@@ -151,8 +155,14 @@ class DiagnosticReportServiceProtocol(Protocol):
 class SaveDiagnosticReportTool:
     """Thin ADK wrapper for diagnostic report persistence."""
 
-    def __init__(self, service: DiagnosticReportServiceProtocol) -> None:
+    def __init__(
+        self,
+        service: DiagnosticReportServiceProtocol,
+        *,
+        telemetry: DiagnosticCompletionTelemetry | None = None,
+    ) -> None:
         self._service = service
+        self._telemetry = telemetry or default_diagnostic_completion_telemetry()
 
     async def run(
         self,
@@ -176,6 +186,9 @@ class SaveDiagnosticReportTool:
                 field["path"].startswith("completion_basis")
                 for field in details["fields"]
             ):
+                self._telemetry.report_validation_failed(
+                    schema_version=context.diagnostic_report_schema_version,
+                )
                 return tool_error(
                     "report_validation_failed",
                     "Diagnostic report validation failed.",
@@ -190,10 +203,16 @@ class SaveDiagnosticReportTool:
         async def call() -> dict[str, Any]:
             expected_version = context.diagnostic_report_schema_version
             if parsed.report.get("schema_version") != expected_version:
+                self._telemetry.report_validation_failed(
+                    schema_version=expected_version
+                )
                 raise ReportValidationToolError()
             try:
                 if expected_version == "diagnostic_report.v1":
                     if parsed.summary is None or not parsed.summary.strip():
+                        self._telemetry.report_validation_failed(
+                            schema_version=expected_version,
+                        )
                         raise ReportValidationToolError()
                     report_payload: (
                         DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload
@@ -202,11 +221,17 @@ class SaveDiagnosticReportTool:
                     )
                 else:
                     if parsed.summary is not None:
+                        self._telemetry.report_validation_failed(
+                            schema_version=expected_version,
+                        )
                         raise ReportValidationToolError()
                     report_payload = DiagnosticReportV2ToolPayload.model_validate(
                         parsed.report,
                     )
             except ValidationError as exc:
+                self._telemetry.report_validation_failed(
+                    schema_version=expected_version
+                )
                 raise ReportValidationToolError(
                     validation_error_details(exc, prefix="report"),
                 ) from exc
@@ -256,6 +281,7 @@ class SaveDiagnosticReportTool:
                 data["phase_transitioned_event_sequence"] = (
                     result.events.phase_transitioned.sequence
                 )
+            data.update(_telemetry_counts(report_payload, parsed.completion_basis))
             return tool_success(data)
 
         return await normalize_tool_errors(
@@ -273,3 +299,24 @@ async def save_diagnostic_report(
     """Function-style entrypoint for save_diagnostic_report."""
 
     return await SaveDiagnosticReportTool(service).run(tool_input, context)
+
+
+def _telemetry_counts(
+    report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload,
+    completion_basis: CompletionBasis,
+) -> dict[str, int | str | None]:
+    """Return only report-composition dimensions safe for telemetry."""
+
+    if isinstance(report, DiagnosticReportV2ToolPayload):
+        return {
+            "observed_finding_count": len(report.observed_findings),
+            "contributing_factor_count": len(report.contributing_factors),
+            "alternate_hypothesis_count": len(report.alternate_hypotheses),
+            "completion_reason": completion_basis.completion_reason,
+        }
+    return {
+        "observed_finding_count": 0,
+        "contributing_factor_count": 0,
+        "alternate_hypothesis_count": len(report.alternate_hypotheses),
+        "completion_reason": None,
+    }

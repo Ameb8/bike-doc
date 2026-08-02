@@ -15,6 +15,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger(__name__)
 
 ImageAnalysisMode = Literal["off", "pixels_only", "shadow", "enabled"]
+DiagnosticReportVersion = Literal["diagnostic_report.v1", "diagnostic_report.v2"]
 
 
 class ProfileInferenceFieldPolicySettings(BaseModel):
@@ -99,6 +100,9 @@ class Settings(BaseSettings):
     artifact_gcs_bucket: str | None = None
     artifact_max_upload_bytes: int = Field(default=10 * 1024 * 1024, gt=0)
     image_analysis_mode: ImageAnalysisMode = "off"
+    # App-owned rollout control. New diagnostic phase sessions snapshot this
+    # selection; V1 remains the safe production default.
+    diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v1"
     observation_extraction_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     observation_extraction_model: str = Field(default="gemini-2.5-flash", min_length=1)
     observation_extraction_timeout_seconds: float = Field(default=30.0, gt=0.0)
@@ -232,6 +236,15 @@ class Settings(BaseSettings):
     @classmethod
     def validate_image_analysis_mode(cls, value: object) -> object:
         """Normalize the static diagnostic-image rollout mode."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("diagnostic_report_version", mode="before")
+    @classmethod
+    def validate_diagnostic_report_version(cls, value: object) -> object:
+        """Normalize the app-owned diagnostic report rollout selection."""
 
         if isinstance(value, str):
             return value.strip().lower()

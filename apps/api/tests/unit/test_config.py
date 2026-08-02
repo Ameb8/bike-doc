@@ -13,6 +13,19 @@ from bike_doc_api.core.config import (
 )
 
 
+def test_diagnostic_report_rollout_defaults_to_v1() -> None:
+    assert Settings().diagnostic_report_version == "diagnostic_report.v1"
+
+
+def test_diagnostic_report_rollout_accepts_v2() -> None:
+    assert (
+        Settings(
+            diagnostic_report_version="diagnostic_report.v2"
+        ).diagnostic_report_version
+        == "diagnostic_report.v2"
+    )
+
+
 def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

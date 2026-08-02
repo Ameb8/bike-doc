@@ -35,6 +35,9 @@ from bike_doc_api.schemas.observation_extraction import (
     NormalizedModelImage,
 )
 from bike_doc_api.schemas.repair_session import repair_session_from_model
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticReportTelemetryOutcome,
+)
 from bike_doc_api.services.diagnostic_visual_context import (
     DiagnosticVisualContext,
     DiagnosticVisualContextError,
@@ -50,6 +53,7 @@ class _Store:
             repair_session_id="rs_orch",
             phase="diagnostic",
             adk_session_id="adk_internal_orch",
+            diagnostic_report_schema_version="diagnostic_report.v1",
             status="active",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -168,6 +172,23 @@ class _VisualContext:
 
     async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
         self.agent_started_turn_ids.append(turn_id)
+
+
+class _Telemetry:
+    """Captures only the privacy-safe rollout telemetry boundary."""
+
+    def __init__(self) -> None:
+        self.input_versions: list[str] = []
+        self.completed: list[DiagnosticReportTelemetryOutcome] = []
+
+    def input_requested(self, *, schema_version: str) -> None:
+        self.input_versions.append(schema_version)
+
+    def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
+        self.completed.append(outcome)
+
+    def report_validation_failed(self, *, schema_version: str) -> None:
+        raise AssertionError(f"unexpected validation signal: {schema_version}")
 
 
 class _Runner:
@@ -310,6 +331,7 @@ def _orchestrator(
     safety_tool: _Tool | None = None,
     report_tool: _Tool | None = None,
     visual_context: _VisualContext | None = None,
+    telemetry: _Telemetry | None = None,
 ) -> DiagnosticTurnOrchestrator:
     calls: list[dict[str, Any]] = []
     return DiagnosticTurnOrchestrator(
@@ -332,6 +354,7 @@ def _orchestrator(
         raise_safety_flag=safety_tool or _Tool({"ok": True, "data": {}}, calls),
         save_diagnostic_report=report_tool or _Tool({"ok": True, "data": {}}, calls),
         visual_context=visual_context or _VisualContext(),
+        telemetry=telemetry or _Telemetry(),
     )
 
 
@@ -355,6 +378,7 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert request.repair_session_id == "rs_orch"
     assert request.turn_id == "turn_orch"
     assert request.diagnostic_session_id == "phs_orch"
+    assert request.diagnostic_report_schema_version == "diagnostic_report.v1"
     assert request.adk_session_id == "adk_internal_orch"
     assert request.message_text == "The chain skips."
     assert request.artifact_ids == ("art_1",)
@@ -371,6 +395,40 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
         "turn.completed",
     ]
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+async def test_orchestration_records_safe_report_outcomes() -> None:
+    store = _Store()
+    telemetry = _Telemetry()
+
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerInputRequested("measurement", "ignored"),
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_1",
+                    schema_version="diagnostic_report.v1",
+                    observed_finding_count=0,
+                    contributing_factor_count=0,
+                    alternate_hypothesis_count=2,
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.input_versions == ["diagnostic_report.v1"]
+    assert telemetry.completed == [
+        DiagnosticReportTelemetryOutcome(
+            schema_version="diagnostic_report.v1",
+            observed_finding_count=0,
+            contributing_factor_count=0,
+            alternate_hypothesis_count=2,
+            completion_reason=None,
+            same_turn_completion_after_first_finding=False,
+        )
+    ]
 
 
 async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:

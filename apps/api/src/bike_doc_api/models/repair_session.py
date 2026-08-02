@@ -254,6 +254,12 @@ class RepairPhaseSession(Base):
             "length(trim(adk_session_id)) > 0",
             name="ck_repair_phase_sessions_adk_session_id_not_blank",
         ),
+        CheckConstraint(
+            "diagnostic_report_schema_version IS NULL OR "
+            "diagnostic_report_schema_version IN "
+            "('diagnostic_report.v1', 'diagnostic_report.v2')",
+            name="ck_repair_phase_sessions_diagnostic_report_schema_version",
+        ),
         Index(
             "ux_repair_phase_sessions_session_phase",
             "repair_session_id",
@@ -283,6 +289,7 @@ class RepairPhaseSession(Base):
     )
     phase: Mapped[str] = mapped_column(Text, nullable=False)
     adk_session_id: Mapped[str] = mapped_column(Text, nullable=False)
+    diagnostic_report_schema_version: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(
         Text,
         nullable=False,

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from bike_doc_api.adk.runner import (
     DiagnosticRunnerArtifactReferenced,
@@ -43,6 +43,11 @@ from bike_doc_api.schemas.event import (
 )
 from bike_doc_api.schemas.repair_session import (
     repair_session_from_model,
+)
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticCompletionTelemetry,
+    DiagnosticReportTelemetryOutcome,
+    default_diagnostic_completion_telemetry,
 )
 from bike_doc_api.services.diagnostic_visual_context import DiagnosticVisualContext
 
@@ -134,6 +139,9 @@ class DiagnosticTurnOrchestrator:
     raise_safety_flag: RaiseSafetyFlagTool
     save_diagnostic_report: SaveDiagnosticReportTool
     visual_context: DiagnosticVisualContextServiceProtocol
+    telemetry: DiagnosticCompletionTelemetry = field(
+        default_factory=default_diagnostic_completion_telemetry,
+    )
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
 
@@ -165,6 +173,9 @@ class DiagnosticTurnOrchestrator:
                 repair_session_id=turn_snapshot.repair_session_id,
                 active_phase=RepairSessionPhase.DIAGNOSTIC,
                 diagnostic_session_id=phase_session.id,
+                diagnostic_report_schema_version=_phase_session_report_version(
+                    phase_session,
+                ),
                 turn_id=turn_snapshot.id,
             )
             seed = await self._build_seed_context(
@@ -196,6 +207,9 @@ class DiagnosticTurnOrchestrator:
                 turn_id=turn_snapshot.id,
                 diagnostic_session_id=phase_session.id,
                 adk_session_id=phase_session.adk_session_id,
+                diagnostic_report_schema_version=_phase_session_report_version(
+                    phase_session,
+                ),
                 message_text=turn_snapshot.message_text,
                 artifact_ids=turn_snapshot.artifact_ids,
                 bike_profile=seed.bike_profile,
@@ -275,6 +289,9 @@ class DiagnosticTurnOrchestrator:
 
         if isinstance(event, DiagnosticRunnerInputRequested):
             processing_state.note_input_requested()
+            self.telemetry.input_requested(
+                schema_version=context.diagnostic_report_schema_version,
+            )
             return
 
         if isinstance(event, DiagnosticRunnerSafetyEscalated):
@@ -289,6 +306,18 @@ class DiagnosticTurnOrchestrator:
             processing_state.note_report_completed(
                 safety_state=event.safety_state,
                 safety_flags=event.safety_flags,
+            )
+            self.telemetry.report_completed(
+                outcome=DiagnosticReportTelemetryOutcome(
+                    schema_version=context.diagnostic_report_schema_version,
+                    observed_finding_count=event.observed_finding_count,
+                    contributing_factor_count=event.contributing_factor_count,
+                    alternate_hypothesis_count=event.alternate_hypothesis_count,
+                    completion_reason=event.completion_reason,
+                    same_turn_completion_after_first_finding=(
+                        event.observed_finding_count > 0
+                    ),
+                ),
             )
             return
 
@@ -597,6 +626,16 @@ def _turn_artifact_ids(turn: RepairTurnModel) -> tuple[str, ...]:
         for artifact_id in artifact_ids
         if isinstance(artifact_id, str) and artifact_id
     )
+
+
+def _phase_session_report_version(
+    phase_session: RepairPhaseSessionModel,
+) -> Literal["diagnostic_report.v1", "diagnostic_report.v2"]:
+    """Return the immutable diagnostic version, safely defaulting old rows to V1."""
+
+    if phase_session.diagnostic_report_schema_version == "diagnostic_report.v2":
+        return "diagnostic_report.v2"
+    return "diagnostic_report.v1"
 
 
 def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:

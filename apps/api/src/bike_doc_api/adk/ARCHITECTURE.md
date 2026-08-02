@@ -189,6 +189,15 @@ app-owned `diagnostic_session_id` that may appear in a report; its
 back, best-effort deleting the orphaned ADK session, and returning the row
 that won the unique database race.
 
+For diagnostic sessions, the same row also snapshots the app-owned selected
+diagnostic report schema version. Orchestration seeds that immutable value into
+the runner and tool context, so a deployment rollback changes only new phase
+sessions and cannot mix V1/V2 fields in a report already in progress. The
+orchestrator emits only privacy-safe diagnostic-completion telemetry: stable
+input-request, report-completed, and validation-failed events with scalar
+version/outcome/count dimensions. It never sends report text, completion-basis
+rationale, or model reasoning to telemetry.
+
 The current `DiagnosticADKSessionClient` uses one process-lifetime
 `InMemorySessionService`, with fixed internal ADK app/user names. The exact
 same instance must create sessions and run turns; creating one per request or

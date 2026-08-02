@@ -1192,6 +1192,26 @@ During migration, the diagnostic agent must produce the report version selected
 by app-owned orchestration. A single report payload must not mix V1 and V2
 fields.
 
+The deployment setting `BIKE_DOC_API_DIAGNOSTIC_REPORT_VERSION` is an
+app-owned rollout control, defaulting to `diagnostic_report.v1`. The backend
+snapshots it as `diagnostic_report_schema_version` when it creates a diagnostic
+phase session. Every turn, runner context, and report-tool validation for that
+phase session uses the stored version, even if the deployment setting changes.
+To roll back, set the deployment control to `diagnostic_report.v1` before new
+diagnostic phase sessions are created; existing sessions and immutable reports
+retain their originally selected version.
+
+The stable, privacy-safe operational events are
+`diagnostic_turn_input_requested`, `diagnostic_report_completed`, and
+`diagnostic_report_validation_failed`. They contain only schema version,
+completion reason, report-composition counts, and the boolean
+`same_turn_completion_after_first_finding`; no report prose, completion-basis
+rationale, prompts, or model reasoning is allowed. The boolean means the
+completed V2 report first persisted one or more observed findings on that same
+report turn. Input/report turn counts, retry/continuation rates, turn count,
+and elapsed time remain derivable from durable `repair_turns`, report events,
+and their timestamps; telemetry must not treat larger counts as better.
+
 Changes to report versions, prompt behavior, completion-basis shape, or
 diagnostic relevance values require regression evaluation against the accepted
 baseline.
