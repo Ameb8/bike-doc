@@ -31,12 +31,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.bikedoc.android.R
 import com.bikedoc.android.api.AlternateHypothesis
+import com.bikedoc.android.api.AlternateHypothesisV2
+import com.bikedoc.android.api.ContributingFactor
 import com.bikedoc.android.api.CostEstimate
 import com.bikedoc.android.api.Diagnosis
+import com.bikedoc.android.api.DiagnosisV2
+import com.bikedoc.android.api.DiagnosticConfidence
+import com.bikedoc.android.api.DiagnosticOutcome
 import com.bikedoc.android.api.DiagnosticReport
+import com.bikedoc.android.api.DiagnosticReportV2
+import com.bikedoc.android.api.DiagnosticRelevance
+import com.bikedoc.android.api.DiySuitability
+import com.bikedoc.android.api.EvidenceSource
+import com.bikedoc.android.api.ObservedFinding
 import com.bikedoc.android.api.PartNeeded
 import com.bikedoc.android.api.PlanCostEstimate
 import com.bikedoc.android.api.PlanReport
@@ -44,6 +55,8 @@ import com.bikedoc.android.api.PriceListing
 import com.bikedoc.android.api.PriceLookupResult
 import com.bikedoc.android.api.RepairEstimate
 import com.bikedoc.android.api.RepairReport
+import com.bikedoc.android.api.RepairTimeEstimate
+import com.bikedoc.android.api.ShopRepairCostEstimate
 import com.bikedoc.android.api.ToolNeeded
 import com.bikedoc.android.api.models.SafetyFlag
 import java.util.Locale
@@ -163,6 +176,7 @@ private fun DiagnosticReportLoadedState(
         }
         when (report) {
             is DiagnosticReport -> DiagnosticReportSections(report = report)
+            is DiagnosticReportV2 -> DiagnosticReportV2Sections(report = report)
             is PlanReport -> PlanReportSections(report = report)
         }
     }
@@ -203,6 +217,177 @@ private fun DiagnosticReportSections(report: DiagnosticReport) {
                     value = report.keyArtifactIds.size.toString(),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticReportV2Sections(report: DiagnosticReportV2) {
+    DiagnosticOutcomeSection(outcome = report.diagnosticOutcome)
+    ReportSection(title = stringResource(R.string.diagnostic_report_symptoms_title)) {
+        ReportList(items = report.reportedSymptoms)
+    }
+    report.primaryDiagnosis?.let { diagnosis ->
+        PrimaryDiagnosisV2Section(diagnosis = diagnosis)
+    } ?: LimitedDiagnosisSection(outcome = report.diagnosticOutcome)
+    if (report.contributingFactors.isNotEmpty()) {
+        ReportSection(title = stringResource(R.string.diagnostic_report_contributors_title)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                report.contributingFactors.forEach { factor ->
+                    ContributingFactorItem(factor = factor)
+                }
+            }
+        }
+    }
+    ObservedFindingsSections(findings = report.observedFindings)
+    if (report.alternateHypotheses.isNotEmpty()) {
+        ReportSection(title = stringResource(R.string.diagnostic_report_alternates_title)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                report.alternateHypotheses.forEach { hypothesis ->
+                    AlternateHypothesisV2Item(hypothesis = hypothesis)
+                }
+            }
+        }
+    }
+    if (report.unresolvedUncertainties.isNotEmpty()) {
+        ReportSection(title = stringResource(R.string.diagnostic_report_uncertainties_title)) {
+            ReportList(items = report.unresolvedUncertainties)
+        }
+    }
+    ReportSection(title = stringResource(R.string.diagnostic_report_evidence_title)) {
+        Text(text = report.evidenceSummary, style = MaterialTheme.typography.bodyLarge)
+    }
+    ReportSection(title = stringResource(R.string.diagnostic_report_details_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_skill_level_label),
+                value = report.userSkillLevel.toDisplayLabel(),
+            )
+            if (report.keyArtifactIds.isNotEmpty()) {
+                DetailRow(
+                    label = stringResource(R.string.diagnostic_report_artifacts_label),
+                    value = report.keyArtifactIds.size.toString(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticOutcomeSection(outcome: DiagnosticOutcome) {
+    ReportSection(title = stringResource(R.string.diagnostic_report_outcome_title)) {
+        Text(text = outcome.toDisplayLabel(), style = MaterialTheme.typography.titleSmall)
+        Text(text = outcome.toDescription(), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun LimitedDiagnosisSection(outcome: DiagnosticOutcome) {
+    ReportSection(title = stringResource(R.string.diagnostic_report_limited_title)) {
+        Text(text = outcome.toLimitedDiagnosisMessage(), style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+@Composable
+private fun PrimaryDiagnosisV2Section(diagnosis: DiagnosisV2) {
+    ReportSection(title = stringResource(R.string.diagnostic_report_primary_title)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(text = diagnosis.component, style = MaterialTheme.typography.titleMedium)
+            Text(text = diagnosis.issue, style = MaterialTheme.typography.bodyLarge)
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_confidence_detail_label),
+                value = diagnosis.confidence.toDisplayLabel(),
+            )
+            DetailRow(
+                label = stringResource(R.string.diagnostic_report_diy_detail_label),
+                value = diagnosis.diySuitability.toDisplayLabel(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContributingFactorItem(factor: ContributingFactor) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = factor.component, style = MaterialTheme.typography.titleSmall)
+        Text(text = factor.issue, style = MaterialTheme.typography.bodyMedium)
+        DetailRow(
+            label = stringResource(R.string.diagnostic_report_confidence_detail_label),
+            value = factor.confidence.toDisplayLabel(),
+        )
+        Text(text = factor.evidenceSummary, style = MaterialTheme.typography.bodySmall)
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun ObservedFindingsSections(findings: List<ObservedFinding>) {
+    val relevantFindings = findings.filterNot { it.relationshipToSymptoms == DiagnosticRelevance.INCIDENTAL }
+    val incidentalFindings = findings.filter { it.relationshipToSymptoms == DiagnosticRelevance.INCIDENTAL }
+    ReportSection(title = stringResource(R.string.diagnostic_report_findings_title)) {
+        if (relevantFindings.isEmpty()) {
+            Text(
+                text = stringResource(R.string.diagnostic_report_no_relevant_findings),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                relevantFindings.forEach { finding -> ObservedFindingItem(finding = finding) }
+            }
+        }
+    }
+    if (incidentalFindings.isNotEmpty()) {
+        ReportSection(title = stringResource(R.string.diagnostic_report_incidental_findings_title)) {
+            Text(
+                text = stringResource(R.string.diagnostic_report_incidental_findings_description),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                incidentalFindings.forEach { finding -> ObservedFindingItem(finding = finding) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ObservedFindingItem(finding: ObservedFinding) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = finding.component, style = MaterialTheme.typography.titleSmall)
+        Text(text = finding.finding, style = MaterialTheme.typography.bodyMedium)
+        DetailRow(
+            label = stringResource(R.string.diagnostic_report_evidence_source_label),
+            value = finding.evidenceSource.toDisplayLabel(finding.evidenceSourceDetail),
+        )
+        DetailRow(
+            label = stringResource(R.string.diagnostic_report_relevance_label),
+            value = finding.relationshipToSymptoms.toDisplayLabel(),
+        )
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun AlternateHypothesisV2Item(hypothesis: AlternateHypothesisV2) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(text = hypothesis.component, style = MaterialTheme.typography.titleSmall)
+        Text(text = hypothesis.issue, style = MaterialTheme.typography.bodyMedium)
+        DetailRow(
+            label = stringResource(R.string.diagnostic_report_confidence_detail_label),
+            value = hypothesis.confidence.toDisplayLabel(),
+        )
+        Text(text = hypothesis.evidenceSummary, style = MaterialTheme.typography.bodySmall)
+        HorizontalDivider()
+    }
+}
+
+@Composable
+private fun ReportList(items: List<String>) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items.forEach { item ->
+            Text(
+                text = stringResource(R.string.diagnostic_report_list_item, item),
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }
@@ -682,3 +867,280 @@ private fun String.toDisplayLabel(): String =
     split("_")
         .filter(String::isNotBlank)
         .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercaseChar) }
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 1200)
+@Composable
+private fun DiagnosticReportV2SupportedPreview() {
+    DiagnosticReportContent(
+        state = DiagnosticReportUiState(report = previewV2SupportedReport),
+        onNavigateBack = {},
+        onRetry = {},
+    )
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 900)
+@Composable
+private fun DiagnosticReportV2LimitedPreview() {
+    DiagnosticReportContent(
+        state = DiagnosticReportUiState(report = previewV2LimitedReport),
+        onNavigateBack = {},
+        onRetry = {},
+    )
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 900)
+@Composable
+private fun DiagnosticReportV1Preview() {
+    DiagnosticReportContent(
+        state = DiagnosticReportUiState(report = previewV1Report),
+        onNavigateBack = {},
+        onRetry = {},
+    )
+}
+
+private val previewV2SupportedReport =
+    DiagnosticReportV2(
+        id = "preview-v2",
+        createdAt = "",
+        diagnosticOutcome = DiagnosticOutcome.DIAGNOSIS_SUPPORTED,
+        reportedSymptoms = listOf("Chain skips under load.", "Shifting hesitates in small sprockets."),
+        primaryDiagnosis =
+            DiagnosisV2(
+                component = "Chain and cassette",
+                issue = "Wear is causing poor engagement under load.",
+                confidence = DiagnosticConfidence.MEDIUM,
+                diySuitability = DiySuitability.CAUTION,
+                supportingFindingIds = listOf("chain-wear"),
+            ),
+        contributingFactors =
+            listOf(
+                ContributingFactor(
+                    component = "Rear derailleur",
+                    issue = "Indexing is slightly out.",
+                    confidence = DiagnosticConfidence.MEDIUM,
+                    evidenceSummary = "A functional check found delayed alignment in affected gears.",
+                    supportingFindingIds = listOf("indexing"),
+                ),
+                ContributingFactor(
+                    component = "Shift cable",
+                    issue = "Cable friction is worsening the delayed shift.",
+                    confidence = DiagnosticConfidence.LOW,
+                    evidenceSummary = "Cable movement was inconsistent during the functional check.",
+                    supportingFindingIds = listOf("cable"),
+                ),
+            ),
+        observedFindings =
+            listOf(
+                ObservedFinding(
+                    findingId = "chain-wear",
+                    component = "Chain",
+                    finding = "A chain checker indicates wear beyond the replacement threshold.",
+                    evidenceSource = EvidenceSource.MEASUREMENT,
+                    evidenceSourceDetail = null,
+                    relationshipToSymptoms = DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS,
+                    artifactIds = emptyList(),
+                ),
+                ObservedFinding(
+                    findingId = "indexing",
+                    component = "Rear derailleur",
+                    finding = "A functional check showed delayed alignment in the affected gears.",
+                    evidenceSource = EvidenceSource.FUNCTIONAL_CHECK,
+                    evidenceSourceDetail = null,
+                    relationshipToSymptoms = DiagnosticRelevance.SUPPORTED_CONTRIBUTOR,
+                    artifactIds = emptyList(),
+                ),
+                ObservedFinding(
+                    findingId = "tire",
+                    component = "Rear tire",
+                    finding = "Small cracks are visible in the sidewall.",
+                    evidenceSource = EvidenceSource.IMAGE,
+                    evidenceSourceDetail = null,
+                    relationshipToSymptoms = DiagnosticRelevance.INCIDENTAL,
+                    artifactIds = listOf("photo-1"),
+                ),
+            ),
+        alternateHypotheses =
+            listOf(
+                AlternateHypothesisV2(
+                    component = "Freehub",
+                    issue = "Intermittent engagement could also produce skipping under load.",
+                    confidence = DiagnosticConfidence.LOW,
+                    evidenceSummary =
+                        "It remains plausible, but the wear measurement and gear-specific behavior favor the primary diagnosis.",
+                    supportingFindingIds = listOf("chain-wear"),
+                ),
+            ),
+        unresolvedUncertainties = listOf("Hanger alignment was not physically measured."),
+        evidenceSummary =
+            "The measurement supports drivetrain wear as the primary cause; indexing and cable friction also contribute.",
+        keyArtifactIds = listOf("photo-1"),
+        userSkillLevel = com.bikedoc.android.api.UserSkillLevel.BEGINNER,
+        safetyFlags =
+            listOf(
+                SafetyFlag(
+                    code = "tire_damage",
+                    severity = "warning",
+                    phase = "diagnostic",
+                    message = "Have the cracked tire inspected before riding at speed.",
+                    blocksRepairInstructions = false,
+                ),
+            ),
+        diagnosticSessionId = "preview-session",
+    )
+
+private val previewV2LimitedReport =
+    DiagnosticReportV2(
+        id = "preview-v2-limited",
+        createdAt = "",
+        diagnosticOutcome = DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED,
+        reportedSymptoms = listOf("Front brake feels weak."),
+        primaryDiagnosis = null,
+        contributingFactors = emptyList(),
+        observedFindings =
+            listOf(
+                ObservedFinding(
+                    findingId = "weak-brake",
+                    component = "Front brake",
+                    finding = "The user reports weak braking.",
+                    evidenceSource = EvidenceSource.USER_REPORT,
+                    evidenceSourceDetail = null,
+                    relationshipToSymptoms = DiagnosticRelevance.UNKNOWN,
+                    artifactIds = emptyList(),
+                ),
+            ),
+        alternateHypotheses = emptyList(),
+        unresolvedUncertainties = emptyList(),
+        evidenceSummary = "A remote assessment could not safely determine why braking is weak.",
+        keyArtifactIds = emptyList(),
+        userSkillLevel = com.bikedoc.android.api.UserSkillLevel.BEGINNER,
+        safetyFlags = emptyList(),
+        diagnosticSessionId = "preview-session",
+    )
+
+private val previewV1Report =
+    DiagnosticReport(
+        id = "preview-v1",
+        createdAt = "",
+        primaryDiagnosis =
+            Diagnosis(
+                component = "Rear derailleur",
+                issue = "Bent hanger",
+                confidence = "high",
+                diySuitability = "caution",
+            ),
+        alternateHypotheses = emptyList(),
+        evidenceSummary = "The hanger is bent.",
+        repairEstimate =
+            RepairEstimate(
+                difficulty = "medium",
+                difficultyNotes = "Alignment is required.",
+                toolsRequired = listOf("Derailleur hanger alignment gauge"),
+                partsRequired = emptyList(),
+                repairTime = RepairTimeEstimate(lowMinutes = 30, highMinutes = 60),
+                shopRepairCost = ShopRepairCostEstimate(lowUsd = 80, highUsd = 120, notes = null),
+            ),
+        userSkillLevel = "beginner",
+        safetyFlags = emptyList(),
+        keyArtifactIds = emptyList(),
+        costEstimate = null,
+    )
+
+@Composable
+private fun DiagnosticOutcome.toDisplayLabel(): String =
+    stringResource(
+        when (this) {
+            DiagnosticOutcome.DIAGNOSIS_SUPPORTED -> R.string.diagnostic_report_outcome_diagnosis_supported
+            DiagnosticOutcome.USER_DECLINED_MORE_INPUT -> R.string.diagnostic_report_outcome_user_declined
+            DiagnosticOutcome.REQUESTED_INPUT_UNAVAILABLE -> R.string.diagnostic_report_outcome_input_unavailable
+            DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED -> R.string.diagnostic_report_outcome_in_person
+        },
+    )
+
+@Composable
+private fun DiagnosticOutcome.toDescription(): String =
+    stringResource(
+        when (this) {
+            DiagnosticOutcome.DIAGNOSIS_SUPPORTED ->
+                R.string.diagnostic_report_outcome_diagnosis_supported_description
+            DiagnosticOutcome.USER_DECLINED_MORE_INPUT ->
+                R.string.diagnostic_report_outcome_user_declined_description
+            DiagnosticOutcome.REQUESTED_INPUT_UNAVAILABLE ->
+                R.string.diagnostic_report_outcome_input_unavailable_description
+            DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED ->
+                R.string.diagnostic_report_outcome_in_person_description
+        },
+    )
+
+@Composable
+private fun DiagnosticOutcome.toLimitedDiagnosisMessage(): String =
+    stringResource(
+        when (this) {
+            DiagnosticOutcome.USER_DECLINED_MORE_INPUT -> R.string.diagnostic_report_limited_user_declined
+            DiagnosticOutcome.REQUESTED_INPUT_UNAVAILABLE -> R.string.diagnostic_report_limited_input_unavailable
+            DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED -> R.string.diagnostic_report_limited_in_person
+            DiagnosticOutcome.DIAGNOSIS_SUPPORTED -> R.string.diagnostic_report_limited_generic
+        },
+    )
+
+@Composable
+private fun DiagnosticConfidence.toDisplayLabel(): String =
+    stringResource(
+        when (this) {
+            DiagnosticConfidence.LOW -> R.string.diagnostic_report_confidence_low
+            DiagnosticConfidence.MEDIUM -> R.string.diagnostic_report_confidence_medium
+            DiagnosticConfidence.HIGH -> R.string.diagnostic_report_confidence_high
+        },
+    )
+
+@Composable
+private fun DiySuitability.toDisplayLabel(): String =
+    stringResource(
+        when (this) {
+            DiySuitability.UNKNOWN -> R.string.diagnostic_report_diy_unknown
+            DiySuitability.REASONABLE -> R.string.diagnostic_report_diy_reasonable
+            DiySuitability.CAUTION -> R.string.diagnostic_report_diy_caution
+            DiySuitability.SHOP_RECOMMENDED -> R.string.diagnostic_report_diy_shop_recommended
+            DiySuitability.BLOCKED -> R.string.diagnostic_report_diy_blocked
+        },
+    )
+
+@Composable
+private fun com.bikedoc.android.api.UserSkillLevel.toDisplayLabel(): String =
+    stringResource(
+        when (this) {
+            com.bikedoc.android.api.UserSkillLevel.UNKNOWN -> R.string.diagnostic_report_skill_unknown
+            com.bikedoc.android.api.UserSkillLevel.BEGINNER -> R.string.diagnostic_report_skill_beginner
+            com.bikedoc.android.api.UserSkillLevel.INTERMEDIATE -> R.string.diagnostic_report_skill_intermediate
+            com.bikedoc.android.api.UserSkillLevel.ADVANCED -> R.string.diagnostic_report_skill_advanced
+        },
+    )
+
+@Composable
+private fun EvidenceSource.toDisplayLabel(detail: String?): String =
+    when (this) {
+        EvidenceSource.IMAGE -> stringResource(R.string.diagnostic_report_evidence_source_image)
+        EvidenceSource.USER_REPORT -> stringResource(R.string.diagnostic_report_evidence_source_user_report)
+        EvidenceSource.MEASUREMENT -> stringResource(R.string.diagnostic_report_evidence_source_measurement)
+        EvidenceSource.FUNCTIONAL_CHECK -> stringResource(R.string.diagnostic_report_evidence_source_functional_check)
+        EvidenceSource.REPAIR_HISTORY -> stringResource(R.string.diagnostic_report_evidence_source_repair_history)
+        EvidenceSource.OTHER ->
+            stringResource(
+                R.string.diagnostic_report_evidence_source_other,
+                detail.orEmpty(),
+            )
+    }
+
+@Composable
+private fun DiagnosticRelevance.toDisplayLabel(): String =
+    stringResource(
+        when (this) {
+            DiagnosticRelevance.UNKNOWN -> R.string.diagnostic_report_relevance_unknown
+            DiagnosticRelevance.POSSIBLE_CONTRIBUTOR ->
+                R.string.diagnostic_report_relevance_possible_contributor
+            DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS ->
+                R.string.diagnostic_report_relevance_supports_primary
+            DiagnosticRelevance.SUPPORTED_CONTRIBUTOR ->
+                R.string.diagnostic_report_relevance_supported_contributor
+            DiagnosticRelevance.INCIDENTAL -> R.string.diagnostic_report_relevance_incidental
+        },
+    )
