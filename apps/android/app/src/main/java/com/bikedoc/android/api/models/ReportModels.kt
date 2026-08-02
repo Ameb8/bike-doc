@@ -55,6 +55,184 @@ data class DiagnosticReportPayload(
 )
 
 @Serializable
+data class DiagnosticReportV2Payload(
+    @SerialName("schema_version")
+    val schemaVersion: String,
+    @SerialName("diagnostic_outcome")
+    val diagnosticOutcome: DiagnosticOutcomePayload,
+    @SerialName("reported_symptoms")
+    val reportedSymptoms: List<String>,
+    @SerialName("primary_diagnosis")
+    val primaryDiagnosis: DiagnosisV2Payload?,
+    @SerialName("contributing_factors")
+    val contributingFactors: List<ContributingFactorPayload>,
+    @SerialName("observed_findings")
+    val observedFindings: List<ObservedFindingPayload>,
+    @SerialName("alternate_hypotheses")
+    val alternateHypotheses: List<AlternateHypothesisV2Payload>,
+    @SerialName("unresolved_uncertainties")
+    val unresolvedUncertainties: List<String>,
+    @SerialName("evidence_summary")
+    val evidenceSummary: String,
+    @SerialName("key_artifact_ids")
+    val keyArtifactIds: List<String>,
+    @SerialName("user_skill_level")
+    val userSkillLevel: UserSkillLevelPayload,
+    @SerialName("safety_flags")
+    val safetyFlags: List<SafetyFlag>,
+    @SerialName("diagnostic_session_id")
+    val diagnosticSessionId: String,
+)
+
+@Serializable
+enum class DiagnosticOutcomePayload {
+    @SerialName("diagnosis_supported")
+    DIAGNOSIS_SUPPORTED,
+
+    @SerialName("user_declined_more_input")
+    USER_DECLINED_MORE_INPUT,
+
+    @SerialName("requested_input_unavailable")
+    REQUESTED_INPUT_UNAVAILABLE,
+
+    @SerialName("in_person_assessment_required")
+    IN_PERSON_ASSESSMENT_REQUIRED,
+}
+
+@Serializable
+enum class EvidenceSourcePayload {
+    @SerialName("image")
+    IMAGE,
+
+    @SerialName("user_report")
+    USER_REPORT,
+
+    @SerialName("measurement")
+    MEASUREMENT,
+
+    @SerialName("functional_check")
+    FUNCTIONAL_CHECK,
+
+    @SerialName("repair_history")
+    REPAIR_HISTORY,
+
+    @SerialName("other")
+    OTHER,
+}
+
+@Serializable
+enum class DiagnosticRelevancePayload {
+    @SerialName("unknown")
+    UNKNOWN,
+
+    @SerialName("possible_contributor")
+    POSSIBLE_CONTRIBUTOR,
+
+    @SerialName("supports_primary_diagnosis")
+    SUPPORTS_PRIMARY_DIAGNOSIS,
+
+    @SerialName("supported_contributor")
+    SUPPORTED_CONTRIBUTOR,
+
+    @SerialName("incidental")
+    INCIDENTAL,
+}
+
+@Serializable
+enum class DiagnosticConfidencePayload {
+    @SerialName("low")
+    LOW,
+
+    @SerialName("medium")
+    MEDIUM,
+
+    @SerialName("high")
+    HIGH,
+}
+
+@Serializable
+enum class DiySuitabilityPayload {
+    @SerialName("unknown")
+    UNKNOWN,
+
+    @SerialName("reasonable")
+    REASONABLE,
+
+    @SerialName("caution")
+    CAUTION,
+
+    @SerialName("shop_recommended")
+    SHOP_RECOMMENDED,
+
+    @SerialName("blocked")
+    BLOCKED,
+}
+
+@Serializable
+enum class UserSkillLevelPayload {
+    @SerialName("unknown")
+    UNKNOWN,
+
+    @SerialName("beginner")
+    BEGINNER,
+
+    @SerialName("intermediate")
+    INTERMEDIATE,
+
+    @SerialName("advanced")
+    ADVANCED,
+}
+
+@Serializable
+data class DiagnosisV2Payload(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidencePayload,
+    @SerialName("diy_suitability")
+    val diySuitability: DiySuitabilityPayload,
+    @SerialName("supporting_finding_ids")
+    val supportingFindingIds: List<String>,
+)
+
+@Serializable
+data class ContributingFactorPayload(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidencePayload,
+    @SerialName("evidence_summary")
+    val evidenceSummary: String,
+    @SerialName("supporting_finding_ids")
+    val supportingFindingIds: List<String>,
+)
+
+@Serializable
+data class ObservedFindingPayload(
+    @SerialName("finding_id")
+    val findingId: String,
+    val component: String,
+    val finding: String,
+    @SerialName("evidence_source")
+    val evidenceSource: EvidenceSourcePayload,
+    @SerialName("evidence_source_detail")
+    val evidenceSourceDetail: String?,
+    @SerialName("relationship_to_symptoms")
+    val relationshipToSymptoms: DiagnosticRelevancePayload,
+    @SerialName("artifact_ids")
+    val artifactIds: List<String>,
+)
+
+@Serializable
+data class AlternateHypothesisV2Payload(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidencePayload,
+    @SerialName("evidence_summary")
+    val evidenceSummary: String,
+    @SerialName("supporting_finding_ids")
+    val supportingFindingIds: List<String>,
+)
+
+@Serializable
 data class PlanReportPayload(
     @SerialName("schema_version")
     val schemaVersion: String,
