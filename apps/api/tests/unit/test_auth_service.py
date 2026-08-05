@@ -177,6 +177,37 @@ def test_firebase_token_rejects_mismatched_project(
         verify_firebase_bearer_token("firebase-token", settings=settings)
 
 
+def test_firebase_token_verification_logs_safe_failure_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+    )
+    token = make_unsigned_jwt(sub="firebase-user", email="rider@example.com")
+
+    def fail_verification(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("token verification failed")
+
+    monkeypatch.setattr(
+        "bike_doc_api.core.security.google_verify_firebase_token",
+        fail_verification,
+    )
+
+    with (
+        caplog.at_level("DEBUG", logger="bike_doc_api.core.security"),
+        pytest.raises(AuthenticationError),
+    ):
+        verify_firebase_bearer_token(token, settings=settings)
+
+    assert "firebase_token_verification_failed" in caplog.text
+    assert "error_type=ValueError" in caplog.text
+    assert "rider@example.com" not in caplog.text
+    assert token not in caplog.text
+
+
 async def test_auth_service_resolves_existing_user() -> None:
     users = FakeUserRepository()
     existing = User(
