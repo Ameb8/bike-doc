@@ -1,0 +1,28 @@
+apps/api/src/bike_doc_api/core/security.py
+  s_90a2a449e6213e::t_014de1cbf49caa 7,19-20,74,77-82,90,93-96,100,103-105,111-118,123-129,134-139,142-146,227,229-246
+  s_90a2a449e6213e::t_0e9d8a13f15f54 91-92,101-102,228
+apps/api/tests/unit/test_auth_service.py
+  s_90a2a449e6213e::t_fd661c6f5a8c80 180-198,204-210
+  s_90a2a449e6213e::t_0e9d8a13f15f54 199-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8c2867d55c155388ea952d10ac316ac44c19bc77",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_90a2a449e6213e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc69f-acb2-7062-b2d9-098ca9370012",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
