@@ -10,7 +10,6 @@ from google.adk.tools.tool_context import ToolContext
 from pydantic import ValidationError
 
 from bike_doc_api.adk.report_schemas.diagnostic import (
-    DiagnosticReportToolPayload,
     DiagnosticReportV2ToolPayload,
 )
 from bike_doc_api.adk.tools.artifacts import (
@@ -41,7 +40,7 @@ from bike_doc_api.adk.tools.reports import (
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
 from bike_doc_api.schemas.common import ArtifactPurpose
 
-V1_DIAGNOSTIC_TOOL_NAMES = (
+V2_DIAGNOSTIC_TOOL_NAMES = (
     "get_bike_profile",
     "lookup_repair_history",
     "list_diagnostic_artifacts",
@@ -66,7 +65,7 @@ class DiagnosticAgentToolDependencies:
 def build_tool_catalog(
     dependencies: DiagnosticAgentToolDependencies,
 ) -> tuple[FunctionTool, ...]:
-    """Build the V1 diagnostic ADK FunctionTool catalog."""
+    """Build the V2-only diagnostic ADK FunctionTool catalog."""
 
     bike_profile_tool = GetBikeProfileTool(dependencies.bike_profile_service)
     repair_history_tool = LookupRepairHistoryTool(
@@ -173,7 +172,7 @@ def build_tool_catalog(
         )
 
     async def save_diagnostic_report(
-        report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload,
+        report: DiagnosticReportV2ToolPayload,
         completion_basis: CompletionBasis,
         summary: str | None = None,
         tool_context: ToolContext | None = None,
@@ -230,12 +229,10 @@ def _context_error() -> dict[str, Any]:
     )
 
 
-def _report_payload_data(
-    report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload | Any,
-) -> dict[str, Any]:
+def _report_payload_data(report: DiagnosticReportV2ToolPayload | Any) -> dict[str, Any]:
     """Return report data from ADK's typed or dict runtime value."""
 
-    if isinstance(report, (DiagnosticReportToolPayload, DiagnosticReportV2ToolPayload)):
+    if isinstance(report, DiagnosticReportV2ToolPayload):
         return report.model_dump(mode="json")
     if isinstance(report, dict):
         return report

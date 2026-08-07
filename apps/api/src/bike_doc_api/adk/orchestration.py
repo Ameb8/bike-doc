@@ -631,11 +631,11 @@ def _turn_artifact_ids(turn: RepairTurnModel) -> tuple[str, ...]:
 def _phase_session_report_version(
     phase_session: RepairPhaseSessionModel,
 ) -> Literal["diagnostic_report.v1", "diagnostic_report.v2"]:
-    """Return the immutable diagnostic version, safely defaulting old rows to V1."""
+    """Return the stored version, treating legacy unset rows as V2 locally."""
 
     if phase_session.diagnostic_report_schema_version == "diagnostic_report.v2":
         return "diagnostic_report.v2"
-    return "diagnostic_report.v1"
+    return "diagnostic_report.v2"
 
 
 def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:

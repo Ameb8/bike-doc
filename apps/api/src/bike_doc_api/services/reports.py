@@ -56,7 +56,7 @@ from bike_doc_api.services.safety import SafetyService
 
 DEFAULT_REPORT_LIMIT = 50
 MAX_REPORT_LIMIT = 100
-DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v1"
+DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v2"
 logger = logging.getLogger(__name__)
 
 

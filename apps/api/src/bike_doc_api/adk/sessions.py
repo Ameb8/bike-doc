@@ -153,7 +153,7 @@ class DiagnosticPhaseSessionManager:
     adk_sessions: DiagnosticADKSessionClientProtocol
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
-    diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v1"
+    diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2"
 
     async def ensure_diagnostic_session(
         self,

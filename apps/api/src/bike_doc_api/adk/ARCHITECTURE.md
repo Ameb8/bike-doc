@@ -219,7 +219,7 @@ codes such as `not_found`, `invalid_phase`, `stale_session`,
 `validation_error`, `artifact_not_found`, `report_validation_failed`, and
 `safety_policy_violation`.
 
-The live V1 diagnostic catalog in `tools/tool_catalog.py` binds dependencies
+The live V2 diagnostic catalog in `tools/tool_catalog.py` binds dependencies
 once and exposes six ADK `FunctionTool`s:
 
 - `get_bike_profile` and `lookup_repair_history` read owner-scoped repair
@@ -232,15 +232,15 @@ once and exposes six ADK `FunctionTool`s:
 - `save_diagnostic_report` validates its internal `CompletionBasis` before it
   delegates to `ReportService`; the basis is neither persisted nor exposed in
   public report or tool-result serialization. The server-seeded tool context
-  selects `diagnostic_report.v1` or `diagnostic_report.v2`; V2 agent input
-  excludes the server-owned outcome, phase-session ID, and envelope summary.
+  selects `diagnostic_report.v2`; agent input excludes the server-owned outcome,
+  phase-session ID, and envelope summary.
   `ReportService` stamps those fields and validates the public envelope.
 
 The last three mutate product state directly in the ADK tool loop, exactly
 once. Their function responses are notifications to the runner and
 orchestrator, not commands to repeat a write. `tools/price_lookup.py` is a
 planning-only adapter around the cost-estimate service; it is intentionally
-not a diagnostic V1 tool.
+not a diagnostic tool.
 
 ## Report, test, and change guidance
 

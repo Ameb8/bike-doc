@@ -83,6 +83,7 @@ async def test_creates_diagnostic_phase_session_lazily() -> None:
     assert phase_session.id == "phs_created"
     assert phase_session.phase == "diagnostic"
     assert phase_session.adk_session_id == "adk_created_1"
+    assert phase_session.diagnostic_report_schema_version == "diagnostic_report.v2"
     assert client.created == ["adk_created_1"]
 
 

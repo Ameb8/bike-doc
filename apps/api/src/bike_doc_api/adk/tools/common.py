@@ -48,7 +48,7 @@ class DiagnosticToolContext(BaseModel):
     diagnostic_session_id: str
     diagnostic_report_schema_version: Literal[
         "diagnostic_report.v1", "diagnostic_report.v2"
-    ] = "diagnostic_report.v1"
+    ] = "diagnostic_report.v2"
     turn_id: str | None = None
     artifact_ids: tuple[str, ...] = ()
     bike_profile: Mapping[str, Any] | None = None

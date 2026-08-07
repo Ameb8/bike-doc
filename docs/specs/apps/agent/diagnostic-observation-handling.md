@@ -1193,7 +1193,7 @@ by app-owned orchestration. A single report payload must not mix V1 and V2
 fields.
 
 The deployment setting `BIKE_DOC_API_DIAGNOSTIC_REPORT_VERSION` is an
-app-owned rollout control, defaulting to `diagnostic_report.v1`. The backend
+app-owned report-version control, defaulting to `diagnostic_report.v2`. The backend
 snapshots it as `diagnostic_report_schema_version` when it creates a diagnostic
 phase session. Every turn, runner context, and report-tool validation for that
 phase session uses the stored version, even if the deployment setting changes.

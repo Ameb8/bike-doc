@@ -43,7 +43,7 @@ class DiagnosticRunnerRequest:
     bike_profile: Mapping[str, Any] | None
     diagnostic_report_schema_version: Literal[
         "diagnostic_report.v1", "diagnostic_report.v2"
-    ] = "diagnostic_report.v1"
+    ] = "diagnostic_report.v2"
     repair_history: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     current_images: tuple[NormalizedModelImage, ...] = field(default_factory=tuple)

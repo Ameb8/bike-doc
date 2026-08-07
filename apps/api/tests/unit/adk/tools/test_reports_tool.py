@@ -82,6 +82,7 @@ def _context() -> DiagnosticToolContext:
         user_skill_level="beginner",
         repair_session_id="rs_tool",
         diagnostic_session_id="phs_tool",
+        diagnostic_report_schema_version="diagnostic_report.v1",
     )
 
 

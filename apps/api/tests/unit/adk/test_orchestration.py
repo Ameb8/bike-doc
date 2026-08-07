@@ -53,7 +53,7 @@ class _Store:
             repair_session_id="rs_orch",
             phase="diagnostic",
             adk_session_id="adk_internal_orch",
-            diagnostic_report_schema_version="diagnostic_report.v1",
+            diagnostic_report_schema_version="diagnostic_report.v2",
             status="active",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
@@ -378,7 +378,7 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert request.repair_session_id == "rs_orch"
     assert request.turn_id == "turn_orch"
     assert request.diagnostic_session_id == "phs_orch"
-    assert request.diagnostic_report_schema_version == "diagnostic_report.v1"
+    assert request.diagnostic_report_schema_version == "diagnostic_report.v2"
     assert request.adk_session_id == "adk_internal_orch"
     assert request.message_text == "The chain skips."
     assert request.artifact_ids == ("art_1",)
@@ -409,7 +409,7 @@ async def test_orchestration_records_safe_report_outcomes() -> None:
                 DiagnosticRunnerInputRequested("measurement", "ignored"),
                 DiagnosticRunnerReportCompleted(
                     report_id="rpt_1",
-                    schema_version="diagnostic_report.v1",
+                    schema_version="diagnostic_report.v2",
                     observed_finding_count=0,
                     contributing_factor_count=0,
                     alternate_hypothesis_count=2,
@@ -418,10 +418,10 @@ async def test_orchestration_records_safe_report_outcomes() -> None:
         ),
     ).process_turn(current_user=_user(), turn=_turn())
 
-    assert telemetry.input_versions == ["diagnostic_report.v1"]
+    assert telemetry.input_versions == ["diagnostic_report.v2"]
     assert telemetry.completed == [
         DiagnosticReportTelemetryOutcome(
-            schema_version="diagnostic_report.v1",
+            schema_version="diagnostic_report.v2",
             observed_finding_count=0,
             contributing_factor_count=0,
             alternate_hypothesis_count=2,
