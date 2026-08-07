@@ -10,6 +10,7 @@ from typing import Protocol
 from google.adk.sessions import InMemorySessionService
 from sqlalchemy.exc import IntegrityError
 
+from bike_doc_api.core.config import DiagnosticReportVersion
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.repair_session import (
     RepairPhaseSession as RepairPhaseSessionModel,
@@ -152,6 +153,7 @@ class DiagnosticPhaseSessionManager:
     adk_sessions: DiagnosticADKSessionClientProtocol
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
+    diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2"
 
     async def ensure_diagnostic_session(
         self,
@@ -188,6 +190,11 @@ class DiagnosticPhaseSessionManager:
             repair_session_id=repair_session_id,
             phase=phase.value,
             adk_session_id=adk_session_id,
+            diagnostic_report_schema_version=(
+                self.diagnostic_report_version
+                if phase is RepairSessionPhase.DIAGNOSTIC
+                else None
+            ),
             status="active",
         )
 

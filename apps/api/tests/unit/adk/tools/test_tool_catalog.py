@@ -9,7 +9,7 @@ from typing import Any
 from google.adk.tools import FunctionTool
 
 from bike_doc_api.adk.tools.tool_catalog import (
-    V1_DIAGNOSTIC_TOOL_NAMES,
+    V2_DIAGNOSTIC_TOOL_NAMES,
     DiagnosticAgentToolDependencies,
     build_tool_catalog,
 )
@@ -22,6 +22,7 @@ from bike_doc_api.schemas.common import (
 from bike_doc_api.schemas.repair_session import InputRequest
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     SafetyFlag,
 )
@@ -91,14 +92,22 @@ class _CatalogService:
 
     async def persist_diagnostic_report_from_tool(self, **kwargs: Any) -> Any:
         self._record("persist_diagnostic_report_from_tool", kwargs)
-        payload = DiagnosticReportV1.model_validate(kwargs["payload"])
+        payload_data = dict(kwargs["payload"])
+        payload_data["diagnostic_session_id"] = kwargs["diagnostic_session_id"]
+        if payload_data["schema_version"] == "diagnostic_report.v2":
+            payload_data["diagnostic_outcome"] = kwargs["completion_reason"]
+            payload = DiagnosticReportV2.model_validate(payload_data)
+            summary = payload.evidence_summary
+        else:
+            payload = DiagnosticReportV1.model_validate(payload_data)
+            summary = kwargs["summary"]
         report = PhaseReportEnvelope(
             id="rpt_1",
             repair_session_id=kwargs["repair_session_id"],
             type=PhaseReportType.DIAGNOSTIC,
-            schema_version="diagnostic_report.v1",
+            schema_version=payload.schema_version,
             phase=RepairSessionPhase.DIAGNOSTIC,
-            summary=kwargs["summary"],
+            summary=summary,
             safety_flags=payload.safety_flags,
             source_artifact_ids=payload.key_artifact_ids,
             created_at=datetime(2026, 6, 25, 12, 1, tzinfo=UTC),
@@ -156,33 +165,45 @@ def _tool_by_name(tools: tuple[FunctionTool, ...], name: str) -> FunctionTool:
 
 def _report_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "schema_version": "diagnostic_report.v1",
+        "schema_version": "diagnostic_report.v2",
+        "reported_symptoms": ["The chain skips under load."],
         "primary_diagnosis": {
-            "component": "rear derailleur",
-            "issue": "Cable tension appears low.",
+            "component": "chain",
+            "issue": "Chain wear causes skipping.",
             "confidence": "medium",
             "diy_suitability": "reasonable",
+            "supporting_finding_ids": ["reported-symptom"],
         },
+        "contributing_factors": [],
+        "observed_findings": [
+            {
+                "finding_id": "reported-symptom",
+                "component": "drivetrain",
+                "finding": "The user reports skipping under load.",
+                "evidence_source": "user_report",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supports_primary_diagnosis",
+                "artifact_ids": [],
+            }
+        ],
         "alternate_hypotheses": [],
+        "unresolved_uncertainties": [],
         "evidence_summary": "The symptom pattern points to rear indexing.",
-        "repair_estimate": {
-            "difficulty": "easy",
-            "difficulty_notes": "Cable tension adjustment is beginner-friendly.",
-            "tools_required": ["bike stand or safe way to lift rear wheel"],
-            "parts_required": [],
-            "repair_time": {"low_minutes": 10, "high_minutes": 30},
-            "shop_repair_cost": {
-                "low_usd": 20,
-                "high_usd": 60,
-                "notes": "Estimate only; actual shop pricing varies.",
-            },
-        },
         "key_artifact_ids": [],
         "user_skill_level": "beginner",
         "safety_flags": [],
     }
     payload.update(overrides)
     return payload
+
+
+def _completion_basis() -> dict[str, Any]:
+    return {
+        "completion_reason": "diagnosis_supported",
+        "material_hypotheses_considered": ["rear derailleur indexing"],
+        "readily_obtainable_material_evidence_missing": False,
+        "why_ready": "The symptom pattern supports the diagnosis.",
+    }
 
 
 def _safety_flag() -> dict[str, Any]:
@@ -195,14 +216,16 @@ def _safety_flag() -> dict[str, Any]:
     }
 
 
-async def test_build_tool_catalog_returns_exact_v1_function_tools() -> None:
+async def test_build_tool_catalog_returns_exact_v2_function_tools() -> None:
     tools = build_tool_catalog(_dependencies(_CatalogService()))
 
     assert all(isinstance(tool, FunctionTool) for tool in tools)
-    assert tuple(tool.name for tool in tools) == V1_DIAGNOSTIC_TOOL_NAMES
+    assert tuple(tool.name for tool in tools) == V2_DIAGNOSTIC_TOOL_NAMES
 
 
-async def test_save_diagnostic_report_declares_nested_report_schema() -> None:
+async def test_save_diagnostic_report_declares_internal_completion_basis_schema() -> (
+    None
+):
     tool = _tool_by_name(
         build_tool_catalog(_dependencies(_CatalogService())),
         "save_diagnostic_report",
@@ -212,22 +235,43 @@ async def test_save_diagnostic_report_declares_nested_report_schema() -> None:
     schema = declaration.parameters_json_schema
 
     assert schema["properties"]["report"] == {
-        "$ref": "#/$defs/DiagnosticReportToolPayload",
+        "$ref": "#/$defs/DiagnosticReportV2ToolPayload"
     }
-    report_schema = schema["$defs"]["DiagnosticReportToolPayload"]
+    assert schema["properties"]["completion_basis"] == {
+        "$ref": "#/$defs/CompletionBasis",
+    }
+    completion_basis_schema = schema["$defs"]["CompletionBasis"]
+    assert completion_basis_schema["additionalProperties"] is False
+    assert completion_basis_schema["required"] == [
+        "completion_reason",
+        "material_hypotheses_considered",
+        "readily_obtainable_material_evidence_missing",
+        "why_ready",
+    ]
+    report_schema = schema["$defs"]["DiagnosticReportV2ToolPayload"]
     assert report_schema["additionalProperties"] is False
     assert report_schema["required"] == [
         "schema_version",
+        "reported_symptoms",
         "primary_diagnosis",
+        "contributing_factors",
+        "observed_findings",
+        "alternate_hypotheses",
+        "unresolved_uncertainties",
         "evidence_summary",
-        "repair_estimate",
         "key_artifact_ids",
         "user_skill_level",
         "safety_flags",
     ]
-    assert report_schema["properties"]["primary_diagnosis"] == {
-        "$ref": "#/$defs/Diagnosis",
-    }
+    assert "repair_estimate" not in report_schema["properties"]
+    assert (
+        "diagnostic_outcome"
+        not in schema["$defs"]["DiagnosticReportV2ToolPayload"]["properties"]
+    )
+    assert (
+        "diagnostic_session_id"
+        not in schema["$defs"]["DiagnosticReportV2ToolPayload"]["properties"]
+    )
 
 
 async def test_tool_catalog_requires_server_owned_context_from_adk_state() -> None:
@@ -355,8 +399,8 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
 
     result = await tool.run_async(
         args={
-            "summary": "Likely cable tension issue.",
             "report": _report_payload(diagnostic_session_id="phs_model_chosen"),
+            "completion_basis": _completion_basis(),
             "diagnostic_session_id": "adk_model_chosen",
         },
         tool_context=_tool_context(),
@@ -367,7 +411,10 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
     assert service.calls == []
 
     result = await tool.run_async(
-        args={"summary": "Likely cable tension issue.", "report": _report_payload()},
+        args={
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(),
+        },
         tool_context=_tool_context(),
     )
 
@@ -375,5 +422,5 @@ async def test_save_diagnostic_report_wrapper_invokes_bound_service_once() -> No
     assert [call[0] for call in service.calls] == [
         "persist_diagnostic_report_from_tool",
     ]
-    assert service.calls[0][1]["payload"]["diagnostic_session_id"] == "phs_server"
+    assert "diagnostic_session_id" not in service.calls[0][1]["payload"]
     assert service.calls[0][1]["turn_id"] == "turn_server"

@@ -522,7 +522,16 @@ Input schema:
     "user_skill_level": "beginner",
     "safety_flags": []
   },
-  "summary": "Likely rear shifting alignment issue; hanger damage remains possible."
+  "summary": "Likely rear shifting alignment issue; hanger damage remains possible.",
+  "completion_basis": {
+    "completion_reason": "diagnosis_supported",
+    "material_hypotheses_considered": [
+      "derailleur hanger alignment",
+      "shift cable friction"
+    ],
+    "readily_obtainable_material_evidence_missing": false,
+    "why_ready": "The symptom pattern and available evidence support the diagnosis."
+  }
 }
 ```
 
@@ -534,6 +543,18 @@ Rules:
   app-owned diagnostic phase session/archive ID.
 - The mapped report must validate against
   `docs/specs/apps/diagnostic-report-v1.md`.
+- `completion_basis` is required internal tool input and must never be persisted
+  in the report payload or returned through public report serialization. It has
+  exactly these completion reasons: `diagnosis_supported`,
+  `user_declined_more_input`, `requested_input_unavailable`, and
+  `in_person_assessment_required`.
+- Its hypothesis labels and `why_ready` must be non-blank. A
+  `diagnosis_supported` completion requires at least one considered hypothesis
+  and cannot retain readily obtainable material evidence gaps. Limited and
+  referral completions may retain such a gap.
+- `requested_input_unavailable` requires an explicit user communication; it
+  must not be inferred from inactivity. When in-person assessment is necessary,
+  `in_person_assessment_required` takes precedence.
 - `key_artifact_ids` must belong to the authenticated user and be attached to
   the repair session.
 - Report safety flags and session active safety flags must be reconciled by
@@ -545,6 +566,29 @@ Rules:
 - The service must update the session's latest diagnostic report reference.
 - The service must persist `phase.report.created` and, when appropriate,
   `phase.transitioned` events.
+
+### V2 report contract (not production enabled)
+
+When app-owned orchestration selects `diagnostic_report.v2`, the report input
+uses the public `DiagnosticReportV2` shape in `docs/specs/openapi.yaml` with
+one important tool-boundary rule: the agent does **not** supply
+`diagnostic_outcome`. The service validates `completion_basis.completion_reason`
+and stamps the matching server-owned public outcome before persistence.
+
+The V2 tool input has no separate top-level `summary`; the service copies the
+validated `report.evidence_summary` into the phase-report envelope summary.
+It must include non-empty `reported_symptoms` and `observed_findings`, nullable
+`primary_diagnosis` only for a limited or referral completion, and the V2
+`contributing_factors`, `alternate_hypotheses`, and
+`unresolved_uncertainties` fields. Primary diagnoses, contributors, and
+alternates each cite non-empty report-local `supporting_finding_ids`.
+
+For V2, the tool and service must reject `repair_estimate`, `cost_estimate`,
+and alternate `ruled_out_by`. They must validate the union of artifact IDs
+across image-backed observed findings and `key_artifact_ids`, then persist an
+envelope whose `schema_version` and `payload.schema_version` are both
+`diagnostic_report.v2`. V1 remains an immutable historical input/output shape;
+the selected version must never produce a mixed payload.
 
 Output schema:
 
@@ -572,7 +616,7 @@ Error behavior:
 | Session missing or not owned. | `not_found` |
 | Session is not in diagnostic phase. | `invalid_phase` |
 | Orchestration phase session mismatch. | `stale_session` |
-| Report payload does not map to `DiagnosticReportV1`. | `report_validation_failed` |
+| Report payload or completion basis is structurally invalid. | `report_validation_failed` |
 | Artifact ID is missing, not owned, or not attached to the session. | `artifact_not_found` |
 | Report safety flags violate server safety rules. | `safety_policy_violation` |
 

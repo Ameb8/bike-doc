@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Literal, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from bike_doc_api.models.phase_report import PhaseReport as PhaseReportModel
 from bike_doc_api.schemas.common import (
@@ -135,6 +135,212 @@ class DiagnosticReportV1(APIBaseModel):
     safety_flags: list[SafetyFlag]
     diagnostic_session_id: str
     cost_estimate: PlanCostEstimate | None = None
+
+
+class DiagnosticOutcome(StrEnum):
+    """Server-owned diagnostic completion outcome."""
+
+    DIAGNOSIS_SUPPORTED = "diagnosis_supported"
+    USER_DECLINED_MORE_INPUT = "user_declined_more_input"
+    REQUESTED_INPUT_UNAVAILABLE = "requested_input_unavailable"
+    IN_PERSON_ASSESSMENT_REQUIRED = "in_person_assessment_required"
+
+
+class EvidenceSource(StrEnum):
+    """Method that produced an observed finding."""
+
+    IMAGE = "image"
+    USER_REPORT = "user_report"
+    MEASUREMENT = "measurement"
+    FUNCTIONAL_CHECK = "functional_check"
+    REPAIR_HISTORY = "repair_history"
+    OTHER = "other"
+
+
+class DiagnosticRelevance(StrEnum):
+    """Evidence-backed relationship of a finding to the complaint."""
+
+    UNKNOWN = "unknown"
+    POSSIBLE_CONTRIBUTOR = "possible_contributor"
+    SUPPORTS_PRIMARY_DIAGNOSIS = "supports_primary_diagnosis"
+    SUPPORTED_CONTRIBUTOR = "supported_contributor"
+    INCIDENTAL = "incidental"
+
+
+class ObservedFinding(APIBaseModel):
+    """A report-local, evidence-backed observation."""
+
+    finding_id: str = Field(min_length=1)
+    component: str
+    finding: str = Field(min_length=1)
+    evidence_source: EvidenceSource
+    evidence_source_detail: str | None = None
+    relationship_to_symptoms: DiagnosticRelevance
+    artifact_ids: list[str]
+
+    @model_validator(mode="after")
+    def validate_evidence_shape(self) -> Self:
+        """Keep source detail and artifact references aligned with their source."""
+
+        if self.evidence_source is EvidenceSource.OTHER:
+            if (
+                self.evidence_source_detail is None
+                or not self.evidence_source_detail.strip()
+            ):
+                raise ValueError("other evidence sources require non-blank detail")
+        elif self.evidence_source_detail is not None:
+            raise ValueError("named evidence sources require null detail")
+        if self.evidence_source is EvidenceSource.IMAGE:
+            if not self.artifact_ids:
+                raise ValueError("image findings require at least one artifact ID")
+        elif self.artifact_ids:
+            raise ValueError("non-image findings require empty artifact IDs")
+        return self
+
+
+class DiagnosisV2(APIBaseModel):
+    """A causal diagnosis with explicit finding references."""
+
+    component: str
+    issue: str
+    confidence: Literal["low", "medium", "high"]
+    diy_suitability: Literal[
+        "unknown", "reasonable", "caution", "shop_recommended", "blocked"
+    ]
+    supporting_finding_ids: list[str] = Field(min_length=1)
+
+
+class ContributingFactor(APIBaseModel):
+    """A supported simultaneous contributor."""
+
+    component: str
+    issue: str
+    confidence: Literal["low", "medium", "high"]
+    evidence_summary: str = Field(min_length=1)
+    supporting_finding_ids: list[str] = Field(min_length=1)
+
+    @field_validator("evidence_summary")
+    @classmethod
+    def require_non_blank_evidence_summary(cls, value: str) -> str:
+        """Reject whitespace-only causal evidence summaries."""
+
+        if not value.strip():
+            raise ValueError("evidence_summary must be non-blank")
+        return value
+
+
+class AlternateHypothesisV2(APIBaseModel):
+    """An evidence-backed causal alternative that remains possible."""
+
+    component: str
+    issue: str
+    confidence: Literal["low", "medium", "high"]
+    evidence_summary: str = Field(min_length=1)
+    supporting_finding_ids: list[str] = Field(min_length=1)
+
+    @field_validator("evidence_summary")
+    @classmethod
+    def require_non_blank_evidence_summary(cls, value: str) -> str:
+        """Reject whitespace-only alternate evidence summaries."""
+
+        if not value.strip():
+            raise ValueError("evidence_summary must be non-blank")
+        return value
+
+
+class DiagnosticReportV2(APIBaseModel):
+    """Version two public diagnostic report payload."""
+
+    schema_version: Literal["diagnostic_report.v2"]
+    diagnostic_outcome: DiagnosticOutcome
+    reported_symptoms: list[str] = Field(min_length=1)
+    primary_diagnosis: DiagnosisV2 | None
+    contributing_factors: list[ContributingFactor]
+    observed_findings: list[ObservedFinding] = Field(min_length=1)
+    alternate_hypotheses: list[AlternateHypothesisV2]
+    unresolved_uncertainties: list[str]
+    evidence_summary: str
+    key_artifact_ids: list[str]
+    user_skill_level: UserSkillLevel
+    safety_flags: list[SafetyFlag]
+    diagnostic_session_id: str
+
+    @field_validator("evidence_summary")
+    @classmethod
+    def require_non_blank_evidence_summary(cls, value: str) -> str:
+        """Require a user-readable report synthesis."""
+
+        if not value.strip():
+            raise ValueError("evidence_summary must be non-blank")
+        return value
+
+    @model_validator(mode="after")
+    def validate_report_invariants(self) -> Self:
+        """Enforce deterministic V2 report-shape invariants only."""
+
+        if any(not symptom.strip() for symptom in self.reported_symptoms):
+            raise ValueError("reported_symptoms entries must be non-blank")
+        if any(
+            not uncertainty.strip() for uncertainty in self.unresolved_uncertainties
+        ):
+            raise ValueError("unresolved_uncertainties entries must be non-blank")
+        finding_ids = [finding.finding_id for finding in self.observed_findings]
+        if len(set(finding_ids)) != len(finding_ids):
+            raise ValueError("observed finding IDs must be unique")
+        findings = {finding.finding_id: finding for finding in self.observed_findings}
+        if self.primary_diagnosis is None:
+            if self.diagnostic_outcome is DiagnosticOutcome.DIAGNOSIS_SUPPORTED:
+                raise ValueError("diagnosis_supported requires a primary diagnosis")
+            if any(
+                finding.relationship_to_symptoms
+                is DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS
+                for finding in self.observed_findings
+            ):
+                raise ValueError("null primary diagnosis cannot have primary support")
+            if not self.unresolved_uncertainties:
+                raise ValueError("limited outcomes require unresolved uncertainty")
+        else:
+            self._validate_references(
+                self.primary_diagnosis.supporting_finding_ids,
+                findings,
+                DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS,
+                "primary diagnosis",
+            )
+        for factor in self.contributing_factors:
+            self._validate_references(
+                factor.supporting_finding_ids,
+                findings,
+                DiagnosticRelevance.SUPPORTED_CONTRIBUTOR,
+                "contributing factor",
+            )
+        for alternate in self.alternate_hypotheses:
+            self._validate_references(
+                alternate.supporting_finding_ids, findings, None, "alternate hypothesis"
+            )
+        image_artifact_ids = {
+            artifact_id
+            for finding in self.observed_findings
+            if finding.evidence_source is EvidenceSource.IMAGE
+            for artifact_id in finding.artifact_ids
+        }
+        if not set(self.key_artifact_ids).issubset(image_artifact_ids):
+            raise ValueError("key artifact IDs must be referenced by image findings")
+        return self
+
+    @staticmethod
+    def _validate_references(
+        references: list[str],
+        findings: dict[str, ObservedFinding],
+        required_relevance: DiagnosticRelevance | None,
+        label: str,
+    ) -> None:
+        if any(reference not in findings for reference in references):
+            raise ValueError(f"{label} references an unknown finding")
+        if required_relevance is not None and not any(
+            findings[reference].relationship_to_symptoms is required_relevance
+            for reference in references
+        ):
+            raise ValueError(f"{label} lacks a finding with required relevance")
 
 
 class CostItemType(StrEnum):
@@ -337,27 +543,45 @@ class PhaseReportEnvelope(APIBaseModel):
     safety_flags: list[SafetyFlag]
     source_artifact_ids: list[str]
     created_at: datetime
-    payload: DiagnosticReportV1 | PlanReportV1 | dict[str, Any] = Field(
-        union_mode="left_to_right",
+    payload: DiagnosticReportV1 | DiagnosticReportV2 | PlanReportV1 | dict[str, Any] = (
+        Field(
+            union_mode="left_to_right",
+        )
     )
 
     @model_validator(mode="after")
     def validate_diagnostic_payload(self) -> Self:
         """Validate diagnostic report envelopes against the diagnostic payload."""
 
-        if (
-            self.type is PhaseReportType.DIAGNOSTIC
-            or self.schema_version == "diagnostic_report.v1"
-        ):
-            if self.schema_version != "diagnostic_report.v1":
-                msg = "diagnostic reports must use diagnostic_report.v1"
+        if self.type is PhaseReportType.DIAGNOSTIC or self.schema_version in {
+            "diagnostic_report.v1",
+            "diagnostic_report.v2",
+        }:
+            if self.schema_version not in {
+                "diagnostic_report.v1",
+                "diagnostic_report.v2",
+            }:
+                msg = "diagnostic reports must use a supported diagnostic schema"
                 raise ValueError(msg)
             if self.phase is not RepairSessionPhase.DIAGNOSTIC:
                 msg = "diagnostic reports must use diagnostic phase"
                 raise ValueError(msg)
-            if not isinstance(self.payload, DiagnosticReportV1):
+            if self.schema_version == "diagnostic_report.v1" and not isinstance(
+                self.payload, DiagnosticReportV1
+            ):
                 self.payload = DiagnosticReportV1.model_validate(self.payload)
-            if self.payload.safety_flags != self.safety_flags:
+            if self.schema_version == "diagnostic_report.v2" and not isinstance(
+                self.payload, DiagnosticReportV2
+            ):
+                self.payload = DiagnosticReportV2.model_validate(self.payload)
+            payload = self.payload
+            if not isinstance(payload, (DiagnosticReportV1, DiagnosticReportV2)):
+                msg = "diagnostic payload must use a diagnostic schema"
+                raise ValueError(msg)
+            if payload.schema_version != self.schema_version:
+                msg = "diagnostic payload schema version must match envelope"
+                raise ValueError(msg)
+            if payload.safety_flags != self.safety_flags:
                 msg = "diagnostic report safety flags must match envelope"
                 raise ValueError(msg)
         if self.type is PhaseReportType.PLAN or self.schema_version == "plan_report.v1":

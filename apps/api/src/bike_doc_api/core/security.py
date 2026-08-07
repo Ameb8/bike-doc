@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +15,8 @@ from google.oauth2.id_token import verify_firebase_token as google_verify_fireba
 
 from bike_doc_api.core.config import Settings
 from bike_doc_api.core.errors import AuthenticationError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,8 +71,15 @@ def verify_firebase_bearer_token(token: str, *, settings: Settings) -> AuthIdent
 
     project_id = settings.firebase_project_id
     if project_id is None:
+        logger.debug("firebase_token_verification_skipped reason=missing_project_id")
         raise AuthenticationError()
 
+    token_claims = _firebase_token_debug_claims(token)
+    logger.debug(
+        "firebase_token_verification_started project_id=%s token_claims=%s",
+        project_id,
+        token_claims,
+    )
     try:
         claims = google_verify_firebase_token(
             token,
@@ -77,24 +87,63 @@ def verify_firebase_bearer_token(token: str, *, settings: Settings) -> AuthIdent
             audience=project_id,
         )  # type: ignore[no-untyped-call]
     except Exception as exc:  # pragma: no cover - exercised via tests with fakes
+        logger.debug(
+            "firebase_token_verification_failed project_id=%s error_type=%s "
+            "token_claims=%s",
+            project_id,
+            type(exc).__name__,
+            token_claims,
+        )
         raise AuthenticationError() from exc
 
     if not isinstance(claims, Mapping):
+        logger.debug(
+            "firebase_token_verification_failed project_id=%s "
+            "reason=claims_not_mapping token_claims=%s",
+            project_id,
+            token_claims,
+        )
         raise AuthenticationError()
 
     issuer = _normalized_optional_string(claims.get("iss"))
     expected_issuer = f"https://securetoken.google.com/{project_id}"
     if issuer != expected_issuer:
+        logger.debug(
+            "firebase_token_verification_failed project_id=%s reason=issuer_mismatch "
+            "issuer=%s expected_issuer=%s token_claims=%s",
+            project_id,
+            issuer,
+            expected_issuer,
+            token_claims,
+        )
         raise AuthenticationError()
 
     audience = _normalized_optional_string(claims.get("aud"))
     if audience != project_id:
+        logger.debug(
+            "firebase_token_verification_failed project_id=%s reason=audience_mismatch "
+            "audience=%s token_claims=%s",
+            project_id,
+            audience,
+            token_claims,
+        )
         raise AuthenticationError()
 
     subject = _normalized_optional_string(claims.get("sub"))
     if subject is None:
+        logger.debug(
+            "firebase_token_verification_failed project_id=%s reason=missing_subject "
+            "token_claims=%s",
+            project_id,
+            token_claims,
+        )
         raise AuthenticationError()
 
+    logger.debug(
+        "firebase_token_verification_succeeded project_id=%s token_claims=%s",
+        project_id,
+        token_claims,
+    )
     return AuthIdentity(
         subject=subject,
         email=_normalized_optional_string(claims.get("email")),
@@ -173,6 +222,28 @@ def _decode_jwt_segment(segment: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise AuthenticationError()
     return cast(dict[str, Any], value)
+
+
+def _firebase_token_debug_claims(token: str) -> dict[str, object]:
+    """Return safe, unverified token timing and routing claims for DEBUG logs."""
+
+    payload_segment = token.split(".")
+    if len(payload_segment) != 3:
+        return {"parse_status": "not_a_jwt"}
+
+    try:
+        payload = _decode_jwt_segment(payload_segment[1])
+    except AuthenticationError:
+        return {"parse_status": "payload_unreadable"}
+
+    return {
+        "parse_status": "parsed_unverified",
+        "issuer": _normalized_optional_string(payload.get("iss")),
+        "audience": _normalized_optional_string(payload.get("aud")),
+        "issued_at": payload.get("iat"),
+        "expires_at": payload.get("exp"),
+        "authenticated_at": payload.get("auth_time"),
+    }
 
 
 def _validate_local_jwt_expiry(payload: Mapping[str, Any]) -> None:

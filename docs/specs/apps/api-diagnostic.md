@@ -44,6 +44,7 @@ sufficient:
 - `RepairSessionEvent`
 - `PhaseReportEnvelope`
 - `DiagnosticReportV1`
+- `DiagnosticReportV2`
 - `ErrorResponse`
 
 ## Diagnostic Slice Paths
@@ -494,15 +495,46 @@ Expected errors:
 | `401` | Missing or invalid bearer token. | `unauthorized` |
 | `404` | Session/report pair does not exist for this user. | `not_found` |
 
+## Versioned Diagnostic Report Payloads
+
+Diagnostic reports are immutable versioned payloads in a
+`PhaseReportEnvelope`. `schema_version` on the envelope and
+`payload.schema_version` identify the same payload version. Clients must use
+the `payload.schema_version` discriminator and must not combine fields from
+different diagnostic-report versions:
+
+- `diagnostic_report.v1` remains readable for historical reports and retains
+  its V1 diagnosis, alternate, repair-estimate, and optional cost-estimate
+  fields.
+- `diagnostic_report.v2` separates retained observations from causal
+  conclusions. It has no `repair_estimate`, `cost_estimate`, or alternate
+  `ruled_out_by` field.
+
+V2's `diagnostic_outcome` is server-owned. It is the public result of the
+validated internal completion reason; clients and diagnostic agents do not set
+it. `primary_diagnosis` may be null only for a limited or in-person referral
+outcome when no causal explanation is adequately supported.
+
+The canonical OpenAPI component examples are
+`DiagnosticReportV2Supported` (a supported diagnosis with a contributor) and
+`DiagnosticReportV2LimitedReferral` (a null-primary safety referral). They
+are representative values for the `DiagnosticReportV2` payload schema and are
+the public examples clients should use when implementing version dispatch.
+
+V2 production remains disabled until the backend and app implementations are
+introduced in their separately scoped work; this contract addition does not
+change how stored V1 reports are read.
+
 ## Diagnostic Completion Behavior
 
 The diagnostic phase is complete when the backend persists a
 `PhaseReportEnvelope` with:
 
 - `type: diagnostic`
-- `schema_version: diagnostic_report.v1`
+- `schema_version` matching either `diagnostic_report.v1` or
+  `diagnostic_report.v2`
 - `phase: diagnostic`
-- `payload.schema_version: diagnostic_report.v1`
+- a matching versioned `payload.schema_version`
 
 Completion must also:
 

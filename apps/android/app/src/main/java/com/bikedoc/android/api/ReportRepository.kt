@@ -1,9 +1,19 @@
 package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.AlternateHypothesisPayload
+import com.bikedoc.android.api.models.AlternateHypothesisV2Payload
 import com.bikedoc.android.api.models.CostEstimatePayload
+import com.bikedoc.android.api.models.ContributingFactorPayload
 import com.bikedoc.android.api.models.DiagnosisPayload
+import com.bikedoc.android.api.models.DiagnosisV2Payload
+import com.bikedoc.android.api.models.DiagnosticConfidencePayload
+import com.bikedoc.android.api.models.DiagnosticOutcomePayload
 import com.bikedoc.android.api.models.DiagnosticReportPayload
+import com.bikedoc.android.api.models.DiagnosticReportV2Payload
+import com.bikedoc.android.api.models.DiagnosticRelevancePayload
+import com.bikedoc.android.api.models.DiySuitabilityPayload
+import com.bikedoc.android.api.models.EvidenceSourcePayload
+import com.bikedoc.android.api.models.ObservedFindingPayload
 import com.bikedoc.android.api.models.PartNeededPayload
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PlanCostEstimatePayload
@@ -16,8 +26,11 @@ import com.bikedoc.android.api.models.SafetyFlag
 import com.bikedoc.android.api.models.ShopRepairCostEstimatePayload
 import com.bikedoc.android.api.models.TimeEstimatePayload
 import com.bikedoc.android.api.models.ToolNeededPayload
+import com.bikedoc.android.api.models.UserSkillLevelPayload
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -49,14 +62,33 @@ class DefaultReportRepository
             }
         }
 
-        private fun PhaseReportEnvelope.toRepairReport(): ApiResult<RepairReport> =
-            when {
-                isDiagnosticReport() -> decodeDiagnosticReport()
-                isPlanReport() -> decodePlanReport()
-                else -> ApiResult.Error(null, "This report type is not supported yet.")
+        private fun PhaseReportEnvelope.toRepairReport(): ApiResult<RepairReport> {
+            if (!hasMatchingPayloadSchemaVersion()) {
+                return ApiResult.Error(null, VERSION_ERROR_MESSAGE)
             }
+            return when (type) {
+                DIAGNOSTIC_TYPE ->
+                    when (schemaVersion) {
+                        DIAGNOSTIC_V1_SCHEMA_VERSION -> decodeDiagnosticV1Report()
+                        DIAGNOSTIC_V2_SCHEMA_VERSION -> decodeDiagnosticV2Report()
+                        else -> ApiResult.Error(null, VERSION_ERROR_MESSAGE)
+                    }
 
-        private fun PhaseReportEnvelope.decodeDiagnosticReport(): ApiResult<RepairReport> =
+                PLAN_TYPE ->
+                    if (schemaVersion == PLAN_SCHEMA_VERSION) {
+                        decodePlanReport()
+                    } else {
+                        ApiResult.Error(null, VERSION_ERROR_MESSAGE)
+                    }
+
+                else -> ApiResult.Error(null, VERSION_ERROR_MESSAGE)
+            }
+        }
+
+        private fun PhaseReportEnvelope.hasMatchingPayloadSchemaVersion(): Boolean =
+            ((payload as? JsonObject)?.get("schema_version") as? JsonPrimitive)?.content == schemaVersion
+
+        private fun PhaseReportEnvelope.decodeDiagnosticV1Report(): ApiResult<RepairReport> =
             try {
                 val payload =
                     json.decodeFromJsonElement(
@@ -65,10 +97,26 @@ class DefaultReportRepository
                     )
                 ApiResult.Success(payload.toDiagnosticReport(id, createdAt))
             } catch (exception: SerializationException) {
-                Timber.e(exception, "Diagnostic report payload decoding failed")
+                Timber.e(exception, "Diagnostic V1 report payload decoding failed")
                 ApiResult.Error(null, "Unexpected diagnostic report format.")
             } catch (exception: IllegalArgumentException) {
-                Timber.e(exception, "Diagnostic report payload validation failed")
+                Timber.e(exception, "Diagnostic V1 report payload validation failed")
+                ApiResult.Error(null, exception.message ?: "Unexpected diagnostic report format.")
+            }
+
+        private fun PhaseReportEnvelope.decodeDiagnosticV2Report(): ApiResult<RepairReport> =
+            try {
+                val payload =
+                    json.decodeFromJsonElement(
+                        DiagnosticReportV2Payload.serializer(),
+                        payload,
+                    )
+                ApiResult.Success(payload.toDiagnosticReportV2(id, createdAt))
+            } catch (exception: SerializationException) {
+                Timber.e(exception, "Diagnostic V2 report payload decoding failed")
+                ApiResult.Error(null, "Unexpected diagnostic report format.")
+            } catch (exception: IllegalArgumentException) {
+                Timber.e(exception, "Diagnostic V2 report payload validation failed")
                 ApiResult.Error(null, exception.message ?: "Unexpected diagnostic report format.")
             }
 
@@ -88,18 +136,11 @@ class DefaultReportRepository
                 ApiResult.Error(null, exception.message ?: "Unexpected plan report format.")
             }
 
-        private fun PhaseReportEnvelope.isDiagnosticReport(): Boolean =
-            type == DIAGNOSTIC_TYPE || schemaVersion == DIAGNOSTIC_SCHEMA_VERSION || type.isBlank()
-
-        private fun PhaseReportEnvelope.isPlanReport(): Boolean {
-            return type == PLAN_TYPE || schemaVersion == PLAN_SCHEMA_VERSION
-        }
-
         private fun DiagnosticReportPayload.toDiagnosticReport(
             reportId: String,
             createdAt: String,
         ): DiagnosticReport {
-            require(schemaVersion == DIAGNOSTIC_SCHEMA_VERSION) {
+            require(schemaVersion == DIAGNOSTIC_V1_SCHEMA_VERSION) {
                 "Unexpected diagnostic report version."
             }
             return DiagnosticReport(
@@ -115,6 +156,84 @@ class DefaultReportRepository
                 costEstimate = costEstimate?.toPlanCostEstimate(),
             )
         }
+
+        private fun DiagnosticReportV2Payload.toDiagnosticReportV2(
+            reportId: String,
+            createdAt: String,
+        ): DiagnosticReportV2 {
+            require(schemaVersion == DIAGNOSTIC_V2_SCHEMA_VERSION) {
+                "Unexpected diagnostic report version."
+            }
+            return DiagnosticReportV2(
+                id = reportId,
+                createdAt = createdAt,
+                diagnosticOutcome = diagnosticOutcome.toDiagnosticOutcome(),
+                reportedSymptoms = reportedSymptoms,
+                primaryDiagnosis = primaryDiagnosis?.toDiagnosisV2(),
+                contributingFactors = contributingFactors.map { it.toContributingFactor() },
+                observedFindings = observedFindings.map { it.toObservedFinding() },
+                alternateHypotheses = alternateHypotheses.map { it.toAlternateHypothesisV2() },
+                unresolvedUncertainties = unresolvedUncertainties,
+                evidenceSummary = evidenceSummary,
+                keyArtifactIds = keyArtifactIds,
+                userSkillLevel = userSkillLevel.toUserSkillLevel(),
+                safetyFlags = safetyFlags,
+                diagnosticSessionId = diagnosticSessionId,
+            )
+        }
+
+        private fun DiagnosticOutcomePayload.toDiagnosticOutcome(): DiagnosticOutcome =
+            DiagnosticOutcome.valueOf(name)
+
+        private fun EvidenceSourcePayload.toEvidenceSource(): EvidenceSource = EvidenceSource.valueOf(name)
+
+        private fun DiagnosticRelevancePayload.toDiagnosticRelevance(): DiagnosticRelevance =
+            DiagnosticRelevance.valueOf(name)
+
+        private fun DiagnosticConfidencePayload.toDiagnosticConfidence(): DiagnosticConfidence =
+            DiagnosticConfidence.valueOf(name)
+
+        private fun DiySuitabilityPayload.toDiySuitability(): DiySuitability = DiySuitability.valueOf(name)
+
+        private fun UserSkillLevelPayload.toUserSkillLevel(): UserSkillLevel = UserSkillLevel.valueOf(name)
+
+        private fun DiagnosisV2Payload.toDiagnosisV2(): DiagnosisV2 =
+            DiagnosisV2(
+                component = component,
+                issue = issue,
+                confidence = confidence.toDiagnosticConfidence(),
+                diySuitability = diySuitability.toDiySuitability(),
+                supportingFindingIds = supportingFindingIds,
+            )
+
+        private fun ContributingFactorPayload.toContributingFactor(): ContributingFactor =
+            ContributingFactor(
+                component = component,
+                issue = issue,
+                confidence = confidence.toDiagnosticConfidence(),
+                evidenceSummary = evidenceSummary,
+                supportingFindingIds = supportingFindingIds,
+            )
+
+        private fun ObservedFindingPayload.toObservedFinding(): ObservedFinding =
+            ObservedFinding(
+                findingId = findingId,
+                component = component,
+                finding = finding,
+                evidenceSource = evidenceSource.toEvidenceSource(),
+                evidenceSourceDetail = evidenceSourceDetail,
+                relationshipToSymptoms = relationshipToSymptoms.toDiagnosticRelevance(),
+                artifactIds = artifactIds,
+            )
+
+        private fun AlternateHypothesisV2Payload.toAlternateHypothesisV2(): AlternateHypothesisV2 =
+            AlternateHypothesisV2(
+                component = component,
+                issue = issue,
+                confidence = confidence.toDiagnosticConfidence(),
+                evidenceSummary = evidenceSummary,
+                supportingFindingIds = supportingFindingIds,
+            )
 
         private fun PlanReportPayload.toPlanReport(
             reportId: String,
@@ -259,14 +378,16 @@ class DefaultReportRepository
 
         private companion object {
             const val DIAGNOSTIC_TYPE = "diagnostic"
-            const val DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v1"
+            const val DIAGNOSTIC_V1_SCHEMA_VERSION = "diagnostic_report.v1"
+            const val DIAGNOSTIC_V2_SCHEMA_VERSION = "diagnostic_report.v2"
             const val PLAN_TYPE = "plan"
             const val PLAN_SCHEMA_VERSION = "plan_report.v1"
             const val UNKNOWN_VALUE = "unknown"
+            const val VERSION_ERROR_MESSAGE = "Unsupported or mismatched report version."
         }
     }
 
-sealed interface RepairReport {
+interface RepairReport {
     val id: String
     val createdAt: String
     val safetyFlags: List<SafetyFlag>
@@ -284,6 +405,102 @@ data class DiagnosticReport(
     val keyArtifactIds: List<String>,
     val costEstimate: PlanCostEstimate?,
 ) : RepairReport
+
+data class DiagnosticReportV2(
+    override val id: String,
+    override val createdAt: String,
+    val diagnosticOutcome: DiagnosticOutcome,
+    val reportedSymptoms: List<String>,
+    val primaryDiagnosis: DiagnosisV2?,
+    val contributingFactors: List<ContributingFactor>,
+    val observedFindings: List<ObservedFinding>,
+    val alternateHypotheses: List<AlternateHypothesisV2>,
+    val unresolvedUncertainties: List<String>,
+    val evidenceSummary: String,
+    val keyArtifactIds: List<String>,
+    val userSkillLevel: UserSkillLevel,
+    override val safetyFlags: List<SafetyFlag>,
+    val diagnosticSessionId: String,
+) : RepairReport
+
+enum class DiagnosticOutcome {
+    DIAGNOSIS_SUPPORTED,
+    USER_DECLINED_MORE_INPUT,
+    REQUESTED_INPUT_UNAVAILABLE,
+    IN_PERSON_ASSESSMENT_REQUIRED,
+}
+
+enum class DiagnosticConfidence {
+    LOW,
+    MEDIUM,
+    HIGH,
+}
+
+enum class DiySuitability {
+    UNKNOWN,
+    REASONABLE,
+    CAUTION,
+    SHOP_RECOMMENDED,
+    BLOCKED,
+}
+
+enum class UserSkillLevel {
+    UNKNOWN,
+    BEGINNER,
+    INTERMEDIATE,
+    ADVANCED,
+}
+
+data class DiagnosisV2(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidence,
+    val diySuitability: DiySuitability,
+    val supportingFindingIds: List<String>,
+)
+
+data class ContributingFactor(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidence,
+    val evidenceSummary: String,
+    val supportingFindingIds: List<String>,
+)
+
+data class ObservedFinding(
+    val findingId: String,
+    val component: String,
+    val finding: String,
+    val evidenceSource: EvidenceSource,
+    val evidenceSourceDetail: String?,
+    val relationshipToSymptoms: DiagnosticRelevance,
+    val artifactIds: List<String>,
+)
+
+enum class EvidenceSource {
+    IMAGE,
+    USER_REPORT,
+    MEASUREMENT,
+    FUNCTIONAL_CHECK,
+    REPAIR_HISTORY,
+    OTHER,
+}
+
+enum class DiagnosticRelevance {
+    UNKNOWN,
+    POSSIBLE_CONTRIBUTOR,
+    SUPPORTS_PRIMARY_DIAGNOSIS,
+    SUPPORTED_CONTRIBUTOR,
+    INCIDENTAL,
+}
+
+data class AlternateHypothesisV2(
+    val component: String,
+    val issue: String,
+    val confidence: DiagnosticConfidence,
+    val evidenceSummary: String,
+    val supportingFindingIds: List<String>,
+)
 
 data class PlanReport(
     override val id: String,

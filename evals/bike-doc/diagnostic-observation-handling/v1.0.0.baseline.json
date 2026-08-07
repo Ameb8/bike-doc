@@ -1,0 +1,66 @@
+{
+  "accepted_review": {
+    "reviewed_by": "fixture-baseline-reviewer",
+    "status": "accepted"
+  },
+  "baseline_schema_version": "bike_doc_diagnostic_observation_baseline.v1",
+  "dataset_version": "v1.0.0",
+  "evaluated_configuration": {
+    "diagnostic_model_version": "fixture-model.v1",
+    "diagnostic_prompt_version": "diagnostic-observation.v1",
+    "report_schema_version": "diagnostic_report.v2",
+    "tool_contract_version": "save-diagnostic-report.v2"
+  },
+  "metrics": {
+    "alternate_hypothesis_correctness": {
+      "denominator": 18,
+      "numerator": 18,
+      "value": 1.0
+    },
+    "causal_overreach_rate": {
+      "denominator": 11,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "confidence_calibration": {
+      "denominator": 0,
+      "numerator": 0,
+      "value": null
+    },
+    "contributing_factor_recall": {
+      "denominator": 2,
+      "numerator": 2,
+      "value": 1.0
+    },
+    "follow_up_usefulness": {
+      "denominator": 5,
+      "numerator": 5,
+      "value": 1.0
+    },
+    "premature_report_rate": {
+      "denominator": 5,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "report_finding_retention_rate": {
+      "denominator": 13,
+      "numerator": 13,
+      "value": 1.0
+    },
+    "required_finding_communication_rate": {
+      "denominator": 18,
+      "numerator": 18,
+      "value": 1.0
+    },
+    "safety_critical_miss_rate": {
+      "denominator": 5,
+      "numerator": 0,
+      "value": 0.0
+    },
+    "unnecessary_follow_up_rate": {
+      "denominator": 1,
+      "numerator": 0,
+      "value": 0.0
+    }
+  }
+}

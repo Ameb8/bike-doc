@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol, Self
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from bike_doc_api.adk.report_schemas.diagnostic import DiagnosticReportToolPayload
+from bike_doc_api.adk.report_schemas.diagnostic import (
+    DiagnosticReportToolPayload,
+    DiagnosticReportV2ToolPayload,
+)
 from bike_doc_api.adk.tools.common import (
     DiagnosticToolContext,
     ReportValidationToolError,
@@ -19,12 +29,75 @@ from bike_doc_api.adk.tools.common import (
     validate_tool_context,
     validation_error_details,
 )
-from bike_doc_api.core.errors import ValidationAppError
+from bike_doc_api.core.errors import SessionStateConflictError, ValidationAppError
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     SafetyFlag,
 )
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticCompletionTelemetry,
+    default_diagnostic_completion_telemetry,
+)
+
+CompletionReason = Literal[
+    "diagnosis_supported",
+    "user_declined_more_input",
+    "requested_input_unavailable",
+    "in_person_assessment_required",
+]
+
+
+class CompletionBasis(BaseModel):
+    """Internal, concise attestation that a diagnostic report is ready to save."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    completion_reason: CompletionReason
+    material_hypotheses_considered: list[str]
+    readily_obtainable_material_evidence_missing: bool
+    why_ready: str = Field(min_length=1)
+
+    @field_validator("material_hypotheses_considered")
+    @classmethod
+    def require_non_blank_hypothesis_labels(cls, labels: list[str]) -> list[str]:
+        """Reject blank labels without trying to judge their diagnostic truth."""
+
+        if any(not label.strip() for label in labels):
+            msg = "material_hypotheses_considered entries must be non-blank"
+            raise ValueError(msg)
+        return labels
+
+    @field_validator("why_ready")
+    @classmethod
+    def require_non_blank_readiness_rationale(cls, rationale: str) -> str:
+        """Require a concise readiness rationale suitable for ordinary traces."""
+
+        if not rationale.strip():
+            msg = "why_ready must be non-blank"
+            raise ValueError(msg)
+        return rationale
+
+    @model_validator(mode="after")
+    def validate_supported_completion(self) -> Self:
+        """Apply completion-reason invariants available before report V2 exists."""
+
+        if self.completion_reason != "diagnosis_supported":
+            return self
+        if not self.material_hypotheses_considered:
+            msg = (
+                "diagnosis_supported requires material_hypotheses_considered "
+                "to be non-empty"
+            )
+            raise ValueError(msg)
+        if self.readily_obtainable_material_evidence_missing:
+            msg = (
+                "diagnosis_supported cannot retain readily obtainable material "
+                "evidence gaps"
+            )
+            raise ValueError(msg)
+        return self
 
 
 class SaveDiagnosticReportInput(BaseModel):
@@ -34,7 +107,8 @@ class SaveDiagnosticReportInput(BaseModel):
 
     repair_session_id: str = Field(min_length=1)
     report: dict[str, Any]
-    summary: str = Field(min_length=1)
+    summary: str | None = None
+    completion_basis: CompletionBasis
 
 
 class ReportEventProtocol(Protocol):
@@ -69,8 +143,10 @@ class DiagnosticReportServiceProtocol(Protocol):
         current_user: Any,
         repair_session_id: str,
         diagnostic_session_id: str,
-        summary: str,
+        summary: str | None,
         payload: dict[str, Any],
+        report_schema_version: Literal["diagnostic_report.v1", "diagnostic_report.v2"],
+        completion_reason: str | None = None,
         turn_id: str | None = None,
     ) -> DiagnosticReportPersistenceResultProtocol:
         """Persist a diagnostic report with server-owned context injected."""
@@ -79,8 +155,14 @@ class DiagnosticReportServiceProtocol(Protocol):
 class SaveDiagnosticReportTool:
     """Thin ADK wrapper for diagnostic report persistence."""
 
-    def __init__(self, service: DiagnosticReportServiceProtocol) -> None:
+    def __init__(
+        self,
+        service: DiagnosticReportServiceProtocol,
+        *,
+        telemetry: DiagnosticCompletionTelemetry | None = None,
+    ) -> None:
         self._service = service
+        self._telemetry = telemetry or default_diagnostic_completion_telemetry()
 
     async def run(
         self,
@@ -98,31 +180,80 @@ class SaveDiagnosticReportTool:
                 repair_session_id=parsed.repair_session_id,
                 context=context,
             )
-        except (ValidationError, ValidationAppError):
+        except ValidationError as exc:
+            details = validation_error_details(exc)
+            if any(
+                field["path"].startswith("completion_basis")
+                for field in details["fields"]
+            ):
+                self._telemetry.report_validation_failed(
+                    schema_version=context.diagnostic_report_schema_version,
+                )
+                return tool_error(
+                    "report_validation_failed",
+                    "Diagnostic report validation failed.",
+                    details,
+                )
             return tool_error("validation_error", "Tool input validation failed.")
+        except ValidationAppError:
+            return tool_error("validation_error", "Tool input validation failed.")
+        except SessionStateConflictError:
+            return tool_error("invalid_phase", "Diagnostic phase is not active.")
 
         async def call() -> dict[str, Any]:
-            try:
-                report_payload = DiagnosticReportToolPayload.model_validate(
-                    parsed.report,
+            expected_version = context.diagnostic_report_schema_version
+            if parsed.report.get("schema_version") != expected_version:
+                self._telemetry.report_validation_failed(
+                    schema_version=expected_version
                 )
+                raise ReportValidationToolError()
+            try:
+                if expected_version == "diagnostic_report.v1":
+                    if parsed.summary is None or not parsed.summary.strip():
+                        self._telemetry.report_validation_failed(
+                            schema_version=expected_version,
+                        )
+                        raise ReportValidationToolError()
+                    report_payload: (
+                        DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload
+                    ) = DiagnosticReportToolPayload.model_validate(
+                        parsed.report,
+                    )
+                else:
+                    if parsed.summary is not None:
+                        self._telemetry.report_validation_failed(
+                            schema_version=expected_version,
+                        )
+                        raise ReportValidationToolError()
+                    report_payload = DiagnosticReportV2ToolPayload.model_validate(
+                        parsed.report,
+                    )
             except ValidationError as exc:
+                self._telemetry.report_validation_failed(
+                    schema_version=expected_version
+                )
                 raise ReportValidationToolError(
                     validation_error_details(exc, prefix="report"),
                 ) from exc
 
             payload = report_payload.model_dump(mode="json")
-            payload["diagnostic_session_id"] = context.diagnostic_session_id
+            # The completion basis is intentionally never persisted or returned.
             result = await self._service.persist_diagnostic_report_from_tool(
                 current_user=current_tool_user(context),
                 repair_session_id=parsed.repair_session_id,
                 diagnostic_session_id=context.diagnostic_session_id,
                 summary=parsed.summary,
                 payload=payload,
+                report_schema_version=expected_version,
+                completion_reason=(
+                    parsed.completion_basis.completion_reason
+                    if expected_version == "diagnostic_report.v2"
+                    else None
+                ),
                 turn_id=context.turn_id,
             )
             report = result.report
-            if isinstance(report.payload, DiagnosticReportV1):
+            if isinstance(report.payload, (DiagnosticReportV1, DiagnosticReportV2)):
                 diagnostic_session_id = report.payload.diagnostic_session_id
             elif isinstance(report.payload, dict):
                 diagnostic_session_id = str(report.payload["diagnostic_session_id"])
@@ -150,6 +281,7 @@ class SaveDiagnosticReportTool:
                 data["phase_transitioned_event_sequence"] = (
                     result.events.phase_transitioned.sequence
                 )
+            data.update(_telemetry_counts(report_payload, parsed.completion_basis))
             return tool_success(data)
 
         return await normalize_tool_errors(
@@ -167,3 +299,24 @@ async def save_diagnostic_report(
     """Function-style entrypoint for save_diagnostic_report."""
 
     return await SaveDiagnosticReportTool(service).run(tool_input, context)
+
+
+def _telemetry_counts(
+    report: DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload,
+    completion_basis: CompletionBasis,
+) -> dict[str, int | str | None]:
+    """Return only report-composition dimensions safe for telemetry."""
+
+    if isinstance(report, DiagnosticReportV2ToolPayload):
+        return {
+            "observed_finding_count": len(report.observed_findings),
+            "contributing_factor_count": len(report.contributing_factors),
+            "alternate_hypothesis_count": len(report.alternate_hypotheses),
+            "completion_reason": completion_basis.completion_reason,
+        }
+    return {
+        "observed_finding_count": 0,
+        "contributing_factor_count": 0,
+        "alternate_hypothesis_count": len(report.alternate_hypotheses),
+        "completion_reason": None,
+    }

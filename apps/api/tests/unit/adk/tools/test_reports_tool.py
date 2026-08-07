@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from bike_doc_api.adk.tools.common import (
     ArtifactToolNotFoundError,
     DiagnosticToolContext,
@@ -25,6 +27,7 @@ from bike_doc_api.schemas.common import (
 )
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     SafetyFlag,
 )
@@ -41,14 +44,22 @@ class _ReportService:
         self.calls.append(kwargs)
         if self.error is not None:
             raise self.error
-        payload = DiagnosticReportV1.model_validate(kwargs["payload"])
+        payload_data = dict(kwargs["payload"])
+        payload_data["diagnostic_session_id"] = kwargs["diagnostic_session_id"]
+        if payload_data["schema_version"] == "diagnostic_report.v2":
+            payload_data["diagnostic_outcome"] = kwargs["completion_reason"]
+            payload = DiagnosticReportV2.model_validate(payload_data)
+            summary = payload.evidence_summary
+        else:
+            payload = DiagnosticReportV1.model_validate(payload_data)
+            summary = kwargs["summary"]
         report = PhaseReportEnvelope(
             id="rpt_1",
             repair_session_id=kwargs["repair_session_id"],
             type=PhaseReportType.DIAGNOSTIC,
-            schema_version="diagnostic_report.v1",
+            schema_version=payload.schema_version,
             phase=RepairSessionPhase.DIAGNOSTIC,
-            summary=kwargs["summary"],
+            summary=summary,
             safety_flags=payload.safety_flags,
             source_artifact_ids=payload.key_artifact_ids,
             created_at=datetime(2026, 6, 21, 17, 5, tzinfo=UTC),
@@ -71,6 +82,13 @@ def _context() -> DiagnosticToolContext:
         user_skill_level="beginner",
         repair_session_id="rs_tool",
         diagnostic_session_id="phs_tool",
+        diagnostic_report_schema_version="diagnostic_report.v1",
+    )
+
+
+def _v2_context() -> DiagnosticToolContext:
+    return _context().model_copy(
+        update={"diagnostic_report_schema_version": "diagnostic_report.v2"},
     )
 
 
@@ -105,6 +123,62 @@ def _report_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def _completion_basis(**overrides: Any) -> dict[str, Any]:
+    basis: dict[str, Any] = {
+        "completion_reason": "diagnosis_supported",
+        "material_hypotheses_considered": ["rear derailleur indexing"],
+        "readily_obtainable_material_evidence_missing": False,
+        "why_ready": "The symptom pattern supports the diagnosis.",
+    }
+    basis.update(overrides)
+    return basis
+
+
+def _v2_report_payload(**overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "schema_version": "diagnostic_report.v2",
+        "reported_symptoms": ["Chain skips under load."],
+        "primary_diagnosis": {
+            "component": "chain",
+            "issue": "Wear causes skipping.",
+            "confidence": "medium",
+            "diy_suitability": "caution",
+            "supporting_finding_ids": ["symptom"],
+        },
+        "contributing_factors": [],
+        "observed_findings": [
+            {
+                "finding_id": "symptom",
+                "component": "drivetrain",
+                "finding": "The user reports skipping under load.",
+                "evidence_source": "user_report",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supports_primary_diagnosis",
+                "artifact_ids": [],
+            },
+            {
+                "finding_id": "photo",
+                "component": "chain",
+                "finding": "Discoloration is visible.",
+                "evidence_source": "image",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "possible_contributor",
+                "artifact_ids": ["art_1"],
+            },
+        ],
+        "alternate_hypotheses": [],
+        "unresolved_uncertainties": [],
+        "evidence_summary": (
+            "The symptom and retained image evidence support chain wear."
+        ),
+        "key_artifact_ids": ["art_1"],
+        "user_skill_level": "beginner",
+        "safety_flags": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
 async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
     service = _ReportService()
 
@@ -113,6 +187,7 @@ async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -121,7 +196,9 @@ async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
     assert result["data"]["report_id"] == "rpt_1"
     assert result["data"]["diagnostic_session_id"] == "phs_tool"
     assert result["data"]["phase_report_created_event_id"] == "evt_report"
-    assert service.calls[0]["payload"]["diagnostic_session_id"] == "phs_tool"
+    assert "completion_basis" not in result["data"]
+    assert "diagnostic_session_id" not in service.calls[0]["payload"]
+    assert "completion_basis" not in service.calls[0]["payload"]
     assert service.calls[0]["current_user"].id == "usr_tool"
 
 
@@ -133,6 +210,7 @@ async def test_save_diagnostic_report_rejects_agent_selected_session_id() -> Non
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(diagnostic_session_id="phs_agent_chosen"),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -150,6 +228,7 @@ async def test_save_diagnostic_report_returns_field_validation_details() -> None
             "repair_session_id": "rs_tool",
             "summary": "Likely indexing issue.",
             "report": _report_payload(primary_diagnosis="stiff chain link"),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -174,6 +253,7 @@ async def test_save_diagnostic_report_rejects_context_mismatch() -> None:
             "repair_session_id": "rs_other",
             "summary": "Likely indexing issue.",
             "report": _report_payload(),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
@@ -198,6 +278,7 @@ async def test_save_diagnostic_report_maps_domain_errors() -> None:
                 "repair_session_id": "rs_tool",
                 "summary": "Likely indexing issue.",
                 "report": _report_payload(),
+                "completion_basis": _completion_basis(),
             },
             _context(),
         )
@@ -226,9 +307,187 @@ async def test_save_diagnostic_report_returns_active_safety_flags() -> None:
             "repair_session_id": "rs_tool",
             "summary": "Likely brake issue.",
             "report": _report_payload(key_artifact_ids=[]),
+            "completion_basis": _completion_basis(),
         },
         _context(),
     )
 
     assert result["data"]["safety_state"] == "blocked"
     assert result["data"]["safety_flags"][0]["code"] == "brake_failure_suspected"
+
+
+async def test_save_report_requires_completion_basis_before_persistence() -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert result["error"]["details"]["fields"][0]["path"] == "completion_basis"
+    assert service.calls == []
+
+
+async def test_supported_completion_requires_primary_diagnosis_before_persistence() -> (
+    None
+):
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(primary_diagnosis=None),
+            "completion_basis": _completion_basis(),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert result["error"]["details"]["fields"][0]["path"] == (
+        "report.primary_diagnosis"
+    )
+    assert service.calls == []
+
+
+async def test_save_diagnostic_report_preserves_active_phase_validation() -> None:
+    service = _ReportService()
+    invalid_context = _context().model_copy(
+        update={"active_phase": RepairSessionPhase.PLANNING},
+    )
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(),
+        },
+        invalid_context,
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "invalid_phase"
+    assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    ("basis", "field"),
+    [
+        (_completion_basis(material_hypotheses_considered=[]), "completion_basis"),
+        (_completion_basis(material_hypotheses_considered=["  "]), "completion_basis"),
+        (_completion_basis(why_ready="  "), "completion_basis.why_ready"),
+        (_completion_basis(completion_reason="unsupported"), "completion_basis"),
+        (
+            _completion_basis(readily_obtainable_material_evidence_missing=True),
+            "completion_basis",
+        ),
+    ],
+)
+async def test_supported_completion_rejects_invalid_basis_before_persistence(
+    basis: dict[str, Any],
+    field: str,
+) -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Likely indexing issue.",
+            "report": _report_payload(),
+            "completion_basis": basis,
+        },
+        _context(),
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert any(
+        detail["path"].startswith(field)
+        for detail in result["error"]["details"]["fields"]
+    )
+    assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    "completion_reason",
+    [
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    ],
+)
+async def test_limited_completion_reasons_allow_material_evidence_gap(
+    completion_reason: str,
+) -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "summary": "Further inspection is needed.",
+            "report": _report_payload(),
+            "completion_basis": _completion_basis(
+                completion_reason=completion_reason,
+                material_hypotheses_considered=[],
+                readily_obtainable_material_evidence_missing=True,
+            ),
+        },
+        _context(),
+    )
+
+    assert result["ok"] is True
+    assert len(service.calls) == 1
+    assert "completion_basis" not in service.calls[0]["payload"]
+
+
+async def test_v2_save_stamps_server_fields_and_uses_evidence_summary() -> None:
+    service = _ReportService()
+
+    result = await SaveDiagnosticReportTool(service).run(
+        {
+            "repair_session_id": "rs_tool",
+            "report": _v2_report_payload(),
+            "completion_basis": _completion_basis(),
+        },
+        _v2_context(),
+    )
+
+    assert result["ok"] is True
+    assert service.calls[0]["summary"] is None
+    assert "diagnostic_session_id" not in service.calls[0]["payload"]
+    assert service.calls[0]["completion_reason"] == "diagnosis_supported"
+    assert service.calls[0]["report_schema_version"] == "diagnostic_report.v2"
+
+
+@pytest.mark.parametrize(
+    "invalid_input",
+    [
+        {"summary": "Agent-authored summary."},
+        {"report": _v2_report_payload(diagnostic_outcome="diagnosis_supported")},
+        {"report": _report_payload()},
+    ],
+)
+async def test_v2_save_rejects_summary_server_fields_and_version_mismatch(
+    invalid_input: dict[str, Any],
+) -> None:
+    service = _ReportService()
+    tool_input = {
+        "repair_session_id": "rs_tool",
+        "report": _v2_report_payload(),
+        "completion_basis": _completion_basis(),
+    }
+    tool_input.update(invalid_input)
+
+    result = await SaveDiagnosticReportTool(service).run(tool_input, _v2_context())
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "report_validation_failed"
+    assert service.calls == []

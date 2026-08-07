@@ -41,6 +41,9 @@ class DiagnosticRunnerRequest:
     message_text: str | None
     artifact_ids: tuple[str, ...]
     bike_profile: Mapping[str, Any] | None
+    diagnostic_report_schema_version: Literal[
+        "diagnostic_report.v1", "diagnostic_report.v2"
+    ] = "diagnostic_report.v2"
     repair_history: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     current_images: tuple[NormalizedModelImage, ...] = field(default_factory=tuple)
@@ -111,6 +114,10 @@ class DiagnosticRunnerReportCompleted:
     phase_report_created_event_sequence: int | None = None
     phase_transitioned_event_id: str | None = None
     phase_transitioned_event_sequence: int | None = None
+    observed_finding_count: int = 0
+    contributing_factor_count: int = 0
+    alternate_hypothesis_count: int = 0
+    completion_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,6 +417,9 @@ def _state_delta_from_request(request: DiagnosticRunnerRequest) -> dict[str, Any
             "repair_session_id": request.repair_session_id,
             "active_phase": "diagnostic",
             "diagnostic_session_id": request.diagnostic_session_id,
+            "diagnostic_report_schema_version": (
+                request.diagnostic_report_schema_version
+            ),
             "turn_id": request.turn_id,
             "artifact_ids": list(request.artifact_ids),
             "bike_profile": (
@@ -711,6 +721,14 @@ def _report_completed_from_tool_data(
         phase_transitioned_event_sequence=_optional_int(
             data.get("phase_transitioned_event_sequence"),
         ),
+        observed_finding_count=_non_negative_int(data.get("observed_finding_count")),
+        contributing_factor_count=_non_negative_int(
+            data.get("contributing_factor_count"),
+        ),
+        alternate_hypothesis_count=_non_negative_int(
+            data.get("alternate_hypothesis_count"),
+        ),
+        completion_reason=_non_empty_string(data.get("completion_reason")),
     )
 
 
@@ -907,6 +925,14 @@ def _optional_int(value: object) -> int | None:
     """Return an optional integer from raw adapter output."""
 
     return value if isinstance(value, int) else None
+
+
+def _non_negative_int(value: object) -> int:
+    """Return a safe report-composition count from tool output."""
+
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0
 
 
 def _display_safety_level(value: object) -> DisplaySafetyLevel:

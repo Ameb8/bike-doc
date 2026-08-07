@@ -6,6 +6,7 @@ from decimal import Decimal
 import pytest
 from pydantic import ValidationError
 
+from bike_doc_api.adk.report_schemas.diagnostic import DiagnosticReportV2ToolPayload
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.phase_report import PhaseReport as PhaseReportModel
@@ -19,6 +20,7 @@ from bike_doc_api.schemas.event import (
 from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
+    DiagnosticReportV2,
     PhaseReportEnvelope,
     PlanReportV1,
     SafetyFlag,
@@ -66,6 +68,203 @@ def make_diagnostic_payload() -> dict[str, object]:
         "safety_flags": [],
         "diagnostic_session_id": "phs_123",
     }
+
+
+def make_diagnostic_v2_payload() -> dict[str, object]:
+    """Return a supported V2 report with separately serialized causal data."""
+
+    return {
+        "schema_version": "diagnostic_report.v2",
+        "diagnostic_outcome": "diagnosis_supported",
+        "reported_symptoms": ["Chain skips under load."],
+        "primary_diagnosis": {
+            "component": "chain and cassette",
+            "issue": "Wear causes poor engagement under load.",
+            "confidence": "medium",
+            "diy_suitability": "caution",
+            "supporting_finding_ids": ["symptom", "wear"],
+        },
+        "contributing_factors": [
+            {
+                "component": "rear derailleur",
+                "issue": "Indexing worsens the shifts.",
+                "confidence": "low",
+                "evidence_summary": "A functional check shows delayed alignment.",
+                "supporting_finding_ids": ["indexing"],
+            }
+        ],
+        "observed_findings": [
+            {
+                "finding_id": "symptom",
+                "component": "drivetrain",
+                "finding": "The user reports load-dependent skipping.",
+                "evidence_source": "user_report",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supports_primary_diagnosis",
+                "artifact_ids": [],
+            },
+            {
+                "finding_id": "wear",
+                "component": "chain",
+                "finding": "A chain checker indicates wear.",
+                "evidence_source": "measurement",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supports_primary_diagnosis",
+                "artifact_ids": [],
+            },
+            {
+                "finding_id": "indexing",
+                "component": "rear derailleur",
+                "finding": "A functional check shows delayed alignment.",
+                "evidence_source": "functional_check",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "supported_contributor",
+                "artifact_ids": [],
+            },
+            {
+                "finding_id": "image",
+                "component": "chain",
+                "finding": "Discoloration is visible.",
+                "evidence_source": "image",
+                "evidence_source_detail": None,
+                "relationship_to_symptoms": "possible_contributor",
+                "artifact_ids": ["art_123"],
+            },
+        ],
+        "alternate_hypotheses": [
+            {
+                "component": "rear hub",
+                "issue": "Intermittent freehub engagement remains possible.",
+                "confidence": "low",
+                "evidence_summary": "The load-dependent symptom remains compatible.",
+                "supporting_finding_ids": ["symptom"],
+            }
+        ],
+        "unresolved_uncertainties": [],
+        "evidence_summary": (
+            "Wear is the best-supported cause; indexing also contributes."
+        ),
+        "key_artifact_ids": ["art_123"],
+        "user_skill_level": "beginner",
+        "safety_flags": [],
+        "diagnostic_session_id": "phs_123",
+    }
+
+
+def test_diagnostic_report_v2_serializes_separate_findings_and_causal_data() -> None:
+    report = DiagnosticReportV2.model_validate(make_diagnostic_v2_payload())
+
+    dumped = report.model_dump(mode="json")
+    assert dumped["observed_findings"][0]["finding_id"] == "symptom"
+    assert dumped["contributing_factors"][0]["supporting_finding_ids"] == ["indexing"]
+    assert dumped["alternate_hypotheses"][0]["supporting_finding_ids"] == ["symptom"]
+    assert "repair_estimate" not in dumped
+
+
+def test_internal_v2_tool_payload_excludes_server_owned_public_fields() -> None:
+    payload = make_diagnostic_v2_payload()
+    payload.pop("diagnostic_outcome")
+    payload.pop("diagnostic_session_id")
+
+    internal = DiagnosticReportV2ToolPayload.model_validate(payload)
+    assert internal.schema_version == "diagnostic_report.v2"
+    with pytest.raises(ValidationError):
+        DiagnosticReportV2ToolPayload.model_validate(
+            {**payload, "diagnostic_outcome": "diagnosis_supported"}
+        )
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (lambda payload: payload.update(reported_symptoms=[" "]), "reported_symptoms"),
+        (
+            lambda payload: payload["observed_findings"][1].update(
+                finding_id="symptom"
+            ),
+            "unique",
+        ),
+        (
+            lambda payload: payload["observed_findings"][3].update(artifact_ids=[]),
+            "image findings",
+        ),
+        (
+            lambda payload: payload["observed_findings"][0].update(
+                artifact_ids=["art_123"]
+            ),
+            "non-image",
+        ),
+        (
+            lambda payload: payload["observed_findings"][0].update(
+                evidence_source="other", evidence_source_detail=" "
+            ),
+            "non-blank detail",
+        ),
+        (
+            lambda payload: payload["primary_diagnosis"].update(confidence="unknown"),
+            "literal_error",
+        ),
+        (
+            lambda payload: payload["primary_diagnosis"].update(
+                supporting_finding_ids=["missing"]
+            ),
+            "unknown finding",
+        ),
+        (
+            lambda payload: payload["contributing_factors"][0].update(
+                supporting_finding_ids=["wear"]
+            ),
+            "required relevance",
+        ),
+        (
+            lambda payload: payload["alternate_hypotheses"][0].update(
+                supporting_finding_ids=["missing"]
+            ),
+            "unknown finding",
+        ),
+        (
+            lambda payload: payload["alternate_hypotheses"][0].update(
+                ruled_out_by="Eliminated alternatives are not V2 alternates."
+            ),
+            "extra_forbidden",
+        ),
+        (lambda payload: payload.update(repair_estimate={}), "extra_forbidden"),
+    ],
+)
+def test_diagnostic_report_v2_rejects_invalid_report_shapes(
+    mutate: object,
+    expected: str,
+) -> None:
+    payload = make_diagnostic_v2_payload()
+    mutate(payload)  # type: ignore[operator]
+
+    with pytest.raises(ValidationError, match=expected):
+        DiagnosticReportV2.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    ],
+)
+def test_v2_limited_outcome_allows_null_primary_with_uncertainty(
+    outcome: str,
+) -> None:
+    payload = make_diagnostic_v2_payload()
+    payload.update(
+        diagnostic_outcome=outcome,
+        primary_diagnosis=None,
+        observed_findings=[payload["observed_findings"][3]],
+        contributing_factors=[],
+        alternate_hypotheses=[],
+        unresolved_uncertainties=["The source cannot be confirmed remotely."],
+    )
+    payload["observed_findings"][0]["relationship_to_symptoms"] = "possible_contributor"
+
+    assert DiagnosticReportV2.model_validate(payload).primary_diagnosis is None
 
 
 def make_plan_payload() -> dict[str, object]:

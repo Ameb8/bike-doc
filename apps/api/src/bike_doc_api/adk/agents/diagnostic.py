@@ -7,7 +7,7 @@ from pathlib import Path
 from google.adk.agents import Agent
 
 from bike_doc_api.adk.tools.tool_catalog import (
-    V1_DIAGNOSTIC_TOOL_NAMES,
+    V2_DIAGNOSTIC_TOOL_NAMES,
     DiagnosticAgentToolDependencies,
     build_tool_catalog,
 )
@@ -20,7 +20,7 @@ __all__ = [
     "DIAGNOSTIC_AGENT_NAME",
     "DIAGNOSTIC_COMPLETION_TOOL_NAME",
     "DIAGNOSTIC_PROMPT",
-    "V1_DIAGNOSTIC_TOOL_NAMES",
+    "V2_DIAGNOSTIC_TOOL_NAMES",
     "DiagnosticAgentToolDependencies",
     "create_diagnostic_agent",
     "load_diagnostic_prompt",
@@ -41,7 +41,7 @@ def create_diagnostic_agent(
     *,
     settings: Settings | None = None,
 ) -> Agent:
-    """Create the real Google ADK diagnostic agent with V1 tools only."""
+    """Create the real Google ADK diagnostic agent with V2-only report tools."""
 
     resolved_settings = settings or get_settings()
     return Agent(

@@ -27,6 +27,7 @@ from bike_doc_api.adk.tools.repair_history import (
     lookup_repair_history,
 )
 from bike_doc_api.adk.tools.reports import (
+    CompletionBasis,
     SaveDiagnosticReportInput,
     SaveDiagnosticReportTool,
     save_diagnostic_report,

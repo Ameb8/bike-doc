@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -14,6 +15,8 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.core.errors import install_exception_handlers
 from bike_doc_api.core.logging import configure_logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -30,6 +33,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         environment=settings.environment,
         log_level=settings.log_level,
         log_format=settings.log_format,
+    )
+    logger.info(
+        "diagnostic_report_version_configured version=%s",
+        settings.diagnostic_report_version,
     )
 
     app = FastAPI(

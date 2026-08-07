@@ -46,6 +46,9 @@ class DiagnosticToolContext(BaseModel):
     repair_session_id: str
     active_phase: RepairSessionPhase = RepairSessionPhase.DIAGNOSTIC
     diagnostic_session_id: str
+    diagnostic_report_schema_version: Literal[
+        "diagnostic_report.v1", "diagnostic_report.v2"
+    ] = "diagnostic_report.v2"
     turn_id: str | None = None
     artifact_ids: tuple[str, ...] = ()
     bike_profile: Mapping[str, Any] | None = None

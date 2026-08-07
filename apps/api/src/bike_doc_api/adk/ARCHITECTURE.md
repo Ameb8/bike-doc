@@ -189,6 +189,15 @@ app-owned `diagnostic_session_id` that may appear in a report; its
 back, best-effort deleting the orphaned ADK session, and returning the row
 that won the unique database race.
 
+For diagnostic sessions, the same row also snapshots the app-owned selected
+diagnostic report schema version. Orchestration seeds that immutable value into
+the runner and tool context, so a deployment rollback changes only new phase
+sessions and cannot mix V1/V2 fields in a report already in progress. The
+orchestrator emits only privacy-safe diagnostic-completion telemetry: stable
+input-request, report-completed, and validation-failed events with scalar
+version/outcome/count dimensions. It never sends report text, completion-basis
+rationale, or model reasoning to telemetry.
+
 The current `DiagnosticADKSessionClient` uses one process-lifetime
 `InMemorySessionService`, with fixed internal ADK app/user names. The exact
 same instance must create sessions and run turns; creating one per request or
@@ -210,7 +219,7 @@ codes such as `not_found`, `invalid_phase`, `stale_session`,
 `validation_error`, `artifact_not_found`, `report_validation_failed`, and
 `safety_policy_violation`.
 
-The live V1 diagnostic catalog in `tools/tool_catalog.py` binds dependencies
+The live V2 diagnostic catalog in `tools/tool_catalog.py` binds dependencies
 once and exposes six ADK `FunctionTool`s:
 
 - `get_bike_profile` and `lookup_repair_history` read owner-scoped repair
@@ -220,14 +229,18 @@ once and exposes six ADK `FunctionTool`s:
 - `request_diagnostic_input` persists a structured follow-up through
   `TurnService`.
 - `raise_safety_flag` delegates to `DiagnosticSafetyService`.
-- `save_diagnostic_report` delegates to `ReportService` after the
-  agent-facing `DiagnosticReportToolPayload` is converted and validated.
+- `save_diagnostic_report` validates its internal `CompletionBasis` before it
+  delegates to `ReportService`; the basis is neither persisted nor exposed in
+  public report or tool-result serialization. The server-seeded tool context
+  selects `diagnostic_report.v2`; agent input excludes the server-owned outcome,
+  phase-session ID, and envelope summary.
+  `ReportService` stamps those fields and validates the public envelope.
 
 The last three mutate product state directly in the ADK tool loop, exactly
 once. Their function responses are notifications to the runner and
 orchestrator, not commands to repeat a write. `tools/price_lookup.py` is a
 planning-only adapter around the cost-estimate service; it is intentionally
-not a diagnostic V1 tool.
+not a diagnostic tool.
 
 ## Report, test, and change guidance
 
