@@ -135,6 +135,7 @@ class DiagnosticReportPersistenceResultProtocol(Protocol):
     """Service result shape required by this tool."""
 
     report: PhaseReportEnvelope
+    created_by_current_execution: bool
     events: ReportPersistenceEventsProtocol
     safety_state: str
     active_safety_flags: list[SafetyFlag]
@@ -293,6 +294,12 @@ class SaveDiagnosticReportTool:
                 "phase_report_created_event_sequence": (
                     result.events.phase_report_created.sequence
                 ),
+                # These fields are internal runner-notification metadata.  The
+                # public report API remains unchanged.
+                "created_by_current_execution": bool(
+                    getattr(result, "created_by_current_execution", False)
+                ),
+                "report_created_at": report.created_at.isoformat(),
             }
             if result.events.phase_transitioned is not None:
                 data["phase_transitioned_event_id"] = (

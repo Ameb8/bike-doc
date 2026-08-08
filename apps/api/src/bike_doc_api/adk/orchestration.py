@@ -55,6 +55,7 @@ from bike_doc_api.schemas.repair_session import (
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
     DiagnosticReportTelemetryOutcome,
+    DiagnosticSessionCompletion,
     default_diagnostic_completion_telemetry,
     report_validation_attempt_scope,
 )
@@ -449,6 +450,12 @@ class DiagnosticTurnOrchestrator:
                     completion_reason=event.completion_reason,
                 ),
             )
+            await self._emit_session_completion_if_created(
+                event=event,
+                phase_session_id=context.diagnostic_session_id,
+                repair_session_id=turn.repair_session_id,
+                report_schema_version=event.schema_version,
+            )
             telemetry_state.note_safety_state(
                 safety_state=event.safety_state,
                 blocks=_blocks_repair_guidance(
@@ -476,6 +483,47 @@ class DiagnosticTurnOrchestrator:
                 retryable=event.retryable,
             )
             telemetry_state.note_error(code=event.code, retryable=event.retryable)
+
+    async def _emit_session_completion_if_created(
+        self,
+        *,
+        event: DiagnosticRunnerReportCompleted,
+        phase_session_id: str,
+        repair_session_id: str,
+        report_schema_version: str | None,
+    ) -> None:
+        """Best-effort summary only for the execution that committed the report."""
+
+        if (
+            not event.created_by_current_execution
+            or event.report_created_at is None
+            or event.completion_reason is None
+            or report_schema_version is None
+        ):
+            return
+        try:
+            phase_session = await self.phase_sessions.get(phase_session_id)
+            if phase_session is None:
+                return
+            turn_count = await self.turns.count_for_phase_session(phase_session.id)
+            self.telemetry.session_completed(
+                completion=DiagnosticSessionCompletion(
+                    repair_session_id=repair_session_id,
+                    diagnostic_session_id=phase_session.id,
+                    completion_reason=event.completion_reason,
+                    turn_count=turn_count,
+                    phase_session_created_at=phase_session.created_at,
+                    report_created_at=event.report_created_at,
+                    report_schema_version=cast(
+                        Literal["diagnostic_report.v1", "diagnostic_report.v2"],
+                        report_schema_version,
+                    ),
+                )
+            )
+        except Exception:
+            # Count queries and telemetry export are post-commit observations.
+            # Failure must not alter public events, safety, or terminal status.
+            return
 
     async def _build_seed_context(
         self,

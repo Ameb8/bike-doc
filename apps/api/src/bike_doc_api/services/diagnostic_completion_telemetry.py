@@ -11,6 +11,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Protocol, cast
 
 import structlog
@@ -26,6 +27,20 @@ DiagnosticReportSchemaVersion = Literal["diagnostic_report.v1", "diagnostic_repo
 
 _DURATION_BOUNDARIES = (0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 300)
 _COUNT_BOUNDARIES = (0, 1, 2, 3, 4, 5, 10, 20)
+_SESSION_ELAPSED_BOUNDARIES = (
+    1,
+    5,
+    15,
+    30,
+    60,
+    120,
+    300,
+    600,
+    1800,
+    3600,
+    14400,
+    86400,
+)
 _OUTCOMES = frozenset(
     {
         "input_requested",
@@ -44,7 +59,12 @@ _REQUEST_TYPES = frozenset(
     {"text", "photo", "multiple_choice", "confirmation", "none", "unknown"}
 )
 _COMPLETION_REASONS = frozenset(
-    {"diagnosis_supported", "insufficient_evidence", "safety_escalation", "unknown"}
+    {
+        "diagnosis_supported",
+        "user_declined_more_input",
+        "requested_input_unavailable",
+        "in_person_assessment_required",
+    }
 )
 _VALIDATION_STAGES = frozenset(
     {
@@ -109,6 +129,8 @@ class _MetricInstruments:
     validation_failure: Counter
     safety_escalation: Counter
     runner_error: Counter
+    session_turns_to_completion: Histogram
+    session_elapsed: Histogram
 
 
 def _create_instruments(meter: Meter) -> _MetricInstruments:
@@ -140,6 +162,16 @@ def _create_instruments(meter: Meter) -> _MetricInstruments:
             "bike_doc.diagnostic.safety_escalation.count", unit="{escalation}"
         ),
         meter.create_counter("bike_doc.diagnostic.runner_error.count", unit="{error}"),
+        meter.create_histogram(
+            "bike_doc.diagnostic.session.turns_to_completion",
+            unit="{turn}",
+            explicit_bucket_boundaries_advisory=_COUNT_BOUNDARIES,
+        ),
+        meter.create_histogram(
+            "bike_doc.diagnostic.session.elapsed",
+            unit="s",
+            explicit_bucket_boundaries_advisory=_SESSION_ELAPSED_BOUNDARIES,
+        ),
     )
 
 
@@ -156,6 +188,19 @@ class DiagnosticReportTelemetryOutcome:
     contributing_factor_count: int
     alternate_hypothesis_count: int
     completion_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticSessionCompletion:
+    """Durable-timestamp inputs for one best-effort session summary."""
+
+    repair_session_id: str
+    diagnostic_session_id: str
+    completion_reason: str
+    turn_count: int
+    phase_session_created_at: datetime
+    report_created_at: datetime
+    report_schema_version: DiagnosticReportSchemaVersion
 
 
 class DiagnosticCompletionTelemetry(Protocol):
@@ -183,6 +228,9 @@ class DiagnosticCompletionTelemetry(Protocol):
         dimensions: DiagnosticMetricDimensions,
     ) -> None:
         """Record the final, bounded metrics for one execution attempt."""
+
+    def session_completed(self, *, completion: DiagnosticSessionCompletion) -> None:
+        """Record one report-creating execution's session summary."""
 
 
 class LoggingDiagnosticCompletionTelemetry:
@@ -260,6 +308,45 @@ class LoggingDiagnosticCompletionTelemetry:
             _record_turn_metrics(self._instruments, snapshot, dimensions)
         except Exception:
             # Meter/exporter failures are strictly observational.
+            return
+
+    def session_completed(self, *, completion: DiagnosticSessionCompletion) -> None:
+        """Emit durable-timestamp session telemetry without affecting workflow."""
+
+        try:
+            reason = _allowed(
+                completion.completion_reason, _COMPLETION_REASONS, "completion_reason"
+            )
+            turn_count = max(0, completion.turn_count)
+            elapsed_ms = max(
+                0,
+                int(
+                    (
+                        completion.report_created_at
+                        - completion.phase_session_created_at
+                    ).total_seconds()
+                    * 1000
+                ),
+            )
+            logger.info(
+                "diagnostic_session_completed",
+                repair_session_id=completion.repair_session_id,
+                diagnostic_session_id=completion.diagnostic_session_id,
+                completion_reason=reason,
+                turn_count=turn_count,
+                session_elapsed_ms=elapsed_ms,
+                single_turn_completion=turn_count == 1,
+                report_schema_version=completion.report_schema_version,
+            )
+            attributes = {
+                "completion_reason": reason,
+                "report_schema_version": completion.report_schema_version,
+            }
+            self._instruments.session_turns_to_completion.record(turn_count, attributes)
+            self._instruments.session_elapsed.record(elapsed_ms / 1000, attributes)
+        except Exception:
+            # The report has already committed; logging, meters, and exporters
+            # are observational and must never alter product behavior.
             return
 
 

@@ -245,6 +245,15 @@ attempt sequence and the current root trace without entering ADK tool inputs,
 runner requests, or app-owned state. It never sends report text,
 completion-basis rationale, or model reasoning to telemetry.
 
+After a report tool transaction commits, its internal normalized completion
+notification carries a bounded creation flag and durable report timestamp.
+Only a notification marked as created by the current execution may trigger the
+best-effort session summary; orchestration combines that timestamp with the
+phase row's `created_at` and phase-scoped turn count. Observing an existing
+report does not emit a second summary. No marker or retry state is persisted,
+so a crash after commit may omit—or recovery may duplicate—observational
+telemetry while durable reports and events remain authoritative.
+
 The current `DiagnosticADKSessionClient` uses one process-lifetime
 `InMemorySessionService`, with fixed internal ADK app/user names. The exact
 same instance must create sessions and run turns; creating one per request or

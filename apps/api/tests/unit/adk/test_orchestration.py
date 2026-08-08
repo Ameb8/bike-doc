@@ -55,6 +55,8 @@ class _Store:
     """In-memory repositories for orchestration tests."""
 
     def __init__(self) -> None:
+        self.turn_count = 1
+        self.fail_completion_count = False
         self.phase_session = RepairPhaseSession(
             id="phs_orch",
             repair_session_id="rs_orch",
@@ -103,7 +105,11 @@ class _Store:
         return None
 
     async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
-        return 1 if repair_phase_session_id == self.phase_session.id else 0
+        if self.fail_completion_count:
+            raise RuntimeError("telemetry count unavailable")
+        return (
+            self.turn_count if repair_phase_session_id == self.phase_session.id else 0
+        )
 
     async def count_for_phase_session_through_start_event_sequence(
         self,
@@ -569,6 +575,85 @@ async def test_orchestration_uses_committed_terminal_notifications() -> None:
 
     assert store.events[-1].data["session"]["status"] == "awaiting_decision"
     assert telemetry.input_versions == ["diagnostic_report.v2"]
+
+
+async def test_report_creating_execution_emits_session_summary_after_commit() -> None:
+    store = _Store()
+    store.turn_count = 3
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_1",
+                    schema_version="diagnostic_report.v2",
+                    diagnostic_session_id="phs_orch",
+                    created_by_current_execution=True,
+                    report_created_at=datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == [
+        (
+            "rs_orch",
+            "phs_orch",
+            "diagnosis_supported",
+            3,
+            300000,
+            "diagnostic_report.v2",
+        )
+    ]
+
+
+async def test_observed_report_does_not_emit_session_summary() -> None:
+    store = _Store()
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_existing",
+                    schema_version="diagnostic_report.v2",
+                    diagnostic_session_id="phs_orch",
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == []
+
+
+async def test_session_summary_query_failure_does_not_change_terminal_turn() -> None:
+    store = _Store()
+    store.fail_completion_count = True
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_1",
+                    schema_version="diagnostic_report.v2",
+                    created_by_current_execution=True,
+                    report_created_at=datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == []
+    assert store.events[-1].type == "turn.completed"
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
 
 
 async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:
@@ -1040,6 +1125,7 @@ class _Telemetry:
     def __init__(self) -> None:
         self.input_versions: list[str] = []
         self.completed: list[DiagnosticReportTelemetryOutcome] = []
+        self.session_completions: list[tuple[str, str, str, int, int, str]] = []
 
     def input_requested(self, *, schema_version: str) -> None:
         self.input_versions.append(schema_version)
@@ -1051,3 +1137,21 @@ class _Telemetry:
         self, *, stage: str, attempt_number: int, schema_version: str
     ) -> None:
         raise AssertionError(f"unexpected validation signal: {schema_version}")
+
+    def session_completed(self, *, completion: Any) -> None:
+        self.session_completions.append(
+            (
+                completion.repair_session_id,
+                completion.diagnostic_session_id,
+                completion.completion_reason,
+                completion.turn_count,
+                int(
+                    (
+                        completion.report_created_at
+                        - completion.phase_session_created_at
+                    ).total_seconds()
+                    * 1000
+                ),
+                completion.report_schema_version,
+            )
+        )

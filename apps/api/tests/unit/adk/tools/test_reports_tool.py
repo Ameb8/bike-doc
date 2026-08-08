@@ -82,6 +82,7 @@ class _ReportService:
         )
         return SimpleNamespace(
             report=report,
+            created_by_current_execution=True,
             events=SimpleNamespace(
                 phase_report_created=SimpleNamespace(id="evt_report", sequence=19),
                 phase_transitioned=None,
@@ -211,6 +212,8 @@ async def test_save_diagnostic_report_injects_server_owned_session_id() -> None:
     assert result["data"]["report_id"] == "rpt_1"
     assert result["data"]["diagnostic_session_id"] == "phs_tool"
     assert result["data"]["phase_report_created_event_id"] == "evt_report"
+    assert result["data"]["created_by_current_execution"] is True
+    assert result["data"]["report_created_at"] == "2026-06-21T17:05:00+00:00"
     assert "completion_basis" not in result["data"]
     assert "diagnostic_session_id" not in service.calls[0]["payload"]
     assert "completion_basis" not in service.calls[0]["payload"]

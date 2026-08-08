@@ -74,6 +74,7 @@ class DiagnosticReportPersistenceResult:
     """Tool-facing diagnostic report persistence result."""
 
     report: PhaseReportEnvelope
+    created_by_current_execution: bool
     events: ReportPersistenceEvents
     safety_state: str
     active_safety_flags: list[SafetyFlag]
@@ -398,6 +399,10 @@ class ReportService:
 
         return DiagnosticReportPersistenceResult(
             report=_public_envelope_or_server_error(report),
+            # This result is returned only after the authoritative transaction
+            # commits.  It is an execution-local signal, not durable telemetry
+            # delivery state.
+            created_by_current_execution=True,
             events=events,
             safety_state=repair_session.safety_state,
             active_safety_flags=[

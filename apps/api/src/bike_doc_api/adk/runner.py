@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
 from time import monotonic
 from typing import Any, Literal, Protocol, cast
 
@@ -119,6 +120,8 @@ class DiagnosticRunnerReportCompleted:
     contributing_factor_count: int = 0
     alternate_hypothesis_count: int = 0
     completion_reason: str | None = None
+    created_by_current_execution: bool = False
+    report_created_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -731,6 +734,8 @@ def _report_completed_from_tool_data(
             data.get("alternate_hypothesis_count"),
         ),
         completion_reason=_non_empty_string(data.get("completion_reason")),
+        created_by_current_execution=data.get("created_by_current_execution") is True,
+        report_created_at=_optional_datetime(data.get("report_created_at")),
     )
 
 
@@ -927,6 +932,18 @@ def _optional_int(value: object) -> int | None:
     """Return an optional integer from raw adapter output."""
 
     return value if isinstance(value, int) else None
+
+
+def _optional_datetime(value: object) -> datetime | None:
+    """Return an ISO-8601 timestamp from an internal committed tool result."""
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 def _non_negative_int(value: object) -> int:
