@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from google.adk.tools.function_tool import FunctionTool
@@ -39,6 +39,10 @@ from bike_doc_api.adk.tools.reports import (
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
 from bike_doc_api.schemas.common import ArtifactPurpose
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticCompletionTelemetry,
+    default_diagnostic_completion_telemetry,
+)
 
 V2_DIAGNOSTIC_TOOL_NAMES = (
     "get_bike_profile",
@@ -60,6 +64,10 @@ class DiagnosticAgentToolDependencies:
     input_request_service: DiagnosticInputRequestServiceProtocol
     safety_service: SafetyServiceProtocol
     report_service: DiagnosticReportServiceProtocol
+    # Private composition dependency; it is never part of an ADK tool schema.
+    telemetry: DiagnosticCompletionTelemetry = field(
+        default_factory=default_diagnostic_completion_telemetry
+    )
 
 
 def build_tool_catalog(
@@ -76,7 +84,10 @@ def build_tool_catalog(
         dependencies.input_request_service,
     )
     safety_tool = RaiseSafetyFlagTool(dependencies.safety_service)
-    report_tool = SaveDiagnosticReportTool(dependencies.report_service)
+    report_tool = SaveDiagnosticReportTool(
+        dependencies.report_service,
+        telemetry=dependencies.telemetry,
+    )
 
     async def get_bike_profile(tool_context: ToolContext) -> dict[str, Any]:
         """Return bike profile context for the active repair session."""

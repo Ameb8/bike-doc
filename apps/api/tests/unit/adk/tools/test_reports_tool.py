@@ -31,6 +31,21 @@ from bike_doc_api.schemas.report import (
     PhaseReportEnvelope,
     SafetyFlag,
 )
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    report_validation_attempt_scope,
+)
+
+
+class _ValidationTelemetry:
+    """Content-free telemetry spy at the report-save seam."""
+
+    def __init__(self) -> None:
+        self.failures: list[tuple[str, int, str]] = []
+
+    def report_validation_failed(
+        self, *, stage: str, attempt_number: int, schema_version: str
+    ) -> None:
+        self.failures.append((stage, attempt_number, schema_version))
 
 
 class _ReportService:
@@ -218,6 +233,112 @@ async def test_save_diagnostic_report_rejects_agent_selected_session_id() -> Non
     assert result["ok"] is False
     assert result["error"]["code"] == "report_validation_failed"
     assert service.calls == []
+
+
+@pytest.mark.parametrize(
+    ("tool_input", "service_error", "expected_stage"),
+    [
+        (
+            {
+                "repair_session_id": "",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(),
+            },
+            None,
+            "tool_input",
+        ),
+        (
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(why_ready=" "),
+            },
+            None,
+            "completion_basis",
+        ),
+        (
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(schema_version="sentinel.schema"),
+                "completion_basis": _completion_basis(),
+            },
+            None,
+            "report_schema",
+        ),
+        (
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(),
+            },
+            ArtifactToolNotFoundError(),
+            "artifact_reference",
+        ),
+        (
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(),
+            },
+            SessionStateConflictError(),
+            "phase_state",
+        ),
+        (
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(),
+            },
+            RuntimeError("sentinel arbitrary validation content"),
+            "unknown",
+        ),
+    ],
+)
+async def test_save_rejection_classifies_only_bounded_validation_stage(
+    tool_input: dict[str, Any], service_error: Exception | None, expected_stage: str
+) -> None:
+    telemetry = _ValidationTelemetry()
+    result = await SaveDiagnosticReportTool(
+        _ReportService(error=service_error),
+        telemetry=telemetry,  # type: ignore[arg-type]
+    ).run(tool_input, _context())
+
+    assert result["ok"] is False
+    assert telemetry.failures == [(expected_stage, 1, "diagnostic_report.v1")]
+    assert "sentinel arbitrary validation content" not in repr(telemetry.failures)
+
+
+async def test_rejected_then_corrected_save_shares_one_turn_attempt_counter() -> None:
+    telemetry = _ValidationTelemetry()
+    tool = SaveDiagnosticReportTool(_ReportService(), telemetry=telemetry)  # type: ignore[arg-type]
+    with report_validation_attempt_scope(telemetry):  # type: ignore[arg-type]
+        rejected = await tool.run(
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(schema_version="sentinel.schema"),
+                "completion_basis": _completion_basis(),
+            },
+            _context(),
+        )
+        corrected = await tool.run(
+            {
+                "repair_session_id": "rs_tool",
+                "summary": "ok",
+                "report": _report_payload(),
+                "completion_basis": _completion_basis(),
+            },
+            _context(),
+        )
+
+    assert rejected["error"]["code"] == "report_validation_failed"
+    assert corrected["ok"] is True
+    assert telemetry.failures == [("report_schema", 1, "diagnostic_report.v1")]
 
 
 async def test_save_diagnostic_report_returns_field_validation_details() -> None:

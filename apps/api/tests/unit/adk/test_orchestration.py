@@ -569,7 +569,6 @@ async def test_orchestration_uses_committed_terminal_notifications() -> None:
 
     assert store.events[-1].data["session"]["status"] == "awaiting_decision"
     assert telemetry.input_versions == ["diagnostic_report.v2"]
-    assert telemetry.completed[0].same_turn_completion_after_first_finding is False
 
 
 async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:
@@ -1048,5 +1047,7 @@ class _Telemetry:
     def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
         self.completed.append(outcome)
 
-    def report_validation_failed(self, *, schema_version: str) -> None:
+    def report_validation_failed(
+        self, *, stage: str, attempt_number: int, schema_version: str
+    ) -> None:
         raise AssertionError(f"unexpected validation signal: {schema_version}")

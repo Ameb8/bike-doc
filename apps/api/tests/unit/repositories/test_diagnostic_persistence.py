@@ -179,15 +179,10 @@ async def test_phase_session_turn_counts_exclude_other_sessions_and_events(
     )
     await db_session.flush()
 
-    assert (
-        await turns.count_for_phase_session(diagnostic_phase_session.id)
-        == 2
-    )
-    first_turn_index = (
-        await turns.count_for_phase_session_through_start_event_sequence(
-            repair_phase_session_id=diagnostic_phase_session.id,
-            start_event_sequence=first_turn.start_event_sequence,
-        )
+    assert await turns.count_for_phase_session(diagnostic_phase_session.id) == 2
+    first_turn_index = await turns.count_for_phase_session_through_start_event_sequence(
+        repair_phase_session_id=diagnostic_phase_session.id,
+        start_event_sequence=first_turn.start_event_sequence,
     )
     retried_first_turn_index = (
         await turns.count_for_phase_session_through_start_event_sequence(

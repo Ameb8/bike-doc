@@ -7,11 +7,14 @@ representable at this boundary.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
 import structlog
-from opentelemetry import metrics
+from opentelemetry import metrics, trace
 from opentelemetry.metrics import Counter, Histogram, Meter
 from opentelemetry.sdk.metrics import MeterProvider
 
@@ -153,7 +156,6 @@ class DiagnosticReportTelemetryOutcome:
     contributing_factor_count: int
     alternate_hypothesis_count: int
     completion_reason: str | None
-    same_turn_completion_after_first_finding: bool
 
 
 class DiagnosticCompletionTelemetry(Protocol):
@@ -166,7 +168,11 @@ class DiagnosticCompletionTelemetry(Protocol):
         """Record a diagnostic turn ending in a report."""
 
     def report_validation_failed(
-        self, *, schema_version: DiagnosticReportSchemaVersion
+        self,
+        *,
+        stage: str,
+        attempt_number: int,
+        schema_version: DiagnosticReportSchemaVersion,
     ) -> None:
         """Record a failed report or completion-basis validation attempt."""
 
@@ -204,17 +210,42 @@ class LoggingDiagnosticCompletionTelemetry:
             contributing_factor_count=outcome.contributing_factor_count,
             alternate_hypothesis_count=outcome.alternate_hypothesis_count,
             completion_reason=outcome.completion_reason,
-            same_turn_completion_after_first_finding=(
-                outcome.same_turn_completion_after_first_finding
-            ),
         )
 
     def report_validation_failed(
-        self, *, schema_version: DiagnosticReportSchemaVersion
+        self,
+        *,
+        stage: str,
+        attempt_number: int,
+        schema_version: DiagnosticReportSchemaVersion,
     ) -> None:
+        safe_stage = _allowed(stage, _VALIDATION_STAGES, "validation_stage")
         logger.info(
-            "diagnostic_report_validation_failed", schema_version=schema_version
+            "diagnostic_report_validation_failed",
+            validation_stage=safe_stage,
+            error_code="report_validation_failed",
+            attempt_number=max(1, attempt_number),
+            report_schema_version=schema_version,
         )
+        trace.get_current_span().add_event(
+            "diagnostic.report_validation_failed",
+            {
+                "validation_stage": safe_stage,
+                "error_code": "report_validation_failed",
+                "attempt_number": max(1, attempt_number),
+                "report_schema_version": schema_version,
+            },
+        )
+        try:
+            self._instruments.validation_failure.add(
+                1,
+                {
+                    "validation_stage": safe_stage,
+                    "report_schema_version": schema_version,
+                },
+            )
+        except Exception:
+            return
 
     def turn_completed(
         self,
@@ -279,16 +310,6 @@ def _record_turn_metrics(
                     snapshot.input_request.request_type, _REQUEST_TYPES, "request_type"
                 ),
                 "required": snapshot.input_request.required,
-                "report_schema_version": dimensions.report_schema_version,
-            },
-        )
-    for stage in snapshot.validation.stages:
-        instruments.validation_failure.add(
-            1,
-            {
-                "validation_stage": _allowed(
-                    stage, _VALIDATION_STAGES, "validation_stage"
-                ),
                 "report_schema_version": dimensions.report_schema_version,
             },
         )
@@ -387,3 +408,68 @@ def _allowed(value: str | None, allowed: frozenset[str], name: str) -> str:
     if value not in allowed:
         raise ValueError(f"unexpected bounded {name}: {value!r}")
     return value
+
+
+class ReportValidationAttemptTracker:
+    """Private per-run counter shared by report tool calls in one ADK turn."""
+
+    def __init__(
+        self,
+        telemetry: DiagnosticCompletionTelemetry,
+        *,
+        on_failure: Callable[[str], None] | None = None,
+    ) -> None:
+        self._telemetry = telemetry
+        self._on_failure = on_failure
+        self._attempt_number = 0
+
+    def record(
+        self, *, stage: str, schema_version: DiagnosticReportSchemaVersion
+    ) -> int:
+        self._attempt_number += 1
+        self._telemetry.report_validation_failed(
+            stage=stage,
+            attempt_number=self._attempt_number,
+            schema_version=schema_version,
+        )
+        if self._on_failure is not None:
+            self._on_failure(stage)
+        return self._attempt_number
+
+
+_report_validation_attempt_tracker: ContextVar[
+    ReportValidationAttemptTracker | None
+] = ContextVar("report_validation_attempt_tracker", default=None)
+
+
+@contextmanager
+def report_validation_attempt_scope(
+    telemetry: DiagnosticCompletionTelemetry,
+    *,
+    on_failure: Callable[[str], None] | None = None,
+) -> Iterator[ReportValidationAttemptTracker]:
+    """Bind one private attempt counter for an orchestrated runner invocation."""
+
+    tracker = ReportValidationAttemptTracker(telemetry, on_failure=on_failure)
+    token = _report_validation_attempt_tracker.set(tracker)
+    try:
+        yield tracker
+    finally:
+        _report_validation_attempt_tracker.reset(token)
+
+
+def record_report_validation_failure(
+    *,
+    telemetry: DiagnosticCompletionTelemetry,
+    stage: str,
+    schema_version: DiagnosticReportSchemaVersion,
+) -> int:
+    """Emit exactly one bounded signal for a rejected save attempt."""
+
+    tracker = _report_validation_attempt_tracker.get()
+    if tracker is not None:
+        return tracker.record(stage=stage, schema_version=schema_version)
+    telemetry.report_validation_failed(
+        stage=stage, attempt_number=1, schema_version=schema_version
+    )
+    return 1

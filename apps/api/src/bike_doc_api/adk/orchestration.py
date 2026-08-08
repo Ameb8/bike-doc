@@ -56,6 +56,7 @@ from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
     DiagnosticReportTelemetryOutcome,
     default_diagnostic_completion_telemetry,
+    report_validation_attempt_scope,
 )
 from bike_doc_api.services.diagnostic_visual_context import DiagnosticVisualContext
 
@@ -263,13 +264,19 @@ class DiagnosticTurnOrchestrator:
             try:
                 with _start_span("bike_doc.diagnostic.agent.run") as span:
                     try:
-                        async for event in self.runner.stream(request):
-                            await self._process_runner_event(
-                                context=context,
-                                turn=turn_snapshot,
-                                event=event,
-                                telemetry_state=telemetry_state,
-                            )
+                        with report_validation_attempt_scope(
+                            self.telemetry,
+                            on_failure=lambda stage: (
+                                telemetry_state.note_validation_failure(stage=stage)
+                            ),
+                        ):
+                            async for event in self.runner.stream(request):
+                                await self._process_runner_event(
+                                    context=context,
+                                    turn=turn_snapshot,
+                                    event=event,
+                                    telemetry_state=telemetry_state,
+                                )
                     except Exception:
                         span.set_status(
                             Status(StatusCode.ERROR, "runner_stream_failed")
@@ -440,8 +447,6 @@ class DiagnosticTurnOrchestrator:
                     contributing_factor_count=event.contributing_factor_count,
                     alternate_hypothesis_count=event.alternate_hypothesis_count,
                     completion_reason=event.completion_reason,
-                    # §9.3 prohibits inferring this from report composition.
-                    same_turn_completion_after_first_finding=False,
                 ),
             )
             telemetry_state.note_safety_state(
@@ -470,8 +475,6 @@ class DiagnosticTurnOrchestrator:
                 message=event.message,
                 retryable=event.retryable,
             )
-            if event.code == "report_validation_failed":
-                telemetry_state.note_validation_failure(stage="unknown")
             telemetry_state.note_error(code=event.code, retryable=event.retryable)
 
     async def _build_seed_context(

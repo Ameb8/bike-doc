@@ -656,6 +656,7 @@ def _build_background_orchestrator(
         commit=session.commit,
         rollback=session.rollback,
     )
+    telemetry = default_diagnostic_completion_telemetry()
     tool_dependencies = DiagnosticAgentToolDependencies(
         bike_profile_service=cast(BikeProfileServiceProtocol, bike_profile_service),
         repair_history_service=cast(
@@ -669,6 +670,7 @@ def _build_background_orchestrator(
         ),
         safety_service=cast(SafetyServiceProtocol, safety_service),
         report_service=cast(DiagnosticReportServiceProtocol, report_service),
+        telemetry=telemetry,
     )
     session_service = get_adk_session_service()
     runner = DiagnosticRunner(
@@ -688,6 +690,7 @@ def _build_background_orchestrator(
             rollback=session.rollback,
         ),
         runner=runner,
+        telemetry=telemetry,
         get_bike_profile=GetBikeProfileTool(
             cast(BikeProfileServiceProtocol, bike_profile_service),
         ),
@@ -703,6 +706,7 @@ def _build_background_orchestrator(
         ),
         save_diagnostic_report=SaveDiagnosticReportTool(
             cast(DiagnosticReportServiceProtocol, report_service),
+            telemetry=telemetry,
         ),
         visual_context=DiagnosticVisualContextService(
             turns=cast(RepairTurnRepositoryProtocol, RepairTurnRepository(session)),

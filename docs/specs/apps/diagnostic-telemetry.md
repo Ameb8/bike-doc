@@ -520,10 +520,9 @@ column, or long-lived in-memory accumulator.
 
 ### 9.3 First-Finding Same-Turn Metric
 
-`same_turn_completion_after_first_finding` must not be computed from
-`observed_finding_count > 0`. Every valid V2 report has at least one observed
-finding, so that expression does not identify the turn in which the first
-finding appeared.
+The first-finding same-turn measure must not be inferred from report item
+counts. Every valid V2 report has at least one observed finding, so a report
+composition count cannot identify the turn in which the first finding appeared.
 
 Level 2 records `single_turn_completion` as a separate, accurately measurable
 fact. It does not claim that this is equivalent to completion in the same turn
@@ -1100,7 +1099,7 @@ Tests must verify:
 - one report and one session completion measurement when the current execution
   successfully creates a report, and none when it only observes an existing
   report
-- no false `same_turn_completion_after_first_finding` measurement is emitted
+- no false first-finding same-turn measurement is emitted
 
 ### 17.5 Existing Verification
 
@@ -1192,5 +1191,5 @@ dashboards must not double-count both the legacy event and the new summary.
   behavior.
 - No telemetry table, long-lived session span, analytics warehouse, vendor
   agent, or new agent state machine is introduced.
-- The inaccurate `observed_finding_count > 0` proxy is not reported as
-  same-turn completion after the first finding.
+- A report item count is not reported as same-turn completion after the first
+  finding.
