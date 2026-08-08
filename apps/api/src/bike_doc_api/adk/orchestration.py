@@ -26,7 +26,10 @@ from bike_doc_api.adk.tools.input_requests import RequestDiagnosticInputTool
 from bike_doc_api.adk.tools.repair_history import LookupRepairHistoryTool
 from bike_doc_api.adk.tools.reports import SaveDiagnosticReportTool
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool
-from bike_doc_api.adk.turn_telemetry_state import DiagnosticTurnTelemetryState
+from bike_doc_api.adk.turn_telemetry_state import (
+    DiagnosticTurnTelemetrySnapshot,
+    DiagnosticTurnTelemetryState,
+)
 from bike_doc_api.core.errors import NotFoundError, ServerError
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -168,7 +171,7 @@ class DiagnosticTurnOrchestrator:
         *,
         current_user: User,
         turn: RepairTurnModel,
-    ) -> None:
+    ) -> DiagnosticTurnTelemetrySnapshot:
         """Run diagnostic orchestration for an already accepted turn."""
 
         user_snapshot = _CurrentUserSnapshot.from_model(current_user)
@@ -226,7 +229,7 @@ class DiagnosticTurnOrchestrator:
                     turn_id=turn_snapshot.id,
                     status=telemetry_state.finalize().terminal_status,
                 )
-                return
+                return telemetry_state.finalize()
             request = DiagnosticRunnerRequest(
                 user_id=user_snapshot.id,
                 user_skill_level=user_snapshot.skill_level,
@@ -268,6 +271,7 @@ class DiagnosticTurnOrchestrator:
                 turn_id=turn_snapshot.id,
                 status=telemetry_state.finalize().terminal_status,
             )
+            return telemetry_state.finalize()
         except asyncio.CancelledError:
             telemetry_state.note_cancelled()
             telemetry_state.finalize()
@@ -290,6 +294,7 @@ class DiagnosticTurnOrchestrator:
                 turn_id=turn_snapshot.id,
                 status=telemetry_state.finalize().terminal_status,
             )
+            return telemetry_state.finalize()
 
     async def _process_runner_event(
         self,

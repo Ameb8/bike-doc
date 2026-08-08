@@ -90,6 +90,17 @@ class _TurnRepository:
         self._store.loaded_turns.append(turn_id)
         return self._store.turn if self._store.turn.id == turn_id else None
 
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        return int(
+            repair_phase_session_id == self._store.turn.repair_phase_session_id
+            and start_event_sequence >= self._store.turn.start_event_sequence
+        )
+
 
 class _RepairSessionRepository:
     def __init__(self, _session: _FakeSession, store: _Store) -> None:
@@ -103,6 +114,27 @@ class _RepairSessionRepository:
 
     async def get_for_update(self, repair_session_id: str) -> RepairSession | None:
         return await self.get(repair_session_id)
+
+
+class _PhaseSessionRepository:
+    """Minimal loaded phase-session seam for background correlation tests."""
+
+    def __init__(self, _session: _FakeSession, store: _Store) -> None:
+        self._store = store
+
+    async def get(self, phase_session_id: str) -> object | None:
+        if phase_session_id != self._store.turn.repair_phase_session_id:
+            return None
+        return type(
+            "PhaseSession",
+            (),
+            {
+                "id": phase_session_id,
+                "repair_session_id": self._store.session.id,
+                "phase": "diagnostic",
+                "diagnostic_report_schema_version": "diagnostic_report.v2",
+            },
+        )()
 
 
 class _EventRepository:
@@ -170,6 +202,11 @@ def _patch_background_repositories(
         background,
         "RepairSessionRepository",
         lambda session: _RepairSessionRepository(session, store),
+    )
+    monkeypatch.setattr(
+        background,
+        "RepairPhaseSessionRepository",
+        lambda session: _PhaseSessionRepository(session, store),
     )
     monkeypatch.setattr(
         background,

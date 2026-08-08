@@ -115,6 +115,15 @@ second observation record. Cancellation propagates without manufacturing a
 failed extraction state. Once the marker is set, no recovery or late extraction
 completion may alter the run.
 
+`background.py` owns one fresh OpenTelemetry root span, `bike_doc.diagnostic.turn`,
+for each background invocation. It binds only repair-session, diagnostic-session,
+turn, trace, and span correlation IDs to structlog while that root is active and
+clears them on exit. The background boundary emits the one start and one
+completion lifecycle record; orchestration supplies its immutable, privacy-safe
+final snapshot so trace attributes and the completion record describe the same
+outcome. Telemetry export and logging failures are never allowed to change the
+durable product result or cancellation propagation.
+
 `background.py` constructs this visual-context service with fresh repositories,
 storage, settings-driven preprocessing, and the fresh background database
 session. It never retains route/request-scoped dependencies. `off` mode keeps
