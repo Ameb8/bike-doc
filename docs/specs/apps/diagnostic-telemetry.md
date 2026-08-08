@@ -54,10 +54,14 @@ Level 2 telemetry consists of four distinct records:
 | OpenTelemetry metrics | Show aggregate rates, outcomes, and latency distributions | Configured OTLP backend |
 | Durable product events | Reconstruct exactly what the client was shown and the workflow state written by the app | Existing PostgreSQL event log |
 
-Each accepted diagnostic turn must create one root trace in the background
-execution path. One diagnostic phase session may therefore have multiple turn
-traces. Those traces and their structured logs are correlated using the
-app-owned `diagnostic_session_id`.
+Each invocation of the diagnostic background execution path must create one
+root trace. An accepted turn normally has one background execution attempt, but
+the telemetry contract does not provide durable or exactly-once job delivery.
+A process crash before background execution starts may therefore leave only the
+durable `turn.started` product event and no trace. If a turn is executed more
+than once, each attempt has a distinct trace ID while sharing the same app-owned
+`turn_id` and `diagnostic_session_id`. Durable execution, retry, and attempt
+deduplication are outside Level 2.
 
 No trace remains open while BikeDoc waits for the user. Keeping a span open
 across minutes, hours, app exits, or process restarts would produce unreliable
@@ -76,7 +80,7 @@ this version.
 - Show the ordered work performed during each diagnostic turn.
 - Distinguish visual-context, seed-context, agent, and finalization latency.
 - Show why each turn stopped: more input, report completion, safety handling,
-  recoverable failure, or an agent response without a terminal tool action.
+  recoverable failure, or normal runner exhaustion without a terminal action.
 - Show how many turns a completed diagnostic phase session required and how
   much wall-clock time elapsed.
 - Preserve model/provider, prompt, extraction, and report-schema versions needed
@@ -172,13 +176,14 @@ but must not duplicate its content payload.
 
 ### 6.1 Correlation Unit
 
-The root trace is one accepted diagnostic turn. The required app-owned
-correlation hierarchy is:
+The root trace is one background execution attempt for an accepted diagnostic
+turn. The required app-owned correlation hierarchy is:
 
 ```text
 repair_session_id
   -> diagnostic_session_id
-       -> turn_id (one root trace)
+       -> turn_id
+            -> background execution attempt (one root trace)
 ```
 
 `diagnostic_session_id` is the primary filter for examining the diagnostic
@@ -187,7 +192,8 @@ allows correlation with public product events and reports.
 
 ### 6.2 Required Identifiers
 
-The following identifiers are allowed on structured logs and spans:
+The following identifiers are allowed on BikeDoc-owned structured logs and
+spans:
 
 - `repair_session_id`
 - `diagnostic_session_id`
@@ -199,9 +205,17 @@ The following identifiers are forbidden from all diagnostic telemetry:
 
 - `user_id`
 - email, authentication subject, or display name
-- `adk_session_id`
 - artifact storage paths or signed URLs
 - provider request IDs unless a later privacy review explicitly approves them
+
+ADK-owned spans may retain the opaque session or conversation, invocation,
+event, and tool-call correlation IDs that the installed ADK adds
+automatically. BikeDoc must not copy those ADK-only identifiers onto BikeDoc
+spans, structured logs, span events, metrics, or durable product events. This
+narrow exception does not permit user identity, provider request IDs, content,
+tool arguments or responses, or storage locations. It avoids custom
+exporter-level span mutation solely to remove privacy-safe third-party
+correlation metadata.
 
 App-owned IDs must not be attached to metrics.
 
@@ -211,9 +225,13 @@ Every diagnostic turn trace and completion log should include `turn_index`, a
 one-based index among turns belonging to the current diagnostic phase session.
 
 The value must be computed from durable `RepairTurn` rows associated with the
-phase session. It must not be inferred from repair-session event sequence,
-because that sequence also includes assistant deltas and other product events.
-A repository count query is sufficient; no new database column is required.
+phase session. Specifically, it is the count of phase-session turns whose
+`start_event_sequence` is less than or equal to the current turn's durable
+`start_event_sequence`. This produces a stable one-based ordinal even if the
+turn is executed again after later turns exist. It must not be computed as the
+current total turn count or as an ordinal among all repair-session events,
+because later turns and non-turn events would make those values unstable. A
+repository count query is sufficient; no new database column is required.
 
 ### 6.4 HTTP and Background Boundaries
 
@@ -381,13 +399,20 @@ a bounded error class.
   a span event, not a failed root trace.
 - A runner or persistence exception that prevents the intended turn operation
   sets error status on the affected span and root span.
-- Cancellation records `outcome: cancelled` and re-raises; it is not rewritten
-  as a recoverable error.
-- An assistant response with no terminal tool action records
-  `outcome: assistant_response_only` and a warning log. It does not
-  automatically become an infrastructure error.
+- Cancellation re-raises. It records `outcome: cancelled` when no
+  higher-precedence durable product result completed; it is not rewritten as a
+  recoverable error.
+- Normal runner exhaustion with no terminal tool action records
+  `outcome: no_terminal_action` and a warning log, whether or not the runner
+  produced assistant output. It does not automatically become an
+  infrastructure error.
 
 ## 8. Turn Outcomes
+
+`outcome` is the single overarching result of the turn. It summarizes the
+turn's primary durable product result; it does not replace or attempt to encode
+every tool call, span event, safety occurrence, validation failure, or error
+that happened during the turn.
 
 Exactly one final `outcome` must be selected for each root turn span and
 `diagnostic_turn_completed` log:
@@ -399,8 +424,46 @@ Exactly one final `outcome` must be selected for each root turn span and
 | `visual_context_blocked` | Visual preparation intentionally prevented agent invocation and returned the session to the user. |
 | `recoverable_error` | A retryable runner or setup failure was surfaced safely. |
 | `terminal_error` | A non-retryable backend failure left the turn failed. |
-| `assistant_response_only` | The runner ended without input-request or report-completion action. |
+| `no_terminal_action` | The runner ended normally without a committed input request or report. |
 | `cancelled` | Task cancellation propagated. |
+
+The orchestrator must collect the relevant facts while the turn runs and apply
+the following precedence once, when the root span closes:
+
+1. `report_completed` when a diagnostic report was durably committed during
+   the turn.
+2. `input_requested` when no report completed and an input request was durably
+   committed during the turn.
+3. `visual_context_blocked` when neither terminal action completed and visual
+   preparation intentionally prevented agent invocation.
+4. `cancelled` when no preceding product result completed and cancellation
+   propagated.
+5. `terminal_error` when no preceding product result completed and a
+   non-retryable failure prevented the intended turn operation.
+6. `recoverable_error` when no preceding product result completed and a
+   retryable failure was surfaced safely.
+7. `no_terminal_action` otherwise.
+
+A terminal action counts for outcome selection only after its existing
+database transaction commits successfully. An attempted or rejected tool call,
+an uncommitted write, or a telemetry event alone does not establish a terminal
+outcome. A failure or cancellation after a terminal action has committed does
+not replace that durable product result; it is represented separately by span
+status, span events, error fields, and logs as applicable.
+
+When no higher-precedence product result completed, error outcomes are
+classified by the resulting product state rather than by the Python exception
+type alone:
+
+- `recoverable_error` requires BikeDoc to durably append a bounded recoverable
+  error, safely finalize the turn, and leave the session in a valid state that
+  can accept another turn.
+- `terminal_error` applies when BikeDoc cannot safely finalize the turn or
+  cannot establish a valid state from which the user can continue. Invalid
+  runtime configuration, missing or inconsistent accepted-turn records, and a
+  persistence failure that prevents error or turn-completion recording are
+  terminal for that execution, even if an operator could later repair the
+  underlying cause.
 
 Safety escalation is an orthogonal fact. A turn may raise a safety flag and
 then request input or save a report. The final `terminal_status` records whether
@@ -427,9 +490,17 @@ Level 2.
 
 ### 9.2 Session Completion Summary
 
-When a report is successfully completed, BikeDoc must emit one
-`diagnostic_session_completed` structured log and the two session histograms in
-Section 11.
+The execution that successfully creates and commits a report must make a
+best-effort emission of one `diagnostic_session_completed` structured log and
+the two session histograms in Section 11. An execution that merely observes an
+already-created report must not emit them again.
+
+This telemetry is normally emitted once but does not provide exactly-once
+delivery across process crashes. A crash after report commit may omit the
+summary, while failure recovery may produce duplicate exported telemetry. The
+durable report and product event records remain authoritative when exact
+reconstruction is required. Level 2 does not add a transactional outbox,
+telemetry delivery marker, or deduplication state.
 
 Required summary fields:
 
@@ -492,6 +563,9 @@ Every diagnostic lifecycle log must contain:
 `diagnostic_session_id` and `turn_index` are required after the phase-session
 row is loaded. An early setup failure may omit them.
 
+Other identifiers or metadata that could not be established during early setup
+must likewise be omitted from logs and spans rather than fabricated.
+
 ### 10.3 Required Events
 
 #### `diagnostic_turn_started`
@@ -517,7 +591,7 @@ Additional safe fields:
 #### `diagnostic_turn_completed`
 
 Level: `INFO` for normal outcomes, `WARNING` for `recoverable_error` or
-`assistant_response_only`, and `ERROR` for `terminal_error`.
+`no_terminal_action`, and `ERROR` for `terminal_error`.
 
 Emitted once for every background turn that reaches a terminal path.
 
@@ -553,7 +627,8 @@ Additional safe fields:
 
 Level: `INFO`
 
-Emitted once as defined in Section 9.2.
+Best-effort emission by the report-creating execution as defined in Section
+9.2.
 
 #### `diagnostic_report_validation_failed`
 
@@ -618,20 +693,44 @@ and is not part of Level 2.
 
 ## 11. Metrics Contract
 
-All metric instruments are created once per process. Histograms use SDK default
-bucket configuration initially; custom buckets are deferred until collected
-data shows a concrete need.
+All metric instruments are created once per process. Duration histograms record
+seconds, while log and span duration fields remain milliseconds. Histograms use
+these fixed explicit boundaries so expected values do not collapse into the SDK
+default overflow or broad count buckets:
+
+| Histogram family | Boundaries |
+|---|---|
+| Turn duration and time to first output, seconds | `0.1`, `0.25`, `0.5`, `1`, `2.5`, `5`, `10`, `20`, `30`, `60`, `120`, `300` |
+| Session elapsed, seconds | `1`, `5`, `15`, `30`, `60`, `120`, `300`, `600`, `1800`, `3600`, `14400`, `86400` |
+| Turn and report-item counts | `0`, `1`, `2`, `3`, `4`, `5`, `10`, `20` |
+
+Values above the highest boundary remain valid overflow observations. Changing
+these boundaries later is telemetry-backend tuning and does not change product
+behavior.
+
+Early setup failures must still record the applicable turn and error metrics.
+When a required metric dimension such as provider, model, prompt version,
+report-schema version, or image-analysis mode could not be established, the
+implementation uses the bounded value `unknown`. It must not invent an
+identifier or use `unknown` to normalize an unexpected outcome or other value
+whose contract is already bounded. The one exception is
+`terminal_status: unknown`, which is allowed only when `outcome` is
+`terminal_error` and the durable repair-session state could not be loaded. A
+loaded but unexpected terminal status remains an implementation error.
 
 ### 11.1 Turn Metrics
 
 | Instrument | Type | Unit | Required attributes |
 |---|---|---|---|
 | `bike_doc.diagnostic.turn.count` | Counter | `{turn}` | `outcome`, `terminal_status`, `provider`, `model`, `prompt_version`, `report_schema_version`, `image_analysis_mode` |
-| `bike_doc.diagnostic.turn.duration` | Histogram | `ms` | `outcome`, `provider`, `model`, `prompt_version`, `image_analysis_mode` |
-| `bike_doc.diagnostic.turn.time_to_first_output` | Histogram | `ms` | `provider`, `model`, `prompt_version`, `image_analysis_mode` |
+| `bike_doc.diagnostic.turn.duration` | Histogram | `s` | `outcome`, `provider`, `model`, `prompt_version`, `image_analysis_mode` |
+| `bike_doc.diagnostic.turn.time_to_first_output` | Histogram | `s` | `provider`, `model`, `prompt_version`, `image_analysis_mode` |
 
-The time-to-first-output histogram records the first normalized assistant delta
-or completed assistant message. Turns with no assistant output do not record a
+Time to first output is the monotonic elapsed time from the root turn span's
+start at background execution entry to the first normalized assistant delta or
+completed assistant message. This includes BikeDoc-controlled preparation
+before agent invocation; the agent and model child spans expose the internal
+agent portion separately. Turns with no assistant output do not record a
 sample.
 
 ### 11.2 Outcome Metrics
@@ -656,7 +755,7 @@ Allowed `item_type` values are `observed_finding`, `contributing_factor`, and
 | Instrument | Type | Unit | Required attributes |
 |---|---|---|---|
 | `bike_doc.diagnostic.session.turns_to_completion` | Histogram | `{turn}` | `completion_reason`, `report_schema_version` |
-| `bike_doc.diagnostic.session.elapsed` | Histogram | `ms` | `completion_reason`, `report_schema_version` |
+| `bike_doc.diagnostic.session.elapsed` | Histogram | `s` | `completion_reason`, `report_schema_version` |
 
 No session metric includes `repair_session_id`, `diagnostic_session_id`, or
 `turn_id`.
@@ -671,7 +770,21 @@ first rollout.
 Profile-inference telemetry runs after diagnostic processing and is not part of
 the diagnostic turn trace. It must not delay root-turn span completion.
 
-### 11.5 Metrics Interpretation
+### 11.5 ADK-Owned Metrics
+
+The installed ADK may emit its own OpenTelemetry metrics through the shared
+global meter provider, including agent or tool duration, workflow-step,
+request/response-size, and token-usage instruments. These third-party
+operational metrics may be exported alongside BikeDoc metrics, but their names
+and exact shape are not part of BikeDoc's stable telemetry contract.
+
+ADK-owned metrics must satisfy the same prohibition on content, user identity,
+app-owned IDs, and unbounded dimensions. Tests should verify that boundary
+without hard-coding every ADK metric name. Level 2 does not add a filtering
+layer for otherwise privacy-safe ADK metrics; filtering may be introduced later
+only for a demonstrated privacy, cardinality, or cost problem.
+
+### 11.6 Metrics Interpretation
 
 The following interpretations are forbidden:
 
@@ -711,11 +824,20 @@ span events, metrics, or exporter-error records:
 ADK and OpenTelemetry GenAI message-content capture must remain disabled.
 Level 2 must not add an application setting that enables it.
 
-The implementation must validate the installed ADK/OpenTelemetry version's
-content-capture configuration at integration time. If an environment variable
-or runtime hook requests message capture, a non-test process must fail startup
-with a configuration error rather than silently exporting private content.
-The spec defines the logical policy, not an unstable third-party literal value.
+Every diagnostic runner invocation must explicitly use ADK's code-owned
+no-content telemetry mode. The implementation must also validate the installed
+ADK/OpenTelemetry version's effective content-capture configuration at startup.
+If an environment variable, administrative override, runtime hook, or optional
+instrumentation package would override that mode or enable either legacy ADK
+span content or OpenTelemetry GenAI content capture, a non-test process must
+fail startup with a configuration error rather than silently exporting private
+content. The spec defines the logical policy, not an unstable third-party
+literal value.
+
+An integration test must pass recognizable sentinel content through both model
+and tool activity and assert that the sentinel is absent from every exported
+span attribute and telemetry log. Checking configuration values alone does not
+satisfy this privacy requirement.
 
 ### 12.3 Cardinality Rules
 
@@ -899,10 +1021,12 @@ behavior.
 
 ### 16.6 Session Summary Query
 
-`RepairTurnRepository` should add a count operation scoped by
-`repair_phase_session_id`. The completing report path uses that count and
-`RepairPhaseSession.created_at` to produce the session summary. A general
-analytics repository, materialized view, or telemetry table is not required.
+`RepairTurnRepository` should support counts scoped by
+`repair_phase_session_id`: a total count for the completing report's session
+summary and a count through the current turn's `start_event_sequence` for its
+stable `turn_index`. The completing report path combines the total count with
+`RepairPhaseSession.created_at`. A general analytics repository, materialized
+view, or telemetry table is not required.
 
 ## 17. Testing
 
@@ -916,6 +1040,8 @@ Tests must verify:
 - an endpoint is rejected when exporter is `none`
 - service name and diagnostic log level validation
 - unsafe GenAI content-capture configuration prevents startup
+- administrative or runtime overrides cannot defeat the runner's code-owned
+  no-content mode
 
 ### 17.2 Logging Tests
 
@@ -936,13 +1062,17 @@ Use an in-memory span exporter; do not require a network backend.
 
 Tests must verify:
 
-- one root span per background diagnostic turn
+- one root span per invocation of the background diagnostic execution path
 - required child-span parentage
 - app-owned IDs on spans and absence from resource attributes
+- opaque ADK correlation IDs remain confined to ADK-owned spans, and `user_id`
+  remains absent from all exported telemetry
 - input-request, report-completion, visual-blocked, error, and cancellation
   outcomes
 - recovered validation failures do not mark the root span failed
 - a runner failure records error status without exposing its private message
+- sentinel model content, tool arguments, and tool responses are absent from
+  every exported span attribute and telemetry log
 - assistant deltas do not create one span each
 - profile inference is not nested beneath the diagnostic turn
 
@@ -961,9 +1091,15 @@ Tests must verify:
 - duration and time-to-first-output measurements use a monotonic fake clock
 - session turn count and elapsed measurements
 - no IDs or arbitrary text appear in metric attributes
+- ADK-owned metrics contain no content, user identity, app-owned IDs, or
+  unbounded attributes without snapshotting their complete instrument set
 - validation stages and error codes reject unknown values or normalize them to
   `unknown`
-- one report and one session completion measurement per successful report
+- `terminal_status: unknown` is emitted only for a terminal setup failure that
+  could not load durable repair-session state
+- one report and one session completion measurement when the current execution
+  successfully creates a report, and none when it only observes an existing
+  report
 - no false `same_turn_completion_after_first_finding` measurement is emitted
 
 ### 17.5 Existing Verification
@@ -1031,14 +1167,16 @@ dashboards must not double-count both the legacy event and the new summary.
 
 ## 20. Acceptance Criteria
 
-- One diagnostic background turn produces one correlated root trace.
+- One diagnostic background execution attempt produces one correlated root
+  trace; retries for the same turn produce distinct traces sharing `turn_id`.
 - A multi-turn diagnostic phase session is inspectable by
   `diagnostic_session_id` without querying private content.
 - The trace shows visual context, seed context, agent execution, ADK model/tool
   activity, and finalization latency.
 - Every terminal turn emits exactly one structured completion summary.
-- A completed diagnostic session records accurate turn count and elapsed time
-  using existing persistence timestamps.
+- When diagnostic-session completion telemetry is emitted, it records accurate
+  turn count and elapsed time using existing persistence timestamps; durable
+  report and product event records remain authoritative.
 - Input requests, reports, validation failures, safety escalations, runner
   errors, turn durations, and session durations are available as bounded
   metrics.
