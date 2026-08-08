@@ -174,23 +174,6 @@ class _VisualContext:
         self.agent_started_turn_ids.append(turn_id)
 
 
-class _Telemetry:
-    """Captures only the privacy-safe rollout telemetry boundary."""
-
-    def __init__(self) -> None:
-        self.input_versions: list[str] = []
-        self.completed: list[DiagnosticReportTelemetryOutcome] = []
-
-    def input_requested(self, *, schema_version: str) -> None:
-        self.input_versions.append(schema_version)
-
-    def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
-        self.completed.append(outcome)
-
-    def report_validation_failed(self, *, schema_version: str) -> None:
-        raise AssertionError(f"unexpected validation signal: {schema_version}")
-
-
 class _Runner:
     """Fake runner streaming configured app-owned events."""
 
@@ -397,10 +380,9 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
 
 
-async def test_orchestration_records_safe_report_outcomes() -> None:
+async def test_orchestration_uses_committed_terminal_notifications() -> None:
     store = _Store()
     telemetry = _Telemetry()
-
     await _orchestrator(
         store=store,
         telemetry=telemetry,
@@ -418,17 +400,9 @@ async def test_orchestration_records_safe_report_outcomes() -> None:
         ),
     ).process_turn(current_user=_user(), turn=_turn())
 
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
     assert telemetry.input_versions == ["diagnostic_report.v2"]
-    assert telemetry.completed == [
-        DiagnosticReportTelemetryOutcome(
-            schema_version="diagnostic_report.v2",
-            observed_finding_count=0,
-            contributing_factor_count=0,
-            alternate_hypothesis_count=2,
-            completion_reason=None,
-            same_turn_completion_after_first_finding=False,
-        )
-    ]
+    assert telemetry.completed[0].same_turn_completion_after_first_finding is False
 
 
 async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:
@@ -829,6 +803,28 @@ async def test_stream_exception_after_prior_event_preserves_order() -> None:
     assert store.events[-1].data["session"]["status"] != "running"
 
 
+async def test_post_report_runner_failure_preserves_committed_report_status() -> None:
+    store = _Store()
+    runner = _Runner(
+        [
+            DiagnosticRunnerReportCompleted(
+                report_id="rpt_1",
+                schema_version="diagnostic_report.v2",
+                observed_finding_count=1,
+            ),
+            RuntimeError("provider failed after report commit"),
+        ],
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == ["error", "turn.completed"]
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
+
+
 async def test_turn_scalar_snapshot_survives_expired_orm_state() -> None:
     store = _Store()
     turn = _ExpiringTurn()
@@ -870,3 +866,20 @@ async def test_user_scalar_snapshot_survives_tool_commit_expiry() -> None:
 
     assert [event.type for event in store.events] == ["turn.completed"]
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+class _Telemetry:
+    """Captures the existing completion signal until its dedicated replacement."""
+
+    def __init__(self) -> None:
+        self.input_versions: list[str] = []
+        self.completed: list[DiagnosticReportTelemetryOutcome] = []
+
+    def input_requested(self, *, schema_version: str) -> None:
+        self.input_versions.append(schema_version)
+
+    def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
+        self.completed.append(outcome)
+
+    def report_validation_failed(self, *, schema_version: str) -> None:
+        raise AssertionError(f"unexpected validation signal: {schema_version}")

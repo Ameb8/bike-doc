@@ -26,6 +26,7 @@ from bike_doc_api.adk.tools.input_requests import RequestDiagnosticInputTool
 from bike_doc_api.adk.tools.repair_history import LookupRepairHistoryTool
 from bike_doc_api.adk.tools.reports import SaveDiagnosticReportTool
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool
+from bike_doc_api.adk.turn_telemetry_state import DiagnosticTurnTelemetryState
 from bike_doc_api.core.errors import NotFoundError, ServerError
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -142,6 +143,7 @@ class DiagnosticTurnOrchestrator:
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry,
     )
+    monotonic_clock: Callable[[], float] | None = None
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
 
@@ -155,6 +157,10 @@ class DiagnosticTurnOrchestrator:
 
         user_snapshot = _CurrentUserSnapshot.from_model(current_user)
         turn_snapshot = _AcceptedTurnSnapshot.from_model(turn)
+        telemetry_state = DiagnosticTurnTelemetryState(
+            clock=self.monotonic_clock,
+            artifact_count=len(turn_snapshot.artifact_ids),
+        )
         try:
             phase_session = await self.phase_sessions.get(
                 turn_snapshot.repair_phase_session_id,
@@ -165,6 +171,12 @@ class DiagnosticTurnOrchestrator:
             visual_context = await self.visual_context.prepare_turn(
                 user_id=user_snapshot.id,
                 turn_id=turn_snapshot.id,
+            )
+            telemetry_state.note_visual_context(
+                invoke_agent=visual_context.invoke_agent,
+                current_image_count=len(visual_context.current_images),
+                current_observation_count=len(visual_context.current_observations),
+                prior_observation_count=len(visual_context.prior_observations),
             )
 
             context = DiagnosticToolContext(
@@ -196,10 +208,9 @@ class DiagnosticTurnOrchestrator:
                     user_id=user_snapshot.id,
                     repair_session_id=turn_snapshot.repair_session_id,
                     turn_id=turn_snapshot.id,
-                    status=RepairSessionStatus.AWAITING_USER,
+                    status=telemetry_state.finalize().terminal_status,
                 )
                 return
-            processing_state = _TurnProcessingState()
             request = DiagnosticRunnerRequest(
                 user_id=user_snapshot.id,
                 user_skill_level=user_snapshot.skill_level,
@@ -223,23 +234,33 @@ class DiagnosticTurnOrchestrator:
             await self.visual_context.mark_diagnostic_agent_started(
                 turn_id=turn_snapshot.id,
             )
-            async for event in self.runner.stream(request):
-                await self._process_runner_event(
-                    context=context,
-                    turn=turn_snapshot,
-                    event=event,
-                    processing_state=processing_state,
-                )
+            telemetry_state.note_agent_started()
+            try:
+                async for event in self.runner.stream(request):
+                    await self._process_runner_event(
+                        context=context,
+                        turn=turn_snapshot,
+                        event=event,
+                        telemetry_state=telemetry_state,
+                    )
+            finally:
+                telemetry_state.note_agent_ended()
 
             await self._append_turn_completed(
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=processing_state.terminal_status,
+                status=telemetry_state.finalize().terminal_status,
             )
         except asyncio.CancelledError:
+            telemetry_state.note_cancelled()
+            telemetry_state.finalize()
             raise
         except Exception:
+            telemetry_state.note_error(
+                code="diagnostic_processing_error",
+                retryable=True,
+            )
             await self._append_recoverable_error(
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
@@ -251,7 +272,7 @@ class DiagnosticTurnOrchestrator:
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=RepairSessionStatus.AWAITING_USER,
+                status=telemetry_state.finalize().terminal_status,
             )
 
     async def _process_runner_event(
@@ -260,7 +281,7 @@ class DiagnosticTurnOrchestrator:
         context: DiagnosticToolContext,
         turn: _AcceptedTurnSnapshot,
         event: Any,
-        processing_state: _TurnProcessingState,
+        telemetry_state: DiagnosticTurnTelemetryState,
     ) -> None:
         """Map one app-owned runner event to public persistence/tool effects."""
 
@@ -271,6 +292,7 @@ class DiagnosticTurnOrchestrator:
                 event_type=RepairSessionEventType.ASSISTANT_DELTA,
                 data={"text": event.text},
             )
+            telemetry_state.note_assistant_delta()
             return
 
         if isinstance(event, DiagnosticRunnerAssistantMessageCompleted):
@@ -285,27 +307,39 @@ class DiagnosticTurnOrchestrator:
                     "display_safety_level": event.display_safety_level.value,
                 },
             )
+            telemetry_state.note_assistant_message()
             return
 
         if isinstance(event, DiagnosticRunnerInputRequested):
-            processing_state.note_input_requested()
+            telemetry_state.note_input_requested(
+                request_type=event.request_type,
+                required=event.required,
+            )
             self.telemetry.input_requested(
                 schema_version=context.diagnostic_report_schema_version,
             )
             return
 
         if isinstance(event, DiagnosticRunnerSafetyEscalated):
-            processing_state.note_safety_escalated(
+            telemetry_state.note_safety_escalated(
                 safety_state=event.safety_state,
-                safety_flags=event.safety_flags,
-                safety_flag=event.safety_flag,
+                blocks=_blocks_repair_guidance(
+                    safety_state=event.safety_state,
+                    safety_flags=(
+                        event.safety_flags
+                        if event.safety_flags
+                        else (event.safety_flag,)
+                    ),
+                ),
             )
             return
 
         if isinstance(event, DiagnosticRunnerReportCompleted):
-            processing_state.note_report_completed(
-                safety_state=event.safety_state,
-                safety_flags=event.safety_flags,
+            telemetry_state.note_report_completed(
+                observed_finding_count=event.observed_finding_count,
+                contributing_factor_count=event.contributing_factor_count,
+                alternate_hypothesis_count=event.alternate_hypothesis_count,
+                completion_reason=event.completion_reason,
             )
             self.telemetry.report_completed(
                 outcome=DiagnosticReportTelemetryOutcome(
@@ -314,11 +348,17 @@ class DiagnosticTurnOrchestrator:
                     contributing_factor_count=event.contributing_factor_count,
                     alternate_hypothesis_count=event.alternate_hypothesis_count,
                     completion_reason=event.completion_reason,
-                    same_turn_completion_after_first_finding=(
-                        event.observed_finding_count > 0
-                    ),
+                    # §9.3 prohibits inferring this from report composition.
+                    same_turn_completion_after_first_finding=False,
                 ),
             )
+            telemetry_state.note_safety_state(
+                safety_state=event.safety_state,
+                blocks=_blocks_repair_guidance(
+                    safety_state=event.safety_state,
+                    safety_flags=event.safety_flags,
+                ),
+            ) if event.safety_state is not None or event.safety_flags else None
             return
 
         if isinstance(event, DiagnosticRunnerArtifactReferenced):
@@ -338,7 +378,9 @@ class DiagnosticTurnOrchestrator:
                 message=event.message,
                 retryable=event.retryable,
             )
-            processing_state.note_error(retryable=event.retryable)
+            if event.code == "report_validation_failed":
+                telemetry_state.note_validation_failure(stage="unknown")
+            telemetry_state.note_error(code=event.code, retryable=event.retryable)
 
     async def _build_seed_context(
         self,
@@ -554,58 +596,6 @@ class _DiagnosticSeedContext:
     bike_profile: Mapping[str, Any] | None
     repair_history: tuple[Mapping[str, Any], ...]
     diagnostic_artifacts: tuple[Mapping[str, Any], ...]
-
-
-@dataclass(slots=True)
-class _TurnProcessingState:
-    """Track the terminal public status implied by streamed runner events."""
-
-    terminal_status: RepairSessionStatus = RepairSessionStatus.AWAITING_USER
-
-    def note_input_requested(self) -> None:
-        """Record that direct ADK tool execution requested more user input."""
-
-        self.terminal_status = RepairSessionStatus.AWAITING_USER
-
-    def note_safety_escalated(
-        self,
-        *,
-        safety_state: str | None,
-        safety_flags: tuple[Mapping[str, Any], ...],
-        safety_flag: Mapping[str, Any],
-    ) -> None:
-        """Record the status implied by an already-persisted safety update."""
-
-        flags: tuple[Mapping[str, Any], ...]
-        flags = safety_flags if safety_flags else (safety_flag,)
-        if _blocks_repair_guidance(safety_state=safety_state, safety_flags=flags):
-            self.terminal_status = RepairSessionStatus.BLOCKED_SAFETY
-
-    def note_report_completed(
-        self,
-        *,
-        safety_state: str | None,
-        safety_flags: tuple[Mapping[str, Any], ...],
-    ) -> None:
-        """Record the status implied by an already-persisted report."""
-
-        self.terminal_status = (
-            RepairSessionStatus.BLOCKED_SAFETY
-            if _blocks_repair_guidance(
-                safety_state=safety_state,
-                safety_flags=safety_flags,
-            )
-            else RepairSessionStatus.AWAITING_DECISION
-        )
-
-    def note_error(self, *, retryable: bool) -> None:
-        """Record the status implied by a handled recoverable runner error."""
-
-        self.terminal_status = (
-            RepairSessionStatus.AWAITING_USER
-            if retryable
-            else RepairSessionStatus.FAILED
-        )
 
 
 def _turn_message_text(turn: RepairTurnModel) -> str | None:

@@ -19,6 +19,7 @@ specifications linked below.
 | --- | --- | --- |
 | `background.py` | Process-independent background-task composition and safe setup failure handling | `execute_diagnostic_turn_background`, `_build_background_orchestrator` |
 | `orchestration.py` | Accepted-turn processing, seed-context assembly, and mapping normalized runner events to product events/status | `DiagnosticTurnOrchestrator` |
+| `turn_telemetry_state.py` | Process-local, privacy-safe accumulation and final precedence selection for one diagnostic turn | `DiagnosticTurnTelemetryState` |
 | `runner.py` | Google ADK `Runner` adaptation and raw-event normalization | `DiagnosticRunner`, `DiagnosticRunnerRequest`, `DiagnosticRunnerEvent` |
 | `sessions.py` | Mapping app-owned phase sessions to opaque ADK sessions | `DiagnosticPhaseSessionManager`, `DiagnosticADKSessionClient` |
 | `agents/` | Phase-specific agent construction and versioned prompt loading | `create_diagnostic_agent`, `create_planning_agent` |
@@ -134,6 +135,19 @@ Recoverable errors are appended as public error events and finish in a safe,
 retryable awaiting-user state. A cancellation is re-raised. Unexpected
 orchestration failure follows the same safe error/completion path where
 possible; there is no automatic whole-turn retry.
+
+`DiagnosticTurnTelemetryState` is owned by one invocation of
+`DiagnosticTurnOrchestrator`. It consumes only normalized runner-event facts
+and visual-context counts, uses an injectable monotonic clock, and produces an
+immutable bounded final snapshot. It does not emit new logs, spans, or metrics;
+those signal adapters consume the finalized state in later telemetry slices.
+Existing report-rollout telemetry remains an adjacent compatibility adapter.
+Report and input-request notifications are treated as durable terminal actions
+because they are emitted only after their service-backed tool transactions
+succeed. At finalization, a report outranks an input request,
+which outranks visual blocking, cancellation, terminal/recoverable errors, and
+normal runner exhaustion. A later failure therefore cannot erase a committed
+product outcome.
 
 Background setup failure follows a similar rule. It restores a verified,
 owned repair session out of `running`, writes a retryable
