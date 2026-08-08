@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
 import structlog
+from opentelemetry import metrics
+from opentelemetry.util.types import AttributeValue
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +57,21 @@ _SAFE_VALUES = {
     "outcome": frozenset({"started", "completed", "failed", "retried"}),
     "failure_class": frozenset({"provider", "validation", "privacy", "artifact"}),
     "validation_kind": frozenset({"schema", "artifact_reference", "privacy"}),
+}
+
+# Keep the established image names while routing measurements through the
+# process-global provider shared with diagnostic and ADK telemetry.
+_METER = metrics.get_meter(__name__)
+_METRICS = {
+    "observation_extraction_attempts": _METER.create_counter(
+        "observation_extraction_attempts", unit="{attempt}"
+    ),
+    "observation_extraction_failures": _METER.create_counter(
+        "observation_extraction_failures", unit="{failure}"
+    ),
+    "observation_extraction_observations": _METER.create_counter(
+        "observation_extraction_observations", unit="{observation}"
+    ),
 }
 
 
@@ -116,11 +134,19 @@ class LoggingObservationExtractionTelemetry:
         value: int | float = 1,
         dimensions: Mapping[str, object] | None = None,
     ) -> None:
+        safe_dimensions = _safe(dimensions or {})
+        instrument = _METRICS.get(name)
+        if instrument is not None:
+            with suppress(Exception):
+                instrument.add(
+                    value,
+                    cast(dict[str, AttributeValue], safe_dimensions),
+                )
         logger.info(
             "observation_extraction_metric",
             metric_name=name,
             metric_value=value,
-            dimensions=_safe(dimensions or {}),
+            dimensions=safe_dimensions,
         )
 
 

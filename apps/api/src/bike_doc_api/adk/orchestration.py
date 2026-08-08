@@ -415,6 +415,14 @@ class DiagnosticTurnOrchestrator:
                         else (event.safety_flag,)
                     ),
                 ),
+                safety_flags=tuple(
+                    dict(flag)
+                    for flag in (
+                        event.safety_flags
+                        if event.safety_flags
+                        else (event.safety_flag,)
+                    )
+                ),
             )
             return
 

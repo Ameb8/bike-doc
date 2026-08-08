@@ -77,6 +77,10 @@ from bike_doc_api.schemas.event import RepairSessionEventType
 from bike_doc_api.schemas.repair_session import repair_session_from_model
 from bike_doc_api.services.artifacts import ArtifactService
 from bike_doc_api.services.bikes import ResolvedBikeProfileService
+from bike_doc_api.services.diagnostic_completion_telemetry import (
+    DiagnosticMetricDimensions,
+    default_diagnostic_completion_telemetry,
+)
 from bike_doc_api.services.diagnostic_visual_context import (
     DiagnosticVisualContextService,
     RepairTurnRepositoryProtocol,
@@ -352,6 +356,7 @@ async def _execute_diagnostic_turn_attempt(
             return
         if snapshot is not None:
             _apply_snapshot(span, snapshot)
+            _record_attempt_metrics(snapshot=snapshot, fields=loaded_fields)
             _emit_completed(logger, snapshot=snapshot, fields=loaded_fields)
         return
 
@@ -422,6 +427,23 @@ def _apply_snapshot(
         span.set_status(
             Status(StatusCode.ERROR, snapshot.error_code or snapshot.outcome)
         )
+
+
+def _record_attempt_metrics(
+    *, snapshot: DiagnosticTurnTelemetrySnapshot, fields: dict[str, object]
+) -> None:
+    """Keep metric export outside product state transitions and content boundaries."""
+
+    default_diagnostic_completion_telemetry().turn_completed(
+        snapshot=snapshot,
+        dimensions=DiagnosticMetricDimensions(
+            provider=str(fields.get("provider", "unknown")),
+            model=str(fields.get("model", "unknown")),
+            prompt_version=str(fields.get("prompt_version", "unknown")),
+            report_schema_version=str(fields.get("report_schema_version", "unknown")),
+            image_analysis_mode=str(fields.get("image_analysis_mode", "unknown")),
+        ),
+    )
 
 
 def _emit_completed(

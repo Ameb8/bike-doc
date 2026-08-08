@@ -93,6 +93,8 @@ class DiagnosticSafetyTelemetry:
     escalated: bool
     escalation_count: int
     safety_state: SafetyState | None
+    flag_codes: tuple[str, ...]
+    severities: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -163,6 +165,8 @@ class DiagnosticTurnTelemetryState:
         self._safety_escalated = False
         self._safety_escalation_count = 0
         self._safety_state: SafetyState | None = None
+        self._safety_flag_codes: list[str] = []
+        self._safety_severities: list[str] = []
         self._report: DiagnosticReportTelemetry | None = None
         self._validation_stages: list[ValidationStage] = []
         self._error: tuple[BoundedErrorCode, bool] | None = None
@@ -229,9 +233,20 @@ class DiagnosticTurnTelemetryState:
             ),
         )
 
-    def note_safety_escalated(self, *, safety_state: str | None, blocks: bool) -> None:
+    def note_safety_escalated(
+        self,
+        *,
+        safety_state: str | None,
+        blocks: bool,
+        safety_flags: tuple[dict[str, object], ...] = (),
+    ) -> None:
         self._safety_escalated = True
         self._safety_escalation_count += 1
+        for flag in safety_flags:
+            code, severity = flag.get("code"), flag.get("severity")
+            if isinstance(code, str) and isinstance(severity, str):
+                self._safety_flag_codes.append(code)
+                self._safety_severities.append(severity)
         self.note_safety_state(safety_state=safety_state, blocks=blocks)
 
     def note_safety_state(self, *, safety_state: str | None, blocks: bool) -> None:
@@ -308,6 +323,8 @@ class DiagnosticTurnTelemetryState:
                 self._safety_escalated,
                 self._safety_escalation_count,
                 self._safety_state,
+                tuple(self._safety_flag_codes),
+                tuple(self._safety_severities),
             ),
             report=self._report
             or DiagnosticReportTelemetry(False, None, None, None, None),
