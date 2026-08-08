@@ -5,12 +5,20 @@ from __future__ import annotations
 import inspect
 from importlib.metadata import version
 
+import pytest
 from google.adk.agents import Agent
 from google.adk.events import Event
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.telemetry.context import ContentCapturingMode, TelemetryConfig
 from google.adk.tools import FunctionTool
 from google.genai import types
+
+from bike_doc_api.adk.telemetry import (
+    DiagnosticTelemetryConfigurationError,
+    validate_diagnostic_telemetry_runtime_configuration,
+)
+from bike_doc_api.core.config import Settings
 
 
 def _compat_tool(query: str) -> dict[str, str]:
@@ -36,6 +44,7 @@ def test_adk_import_paths_and_constructor_signatures_are_compatible() -> None:
     assert {"user_id", "session_id", "new_message", "state_delta"}.issubset(
         _parameter_names(Runner.run_async),
     )
+    assert "run_config" in _parameter_names(Runner.run_async)
     assert "func" in _parameter_names(FunctionTool)
 
     tool = FunctionTool(_compat_tool)
@@ -53,6 +62,72 @@ def test_adk_import_paths_and_constructor_signatures_are_compatible() -> None:
 
     assert agent.tools == [tool]
     assert runner.run_async is not None
+
+
+def test_pinned_adk_no_content_telemetry_suppresses_spans_and_logs() -> None:
+    telemetry = TelemetryConfig(capture_message_content=ContentCapturingMode.NO_CONTENT)
+
+    assert telemetry.content_capturing_mode_value == ""
+    assert telemetry.should_add_content_to_legacy_spans is False
+    assert telemetry.should_add_content_to_logs is False
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_fragment"),
+    [
+        ({"ADK_TELEMETRY_IGNORE_RUN_CONFIG": "true"}, "IGNORE_RUN_CONFIG"),
+        (
+            {"OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "SPAN_ONLY"},
+            "CAPTURE_MESSAGE_CONTENT",
+        ),
+        (
+            {"ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS": "true"},
+            "CAPTURE_MESSAGE_CONTENT_IN_SPANS",
+        ),
+    ],
+)
+def test_non_test_startup_rejects_adk_content_capture_overrides(
+    environment: dict[str, str], expected_fragment: str
+) -> None:
+    with pytest.raises(DiagnosticTelemetryConfigurationError, match=expected_fragment):
+        validate_diagnostic_telemetry_runtime_configuration(
+            Settings(environment="local"),
+            environ=environment,
+            find_spec=lambda _name: None,
+        )
+
+
+def test_non_test_startup_rejects_optional_genai_instrumentation() -> None:
+    with pytest.raises(
+        DiagnosticTelemetryConfigurationError,
+        match=r"opentelemetry\.instrumentation\.google_genai",
+    ):
+        validate_diagnostic_telemetry_runtime_configuration(
+            Settings(environment="local"),
+            environ={},
+            find_spec=lambda _name: object(),
+        )
+
+
+def test_non_test_startup_rejects_a_model_runtime_hook() -> None:
+    def hooked_generate_content() -> None:
+        return None
+
+    with pytest.raises(DiagnosticTelemetryConfigurationError, match="runtime hook"):
+        validate_diagnostic_telemetry_runtime_configuration(
+            Settings(environment="local"),
+            environ={},
+            find_spec=lambda _name: None,
+            generate_content=hooked_generate_content,
+        )
+
+
+def test_test_startup_allows_controlled_instrumentation_for_export_assertions() -> None:
+    validate_diagnostic_telemetry_runtime_configuration(
+        Settings(environment="test"),
+        environ={"ADK_TELEMETRY_IGNORE_RUN_CONFIG": "true"},
+        find_spec=lambda _name: object(),
+    )
 
 
 async def test_in_memory_session_service_create_get_and_delete_api() -> None:

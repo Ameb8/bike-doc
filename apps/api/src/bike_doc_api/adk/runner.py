@@ -19,6 +19,7 @@ from bike_doc_api.adk.sessions import (
     StaleInMemoryADKSessionError,
     ensure_adk_session_available,
 )
+from bike_doc_api.adk.telemetry import diagnostic_no_content_run_config
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
 from bike_doc_api.schemas.observation_extraction import (
@@ -319,6 +320,7 @@ class DiagnosticRunner:
             session_id=request.adk_session_id,
             new_message=_content_from_request(request),
             state_delta=_state_delta_from_request(request),
+            run_config=diagnostic_no_content_run_config(),
         )
         coalescer = _TextDeltaCoalescer(
             clock=self._clock,

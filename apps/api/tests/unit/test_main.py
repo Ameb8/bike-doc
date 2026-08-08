@@ -58,6 +58,25 @@ def test_create_app_validates_artifact_storage_at_startup(
     assert called["settings"] is settings
 
 
+def test_create_app_rejects_unsafe_adk_telemetry_before_startup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        environment="production",
+        auth_mode="firebase",
+        firebase_project_id="bike-doc-prod",
+    )
+
+    monkeypatch.setattr(
+        main,
+        "validate_diagnostic_telemetry_runtime_configuration",
+        lambda _settings: (_ for _ in ()).throw(ValueError("unsafe ADK telemetry")),
+    )
+
+    with pytest.raises(ValueError, match="unsafe ADK telemetry"):
+        create_app(settings)
+
+
 @pytest.mark.asyncio
 async def test_lifespan_starts_telemetry_and_shuts_it_down() -> None:
     events: list[str] = []

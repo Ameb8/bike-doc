@@ -7,6 +7,9 @@ import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from bike_doc_api.adk.telemetry import (
+    validate_diagnostic_telemetry_runtime_configuration,
+)
 from bike_doc_api.api.middleware import install_request_logging
 from bike_doc_api.api.router import router as api_router
 from bike_doc_api.core.config import (
@@ -43,6 +46,7 @@ def create_app(
     """Create the FastAPI application shell."""
     settings = settings or get_settings()
     validate_artifact_storage_runtime_configuration(settings)
+    validate_diagnostic_telemetry_runtime_configuration(settings)
     configure_logging(
         environment=settings.environment,
         log_level=settings.log_level,
