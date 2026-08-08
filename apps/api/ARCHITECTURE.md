@@ -60,8 +60,9 @@ for ADK code to depend on FastAPI transport concerns.
 ### Main entry points
 
 - [`main.py`](src/bike_doc_api/main.py) creates the FastAPI application,
-  validates artifact-storage configuration, configures logging, installs error
-  handlers, CORS, and the `/v1` router.
+  validates artifact-storage configuration, configures logging, installs
+  request-correlation/access logging middleware and error handlers, CORS, and
+  the `/v1` router.
 - [`api/router.py`](src/bike_doc_api/api/router.py) assembles versioned public
   route modules. `api/v1/` is the place to add a public endpoint group.
 - [`api/deps.py`](src/bike_doc_api/api/deps.py) supplies request-scoped database

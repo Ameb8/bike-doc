@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import logging
 from collections.abc import Awaitable, Callable
 from pathlib import PurePosixPath
 from typing import Protocol
+
+import structlog
 
 from bike_doc_api.core.errors import (
     IdempotencyConflictError,
@@ -37,7 +38,7 @@ from bike_doc_api.schemas.common import (
     ArtifactStatus,
 )
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class UploadFileProtocol(Protocol):
@@ -272,7 +273,7 @@ class ArtifactService:
             )
         except Exception as exc:
             await self._rollback_if_configured()
-            logger.exception("Artifact storage provider failed")
+            logger.exception("artifact_storage_provider_failed")
             raise ServerError() from exc
 
     async def _rollback_if_configured(self) -> None:
@@ -374,10 +375,8 @@ def _log_orphaned_object(stored_object: StoredObject) -> None:
     """Log provider-neutral object metadata for later cleanup."""
 
     logger.error(
-        "Artifact metadata persistence failed after provider storage",
-        extra={
-            "storage_provider": stored_object.provider,
-            "storage_bucket": stored_object.bucket,
-            "storage_path": stored_object.path,
-        },
+        "artifact_metadata_persistence_failed_after_provider_storage",
+        storage_provider=stored_object.provider,
+        storage_bucket=stored_object.bucket,
+        storage_path=stored_object.path,
     )

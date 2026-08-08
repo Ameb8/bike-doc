@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
+import structlog
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -57,7 +57,7 @@ from bike_doc_api.services.safety import SafetyService
 DEFAULT_REPORT_LIMIT = 50
 MAX_REPORT_LIMIT = 100
 DIAGNOSTIC_SCHEMA_VERSION = "diagnostic_report.v2"
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,13 +542,10 @@ class ReportService:
                 requirements,
             )
         except Exception:
-            logger.info(
+            logger.exception(
                 "diagnostic_report_cost_estimate_degraded",
-                extra={
-                    "diagnostic_session_id": report.diagnostic_session_id,
-                    "requirement_count": len(requirements),
-                },
-                exc_info=True,
+                diagnostic_session_id=report.diagnostic_session_id,
+                requirement_count=len(requirements),
             )
             return report
         report_data = report.model_dump(mode="python")

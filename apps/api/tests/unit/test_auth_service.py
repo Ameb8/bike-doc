@@ -203,7 +203,8 @@ def test_firebase_token_verification_logs_safe_failure_diagnostics(
         verify_firebase_bearer_token(token, settings=settings)
 
     assert "firebase_token_verification_failed" in caplog.text
-    assert "error_type=ValueError" in caplog.text
+    assert "error_type" in caplog.text
+    assert "ValueError" in caplog.text
     assert "rider@example.com" not in caplog.text
     assert token not in caplog.text
 

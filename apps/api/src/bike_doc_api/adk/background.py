@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import UTC, datetime
 from typing import cast
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.adk.agents.diagnostic import create_diagnostic_agent
@@ -91,7 +91,7 @@ from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportSer
 from bike_doc_api.services.safety import DiagnosticSafetyService
 from bike_doc_api.services.turns import TurnService
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class _UnavailableProfileInferenceExtractor:
@@ -181,11 +181,9 @@ async def execute_diagnostic_turn_background(
         except Exception:
             logger.exception(
                 "diagnostic_background_turn_failed",
-                extra={
-                    "user_id": user_id,
-                    "repair_session_id": repair_session_id,
-                    "turn_id": turn_id,
-                },
+                user_id=user_id,
+                repair_session_id=repair_session_id,
+                turn_id=turn_id,
             )
             await _handle_background_setup_failure(
                 session=session,
@@ -209,13 +207,11 @@ async def execute_profile_inference_background(turn_id: str) -> None:
             outcome = await service.process_submitted_profile_evidence(turn_id)
             logger.info(
                 "profile_inference_background_finished",
-                extra={
-                    "status": outcome.status.value,
-                    "claim_count": outcome.claim_count,
-                    "policy_mode": outcome.policy_mode,
-                    "schema_version": "bike_profile_inference.v1",
-                    "extractor_version": settings.profile_inference_extractor_version,
-                },
+                status=outcome.status.value,
+                claim_count=outcome.claim_count,
+                policy_mode=outcome.policy_mode,
+                schema_version="bike_profile_inference.v1",
+                extractor_version=settings.profile_inference_extractor_version,
             )
         except asyncio.CancelledError:
             raise

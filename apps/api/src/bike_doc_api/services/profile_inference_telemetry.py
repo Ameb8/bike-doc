@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 SAFE_FAILURE_CLASSES = frozenset({"provider", "artifact", "validation", "transaction"})
 SAFE_OUTCOMES = frozenset(
@@ -89,10 +90,7 @@ class LoggingProfileInferenceTelemetry:
     """Emit the same safe records through the application's log pipeline."""
 
     def event(self, name: str, *, fields: Mapping[str, object] | None = None) -> None:
-        logger.info(
-            name,
-            extra={"profile_inference_fields": _safe_fields(fields or {})},
-        )
+        logger.info(name, **_safe_fields(fields or {}))
 
     def metric(
         self,
@@ -103,11 +101,9 @@ class LoggingProfileInferenceTelemetry:
     ) -> None:
         logger.info(
             "profile_inference_metric",
-            extra={
-                "profile_inference_metric_name": name,
-                "profile_inference_metric_value": value,
-                "profile_inference_metric_dimensions": _safe_fields(dimensions or {}),
-            },
+            metric_name=name,
+            metric_value=value,
+            dimensions=_safe_fields(dimensions or {}),
         )
 
 

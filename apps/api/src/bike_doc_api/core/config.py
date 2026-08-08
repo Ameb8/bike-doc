@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Literal
 
 import google.auth
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 ImageAnalysisMode = Literal["off", "pixels_only", "shadow", "enabled"]
 DiagnosticReportVersion = Literal["diagnostic_report.v2"]
@@ -95,6 +96,7 @@ class Settings(BaseSettings):
     firebase_project_id: str | None = None
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
+    diagnostic_log_level: str = "INFO"
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_gcs_bucket: str | None = None
@@ -213,6 +215,19 @@ class Settings(BaseSettings):
             if log_level in logging.getLevelNamesMapping():
                 return log_level
         raise ValueError("log_level must be a valid stdlib logging level name")
+
+    @field_validator("diagnostic_log_level", mode="before")
+    @classmethod
+    def validate_diagnostic_log_level(cls, value: object) -> str:
+        """Normalize the diagnostic-only stdlib logging level name."""
+
+        if isinstance(value, str):
+            log_level = value.strip().upper()
+            if log_level in logging.getLevelNamesMapping():
+                return log_level
+        raise ValueError(
+            "diagnostic_log_level must be a valid stdlib logging level name"
+        )
 
     @field_validator("log_format", mode="before")
     @classmethod
@@ -573,11 +588,9 @@ def validate_artifact_storage_runtime_configuration(
         storage.Client(project=effective_project, credentials=credentials)
     except Exception as exc:
         logger.exception(
-            "failed to initialize GCS artifact storage client",
-            extra={
-                "bucket_name": settings.artifact_gcs_bucket,
-                "project_id": effective_project,
-            },
+            "gcs_artifact_storage_client_initialization_failed",
+            bucket_name=settings.artifact_gcs_bucket,
+            project_id=effective_project,
         )
         raise ValueError(
             "gcs artifact storage could not initialize the storage client; verify "

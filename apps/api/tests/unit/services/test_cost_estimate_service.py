@@ -177,7 +177,7 @@ async def test_estimate_plan_cost_logs_lookup_flow(caplog: Any) -> None:
         [_requirement("part", "Shimano HG54 10-speed chain")],
     )
 
-    events = [record.msg for record in caplog.records]
+    events = [record.msg["event"] for record in caplog.records]
     assert "plan_cost_estimate_started" in events
     assert "plan_cost_item_lookup_started" in events
     assert "plan_cost_item_lookup_completed" in events
@@ -186,10 +186,10 @@ async def test_estimate_plan_cost_logs_lookup_flow(caplog: Any) -> None:
     completed = next(
         record
         for record in caplog.records
-        if record.msg == "plan_cost_item_lookup_completed"
+        if record.msg["event"] == "plan_cost_item_lookup_completed"
     )
-    assert completed.requirement_name == "Shimano HG54 10-speed chain"
-    assert completed.status == "priced_listing_found"
+    assert completed.msg["requirement_name"] == "Shimano HG54 10-speed chain"
+    assert completed.msg["status"] == "priced_listing_found"
 
 
 async def test_estimate_plan_cost_logs_degraded_lookup(caplog: Any) -> None:
@@ -207,10 +207,10 @@ async def test_estimate_plan_cost_logs_degraded_lookup(caplog: Any) -> None:
     degraded = next(
         record
         for record in caplog.records
-        if record.msg == "plan_cost_item_lookup_degraded"
+        if record.msg["event"] == "plan_cost_item_lookup_degraded"
     )
-    assert degraded.requirement_name == "Cassette lockring tool"
-    assert degraded.search_query == "Cassette lockring tool"
+    assert degraded.msg["requirement_name"] == "Cassette lockring tool"
+    assert degraded.msg["search_query"] == "Cassette lockring tool"
 
 
 def _requirement(item_type: str, name: str, **overrides: Any) -> PriceLookupRequirement:

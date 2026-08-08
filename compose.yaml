@@ -13,6 +13,7 @@ services:
       - --port
       - ${BIKE_DOC_API_PORT}
       - --reload
+      - --no-access-log
       - --reload-dir
       - /workspace/apps/api/src
       - --reload-dir
@@ -27,6 +28,7 @@ services:
       BIKE_DOC_API_FIREBASE_PROJECT_ID: ${BIKE_DOC_API_FIREBASE_PROJECT_ID}
       BIKE_DOC_API_LOG_LEVEL: ${BIKE_DOC_API_LOG_LEVEL}
       BIKE_DOC_API_LOG_FORMAT: ${BIKE_DOC_API_LOG_FORMAT}
+      BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL: ${BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL}
     ports:
       - "${BIKE_DOC_API_PORT}:${BIKE_DOC_API_PORT}"
     volumes:

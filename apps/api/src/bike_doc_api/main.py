@@ -1,12 +1,13 @@
 """FastAPI application entrypoint."""
 
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from bike_doc_api.api.middleware import install_request_logging
 from bike_doc_api.api.router import router as api_router
 from bike_doc_api.core.config import (
     Settings,
@@ -16,7 +17,7 @@ from bike_doc_api.core.config import (
 from bike_doc_api.core.errors import install_exception_handlers
 from bike_doc_api.core.logging import configure_logging
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -33,10 +34,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         environment=settings.environment,
         log_level=settings.log_level,
         log_format=settings.log_format,
+        diagnostic_log_level=settings.diagnostic_log_level,
     )
     logger.info(
-        "diagnostic_report_version_configured version=%s",
-        settings.diagnostic_report_version,
+        "diagnostic_report_version_configured",
+        version=settings.diagnostic_report_version,
     )
 
     app = FastAPI(
@@ -54,6 +56,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    install_request_logging(app)
     install_exception_handlers(app)
     app.include_router(api_router)
     return app

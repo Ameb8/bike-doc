@@ -7,11 +7,12 @@ representable at this boundary.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 DiagnosticReportSchemaVersion = Literal["diagnostic_report.v1", "diagnostic_report.v2"]
 
@@ -47,34 +48,26 @@ class LoggingDiagnosticCompletionTelemetry:
     """Emit the approved dimensions using stable structured event names."""
 
     def input_requested(self, *, schema_version: DiagnosticReportSchemaVersion) -> None:
-        logger.info(
-            "diagnostic_turn_input_requested",
-            extra={"diagnostic_completion": {"schema_version": schema_version}},
-        )
+        logger.info("diagnostic_turn_input_requested", schema_version=schema_version)
 
     def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
         logger.info(
             "diagnostic_report_completed",
-            extra={
-                "diagnostic_completion": {
-                    "schema_version": outcome.schema_version,
-                    "observed_finding_count": outcome.observed_finding_count,
-                    "contributing_factor_count": outcome.contributing_factor_count,
-                    "alternate_hypothesis_count": outcome.alternate_hypothesis_count,
-                    "completion_reason": outcome.completion_reason,
-                    "same_turn_completion_after_first_finding": (
-                        outcome.same_turn_completion_after_first_finding
-                    ),
-                }
-            },
+            schema_version=outcome.schema_version,
+            observed_finding_count=outcome.observed_finding_count,
+            contributing_factor_count=outcome.contributing_factor_count,
+            alternate_hypothesis_count=outcome.alternate_hypothesis_count,
+            completion_reason=outcome.completion_reason,
+            same_turn_completion_after_first_finding=(
+                outcome.same_turn_completion_after_first_finding
+            ),
         )
 
     def report_validation_failed(
         self, *, schema_version: DiagnosticReportSchemaVersion
     ) -> None:
         logger.info(
-            "diagnostic_report_validation_failed",
-            extra={"diagnostic_completion": {"schema_version": schema_version}},
+            "diagnostic_report_validation_failed", schema_version=schema_version
         )
 
 

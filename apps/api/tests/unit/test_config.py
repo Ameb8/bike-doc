@@ -53,6 +53,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_FIREBASE_PROJECT_ID", "bike-doc-dev")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL", "debug")
     monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER", "gcs")
     monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_GCS_BUCKET", "bike-doc-artifacts")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER", "google_ai")
@@ -86,6 +87,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.firebase_project_id == "bike-doc-dev"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
+    assert settings.diagnostic_log_level == "DEBUG"
     assert settings.artifact_storage_provider == "gcs"
     assert settings.artifact_gcs_bucket == "bike-doc-artifacts"
     assert settings.diagnostic_llm_provider == "google_ai"
@@ -131,6 +133,15 @@ def test_image_analysis_mode_rejects_unknown_modes() -> None:
 
 def test_invalid_log_level_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "verbose")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_invalid_diagnostic_log_level_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL", "verbose")
 
     with pytest.raises(ValidationError):
         Settings()
@@ -324,7 +335,7 @@ def test_gcs_artifact_runtime_validation_logs_client_initialization_failure(
     with pytest.raises(ValueError, match="could not initialize the storage client"):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
-    assert "failed to initialize GCS artifact storage client" in caplog.text
+    assert "gcs_artifact_storage_client_initialization_failed" in caplog.text
     assert "denied:client-init" in caplog.text
 
 

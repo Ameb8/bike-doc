@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 _EVENTS = frozenset(
     {
@@ -106,7 +107,7 @@ class RecordingObservationExtractionTelemetry:
 class LoggingObservationExtractionTelemetry:
     def event(self, name: str, *, fields: Mapping[str, object] | None = None) -> None:
         if name in _EVENTS:
-            logger.info(name, extra={"observation_extraction": _safe(fields or {})})
+            logger.info(name, **_safe(fields or {}))
 
     def metric(
         self,
@@ -117,11 +118,9 @@ class LoggingObservationExtractionTelemetry:
     ) -> None:
         logger.info(
             "observation_extraction_metric",
-            extra={
-                "observation_extraction_metric_name": name,
-                "observation_extraction_metric_value": value,
-                "observation_extraction_metric_dimensions": _safe(dimensions or {}),
-            },
+            metric_name=name,
+            metric_value=value,
+            dimensions=_safe(dimensions or {}),
         )
 
 

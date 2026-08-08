@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+import structlog
 from google.adk.sessions import InMemorySessionService
 from sqlalchemy.exc import IntegrityError
 
@@ -17,7 +17,7 @@ from bike_doc_api.models.repair_session import (
 )
 from bike_doc_api.schemas.common import RepairSessionPhase
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 DIAGNOSTIC_ADK_APP_NAME = "bike_doc_diagnostic"
 DIAGNOSTIC_ADK_USER_ID = "backend_system"
