@@ -403,6 +403,68 @@ async def test_real_adk_export_contains_no_diagnostic_content(
     provider.shutdown()
 
 
+async def test_real_adk_model_and_tool_spans_descend_from_agent_run_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shared provider preserves app-to-ADK nesting without provider I/O."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing, "tracer", provider.get_tracer("shared-provider"))
+
+    def sentinel_tool(argument: str) -> dict[str, str]:
+        assert argument == "TOOL_ARGUMENT_SENTINEL"
+        return {"result": "TOOL_RESPONSE_SENTINEL"}
+
+    service = InMemorySessionService()
+    await _seed_session(service)
+    agent = Agent(
+        name="diagnostic_agent",
+        model=_SentinelModel(model="provider-free"),
+        instruction="PROMPT_SENTINEL",
+        tools=[FunctionTool(sentinel_tool)],
+    )
+    with provider.get_tracer("shared-provider").start_as_current_span(
+        "bike_doc.diagnostic.agent.run"
+    ) as agent_run:
+        await _collect(
+            DiagnosticRunner(
+                agent=agent,
+                session_service=service,
+                sleep=_sleep_never,
+            )
+        )
+
+    spans = exporter.get_finished_spans()
+    descendants = [
+        span
+        for span in spans
+        if span.name != "bike_doc.diagnostic.agent.run"
+        and _is_descendant_of(span.context.span_id, agent_run.context.span_id, spans)
+    ]
+    # Names and attributes remain owned by ADK; a real model-and-tool run must
+    # nevertheless contribute more than its app-owned parent span.
+    assert len(descendants) >= 2
+    provider.shutdown()
+
+
+def _is_descendant_of(span_id: int, ancestor_id: int, spans: list[Any]) -> bool:
+    """Follow exported parent IDs without coupling to ADK span names."""
+
+    parents = {
+        span.context.span_id: span.parent.span_id
+        for span in spans
+        if span.parent is not None
+    }
+    current = parents.get(span_id)
+    while current is not None:
+        if current == ancestor_id:
+            return True
+        current = parents.get(current)
+    return False
+
+
 async def test_adk_stream_yields_delta_before_later_final_response() -> None:
     service = InMemorySessionService()
     await _seed_session(service)

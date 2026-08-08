@@ -156,6 +156,13 @@ the current turn's durable `start_event_sequence` for the stable one-based
 `turn_index`. These counts never include non-turn events or another phase
 session, and the existing phase-session `created_at` remains the elapsed-time
 baseline.
+
+Within the active background root, orchestration owns content-free child
+boundaries for visual preparation, server seed-context assembly (and its three
+lookups), runner streaming, and terminal finalization. The runner stream runs
+while the agent boundary is current so ADK model and tool spans inherit it from
+the shared global provider. Assistant deltas remain durable product events and
+accumulator counters, not tracing boundaries.
 Existing report-rollout telemetry remains an adjacent compatibility adapter.
 Report and input-request notifications are treated as durable terminal actions
 because they are emitted only after their service-backed tool transactions

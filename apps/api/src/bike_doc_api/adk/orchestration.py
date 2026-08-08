@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
+
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from bike_doc_api.adk.runner import (
     DiagnosticRunnerArtifactReferenced,
@@ -140,6 +144,9 @@ class DiagnosticVisualContextServiceProtocol(Protocol):
     async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
         """Close any extraction lifecycle immediately before runner invocation."""
 
+    def telemetry_attributes(self) -> Mapping[str, str]:
+        """Return approved visual extractor and preprocessing versions."""
+
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticTurnOrchestrator:
@@ -187,7 +194,7 @@ class DiagnosticTurnOrchestrator:
             if phase_session is None:
                 raise NotFoundError()
 
-            visual_context = await self.visual_context.prepare_turn(
+            visual_context = await self._prepare_visual_context(
                 user_id=user_snapshot.id,
                 turn_id=turn_snapshot.id,
             )
@@ -223,13 +230,12 @@ class DiagnosticTurnOrchestrator:
                 visual_context=visual_context,
             )
             if not visual_context.invoke_agent:
-                await self._append_turn_completed(
+                return await self._finalize_turn(
+                    telemetry_state=telemetry_state,
                     user_id=user_snapshot.id,
                     repair_session_id=turn_snapshot.repair_session_id,
                     turn_id=turn_snapshot.id,
-                    status=telemetry_state.finalize().terminal_status,
                 )
-                return telemetry_state.finalize()
             request = DiagnosticRunnerRequest(
                 user_id=user_snapshot.id,
                 user_skill_level=user_snapshot.skill_level,
@@ -255,23 +261,29 @@ class DiagnosticTurnOrchestrator:
             )
             telemetry_state.note_agent_started()
             try:
-                async for event in self.runner.stream(request):
-                    await self._process_runner_event(
-                        context=context,
-                        turn=turn_snapshot,
-                        event=event,
-                        telemetry_state=telemetry_state,
-                    )
+                with _start_span("bike_doc.diagnostic.agent.run") as span:
+                    try:
+                        async for event in self.runner.stream(request):
+                            await self._process_runner_event(
+                                context=context,
+                                turn=turn_snapshot,
+                                event=event,
+                                telemetry_state=telemetry_state,
+                            )
+                    except Exception:
+                        span.set_status(
+                            Status(StatusCode.ERROR, "runner_stream_failed")
+                        )
+                        raise
             finally:
                 telemetry_state.note_agent_ended()
 
-            await self._append_turn_completed(
+            return await self._finalize_turn(
+                telemetry_state=telemetry_state,
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=telemetry_state.finalize().terminal_status,
             )
-            return telemetry_state.finalize()
         except asyncio.CancelledError:
             telemetry_state.note_cancelled()
             telemetry_state.finalize()
@@ -288,13 +300,64 @@ class DiagnosticTurnOrchestrator:
                 message="Diagnostic processing could not be completed.",
                 retryable=True,
             )
-            await self._append_turn_completed(
+            return await self._finalize_turn(
+                telemetry_state=telemetry_state,
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=telemetry_state.finalize().terminal_status,
             )
-            return telemetry_state.finalize()
+
+    async def _prepare_visual_context(
+        self, *, user_id: str, turn_id: str
+    ) -> DiagnosticVisualContext:
+        """Prepare visual evidence inside its content-free trace boundary."""
+
+        with _start_span("bike_doc.diagnostic.visual_context.prepare") as span:
+            try:
+                visual_context = await self.visual_context.prepare_turn(
+                    user_id=user_id, turn_id=turn_id
+                )
+            except Exception:
+                span.set_status(Status(StatusCode.ERROR, "visual_context_failed"))
+                raise
+            span.set_attributes(_visual_span_attributes(visual_context))
+            telemetry_attributes = getattr(
+                self.visual_context, "telemetry_attributes", None
+            )
+            if callable(telemetry_attributes):
+                span.set_attributes(dict(telemetry_attributes()))
+            return visual_context
+
+    async def _finalize_turn(
+        self,
+        *,
+        telemetry_state: DiagnosticTurnTelemetryState,
+        user_id: str,
+        repair_session_id: str,
+        turn_id: str,
+    ) -> DiagnosticTurnTelemetrySnapshot:
+        """Derive and persist terminal state under one app-owned span."""
+
+        with _start_span("bike_doc.diagnostic.turn.finalize") as span:
+            snapshot = telemetry_state.finalize()
+            span.set_attributes(
+                {
+                    "bike_doc.turn.outcome": snapshot.outcome,
+                    "bike_doc.turn.terminal_status": snapshot.terminal_status.value,
+                    "bike_doc.terminal_action_count": snapshot.terminal_action_count,
+                }
+            )
+            try:
+                await self._append_turn_completed(
+                    user_id=user_id,
+                    repair_session_id=repair_session_id,
+                    turn_id=turn_id,
+                    status=snapshot.terminal_status,
+                )
+            except Exception:
+                span.set_status(Status(StatusCode.ERROR, "turn_completion_failed"))
+                raise
+            return snapshot
 
     async def _process_runner_event(
         self,
@@ -415,32 +478,43 @@ class DiagnosticTurnOrchestrator:
         repair_history: tuple[Mapping[str, Any], ...] = ()
         diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
 
-        bike_profile_result = await self.get_bike_profile.run(
-            {"repair_session_id": turn.repair_session_id},
-            context,
-        )
+        with _start_span("bike_doc.diagnostic.seed_context.build"):
+            bike_profile_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.get_bike_profile",
+                self.get_bike_profile.run(
+                    {"repair_session_id": turn.repair_session_id}, context
+                ),
+                item_key="bike_profile",
+            )
+            history_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.lookup_repair_history",
+                self.lookup_repair_history.run(
+                    {
+                        "repair_session_id": turn.repair_session_id,
+                        "component_terms": [],
+                        "limit": 5,
+                    },
+                    context,
+                ),
+                item_key="entries",
+            )
+            artifacts_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.list_artifacts",
+                self.list_diagnostic_artifacts.run(
+                    {"repair_session_id": turn.repair_session_id}, context
+                ),
+                item_key="artifacts",
+            )
         if bike_profile_result.get("ok") is True:
             data = cast(Mapping[str, Any], bike_profile_result.get("data", {}))
             profile = data.get("bike_profile")
             if isinstance(profile, Mapping):
                 bike_profile = profile
 
-        history_result = await self.lookup_repair_history.run(
-            {
-                "repair_session_id": turn.repair_session_id,
-                "component_terms": [],
-                "limit": 5,
-            },
-            context,
-        )
         if history_result.get("ok") is True:
             data = cast(Mapping[str, Any], history_result.get("data", {}))
             repair_history = _mapping_items(data.get("entries"))
 
-        artifacts_result = await self.list_diagnostic_artifacts.run(
-            {"repair_session_id": turn.repair_session_id},
-            context,
-        )
         if artifacts_result.get("ok") is True:
             data = cast(Mapping[str, Any], artifacts_result.get("data", {}))
             diagnostic_artifacts = _mapping_items(data.get("artifacts"))
@@ -450,6 +524,30 @@ class DiagnosticTurnOrchestrator:
             repair_history=repair_history,
             diagnostic_artifacts=diagnostic_artifacts,
         )
+
+    async def _run_seed_lookup(
+        self,
+        name: str,
+        operation: Awaitable[dict[str, Any]],
+        *,
+        item_key: str,
+    ) -> dict[str, Any]:
+        """Trace one bounded seed result without retaining its payload."""
+
+        with _start_span(name) as span:
+            try:
+                result = await operation
+            except Exception:
+                span.set_attributes(
+                    {
+                        "bike_doc.seed.success": False,
+                        "bike_doc.seed.error_code": "unknown",
+                    }
+                )
+                span.set_status(Status(StatusCode.ERROR, "seed_lookup_failed"))
+                raise
+            span.set_attributes(_seed_span_attributes(result, item_key=item_key))
+            return result
 
     async def _emit_turn_artifact_references(
         self,
@@ -682,3 +780,58 @@ def _visual_error_message(code: str) -> str:
         "image_normalization_failed": "Image could not be normalized.",
         "image_analysis_unavailable": "Image analysis is unavailable for this turn.",
     }.get(code, "Image processing could not be completed.")
+
+
+def _start_span(name: str) -> AbstractContextManager[trace.Span]:
+    """Resolve the process-global tracer at use time for ADK provider sharing."""
+
+    return trace.get_tracer(__name__).start_as_current_span(name)
+
+
+def _visual_span_attributes(context: DiagnosticVisualContext) -> dict[str, bool | int]:
+    """Return only aggregate visual-preparation facts for a span."""
+
+    statuses = [status.status for status in context.artifact_processing_statuses]
+    return {
+        "bike_doc.visual.invoke_agent": context.invoke_agent,
+        "bike_doc.visual.current_image_count": len(context.current_images),
+        "bike_doc.visual.current_observation_count": len(context.current_observations),
+        "bike_doc.visual.prior_observation_count": len(context.prior_observations),
+        "bike_doc.visual.status_usable_count": statuses.count("available"),
+        "bike_doc.visual.status_limited_count": 0,
+        "bike_doc.visual.status_unusable_count": statuses.count("unavailable"),
+        "bike_doc.visual.recoverable_error_count": len(context.recoverable_errors),
+    }
+
+
+_SEED_ERROR_CODES = frozenset(
+    {
+        "not_found",
+        "invalid_phase",
+        "stale_session",
+        "validation_error",
+        "artifact_not_found",
+        "unknown",
+    }
+)
+
+
+def _seed_span_attributes(
+    result: Mapping[str, Any], *, item_key: str
+) -> dict[str, bool | int | str]:
+    """Summarize a tool result without attaching its response payload."""
+
+    success = result.get("ok") is True
+    attributes: dict[str, bool | int | str] = {"bike_doc.seed.success": success}
+    if success:
+        data = result.get("data")
+        value = data.get(item_key) if isinstance(data, Mapping) else None
+        count = len(value) if isinstance(value, list) else int(value is not None)
+        attributes["bike_doc.seed.returned_item_count"] = count
+    else:
+        error = result.get("error")
+        code = error.get("code") if isinstance(error, Mapping) else None
+        attributes["bike_doc.seed.error_code"] = (
+            code if code in _SEED_ERROR_CODES else "unknown"
+        )
+    return attributes

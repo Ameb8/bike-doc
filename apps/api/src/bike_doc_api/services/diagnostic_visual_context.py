@@ -219,6 +219,21 @@ class DiagnosticVisualContextService:
         self._preprocess = preprocess
         self._telemetry = telemetry or default_observation_extraction_telemetry()
 
+    def telemetry_attributes(self) -> dict[str, str]:
+        """Expose only approved implementation versions to orchestration spans."""
+
+        return {
+            "bike_doc.visual.extractor.provider": getattr(
+                self._extractor, "provider", "unavailable"
+            ),
+            "bike_doc.visual.extractor.model": getattr(
+                self._extractor, "model", "unavailable"
+            ),
+            "bike_doc.visual.extractor.version": self._extractor_version,
+            "bike_doc.visual.prompt.version": self._prompt_version,
+            "bike_doc.visual.preprocessing.version": PREPROCESSING_VERSION,
+        }
+
     async def prepare_turn(
         self,
         *,

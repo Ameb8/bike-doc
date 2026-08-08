@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Mapping
 from copy import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
 from bike_doc_api.adk.runner import (
@@ -361,6 +368,144 @@ def _orchestrator(
         visual_context=visual_context or _VisualContext(),
         telemetry=telemetry or _Telemetry(),
     )
+
+
+def _span_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[InMemorySpanExporter, TracerProvider]:
+    """Install an isolated provider at the orchestration tracing seam."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(
+        "bike_doc_api.adk.orchestration.trace.get_tracer",
+        lambda _name: provider.get_tracer("orchestration-test"),
+    )
+    return exporter, provider
+
+
+async def test_orchestration_emits_required_ordered_child_span_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    runner = _Runner([DiagnosticRunnerAssistantDelta("ASSISTANT_SENTINEL")])
+
+    with provider.get_tracer("orchestration-test").start_as_current_span(
+        "bike_doc.diagnostic.turn"
+    ):
+        await _orchestrator(store=_Store(), runner=runner).process_turn(
+            current_user=_user(), turn=_turn()
+        )
+
+    spans = exporter.get_finished_spans()
+    by_name = {span.name: span for span in spans}
+    root = by_name["bike_doc.diagnostic.turn"]
+    expected = {
+        "bike_doc.diagnostic.visual_context.prepare",
+        "bike_doc.diagnostic.seed_context.build",
+        "bike_doc.diagnostic.agent.run",
+        "bike_doc.diagnostic.turn.finalize",
+    }
+    assert expected <= by_name.keys()
+    assert all(
+        by_name[name].parent is not None
+        and by_name[name].parent.span_id == root.context.span_id
+        for name in expected
+    )
+    for name in (
+        "bike_doc.diagnostic.seed.get_bike_profile",
+        "bike_doc.diagnostic.seed.lookup_repair_history",
+        "bike_doc.diagnostic.seed.list_artifacts",
+    ):
+        assert by_name[name].parent is not None
+        assert (
+            by_name[name].parent.span_id
+            == by_name["bike_doc.diagnostic.seed_context.build"].context.span_id
+        )
+        assert set(by_name[name].attributes) <= {
+            "bike_doc.seed.success",
+            "bike_doc.seed.returned_item_count",
+            "bike_doc.seed.error_code",
+        }
+    assert [span.name for span in spans if span.name.startswith("bike_doc.")] == [
+        "bike_doc.diagnostic.visual_context.prepare",
+        "bike_doc.diagnostic.seed.get_bike_profile",
+        "bike_doc.diagnostic.seed.lookup_repair_history",
+        "bike_doc.diagnostic.seed.list_artifacts",
+        "bike_doc.diagnostic.seed_context.build",
+        "bike_doc.diagnostic.agent.run",
+        "bike_doc.diagnostic.turn.finalize",
+        "bike_doc.diagnostic.turn",
+    ]
+    assert "ASSISTANT_SENTINEL" not in str(
+        [(span.attributes, span.events) for span in spans]
+    )
+    provider.shutdown()
+
+
+async def test_visual_blocked_turn_has_no_agent_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    visual_context = _VisualContext(DiagnosticVisualContext(False, (), (), (), (), ()))
+
+    with provider.get_tracer("orchestration-test").start_as_current_span(
+        "bike_doc.diagnostic.turn"
+    ):
+        await _orchestrator(
+            store=_Store(), runner=_Runner(), visual_context=visual_context
+        ).process_turn(current_user=_user(), turn=_turn(text=None, artifact_ids=[]))
+
+    names = [span.name for span in exporter.get_finished_spans()]
+    assert "bike_doc.diagnostic.agent.run" not in names
+    assert "bike_doc.diagnostic.turn.finalize" in names
+    provider.shutdown()
+
+
+async def test_runner_failure_and_cancellation_close_agent_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    tracer = provider.get_tracer("orchestration-test")
+
+    with tracer.start_as_current_span("bike_doc.diagnostic.turn"):
+        await _orchestrator(store=_Store(), runner=_Runner(raises=True)).process_turn(
+            current_user=_user(), turn=_turn()
+        )
+
+    failed_agent = next(
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "bike_doc.diagnostic.agent.run"
+    )
+    assert failed_agent.status.status_code is StatusCode.ERROR
+    assert any(
+        span.name == "bike_doc.diagnostic.turn.finalize"
+        for span in exporter.get_finished_spans()
+    )
+
+    exporter.clear()
+    with (
+        tracer.start_as_current_span("bike_doc.diagnostic.turn"),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _orchestrator(
+            store=_Store(),
+            runner=_Runner([asyncio.CancelledError()]),
+        ).process_turn(current_user=_user(), turn=_turn())
+
+    cancelled_agent = next(
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "bike_doc.diagnostic.agent.run"
+    )
+    assert cancelled_agent.status.status_code is StatusCode.UNSET
+    assert all(
+        span.name != "bike_doc.diagnostic.turn.finalize"
+        for span in exporter.get_finished_spans()
+    )
+    provider.shutdown()
 
 
 async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
