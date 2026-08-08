@@ -7,6 +7,7 @@ from functools import lru_cache
 from math import isfinite
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 import google.auth
 import structlog
@@ -97,6 +98,11 @@ class Settings(BaseSettings):
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
     diagnostic_log_level: str = "INFO"
+    telemetry_exporter: Literal["none", "otlp"] = "none"
+    telemetry_otlp_endpoint: str | None = None
+    telemetry_service_name: str = Field(
+        default="bike-doc-api", min_length=1, max_length=255
+    )
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_gcs_bucket: str | None = None
@@ -228,6 +234,35 @@ class Settings(BaseSettings):
         raise ValueError(
             "diagnostic_log_level must be a valid stdlib logging level name"
         )
+
+    @field_validator("telemetry_exporter", mode="before")
+    @classmethod
+    def validate_telemetry_exporter(cls, value: object) -> object:
+        """Normalize the process telemetry exporter selection."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("telemetry_otlp_endpoint")
+    @classmethod
+    def validate_telemetry_otlp_endpoint(cls, value: str | None) -> str | None:
+        """Normalize an OTLP HTTP base endpoint before cross-field validation."""
+
+        if value is None:
+            return None
+        endpoint = value.strip()
+        return endpoint or None
+
+    @field_validator("telemetry_service_name")
+    @classmethod
+    def validate_telemetry_service_name(cls, value: str) -> str:
+        """Reject blank service names while preserving the configured identifier."""
+
+        service_name = value.strip()
+        if not service_name:
+            raise ValueError("telemetry_service_name must not be blank")
+        return service_name
 
     @field_validator("log_format", mode="before")
     @classmethod
@@ -394,6 +429,39 @@ class Settings(BaseSettings):
             raise ValueError(
                 "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
             )
+        if self.telemetry_exporter == "none":
+            if self.telemetry_otlp_endpoint is not None:
+                raise ValueError(
+                    "telemetry_otlp_endpoint is forbidden when telemetry_exporter=none"
+                )
+        else:
+            endpoint = self.telemetry_otlp_endpoint
+            if endpoint is None:
+                raise ValueError(
+                    "telemetry_otlp_endpoint is required when telemetry_exporter=otlp"
+                )
+            parsed = urlparse(endpoint)
+            try:
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError(
+                    "telemetry_otlp_endpoint must contain a valid port"
+                ) from exc
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.hostname is None
+                or port == 0
+                or any(character.isspace() for character in endpoint)
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "telemetry_otlp_endpoint must be an absolute HTTP(S) URL without "
+                    "user information, query, or fragment"
+                )
         if self.profile_inference_resolver_policy is not None:
             legacy_mode = {
                 "production": "evaluated",

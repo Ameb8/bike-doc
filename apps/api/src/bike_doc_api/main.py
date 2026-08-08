@@ -1,6 +1,6 @@
 """FastAPI application entrypoint."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 import structlog
@@ -16,17 +16,30 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.core.errors import install_exception_handlers
 from bike_doc_api.core.logging import configure_logging
+from bike_doc_api.core.telemetry import TelemetryRuntime, initialize_telemetry
 
 logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan hook reserved for shared resources."""
-    yield
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start telemetry before routes can schedule background work."""
+
+    runtime = app.state.telemetry_initializer(app.state.settings)
+    app.state.telemetry_runtime = runtime
+    try:
+        yield
+    finally:
+        await runtime.shutdown()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    telemetry_initializer: Callable[
+        [Settings], TelemetryRuntime
+    ] = initialize_telemetry,
+) -> FastAPI:
     """Create the FastAPI application shell."""
     settings = settings or get_settings()
     validate_artifact_storage_runtime_configuration(settings)
@@ -47,6 +60,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+    app.state.settings = settings
+    app.state.telemetry_initializer = telemetry_initializer
     app.dependency_overrides[get_settings] = lambda: settings
     if settings.cors_origins:
         app.add_middleware(

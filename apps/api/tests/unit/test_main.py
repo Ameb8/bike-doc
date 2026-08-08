@@ -8,6 +8,14 @@ from bike_doc_api.core.config import Settings
 from bike_doc_api.main import create_app
 
 
+class RecordingTelemetryRuntime:
+    def __init__(self, events: list[str]) -> None:
+        self._events = events
+
+    async def shutdown(self) -> None:
+        self._events.append("shutdown")
+
+
 def test_create_app_uses_baseline_settings() -> None:
     settings = Settings(
         app_name="Configured API",
@@ -48,3 +56,33 @@ def test_create_app_validates_artifact_storage_at_startup(
     create_app(settings)
 
     assert called["settings"] is settings
+
+
+@pytest.mark.asyncio
+async def test_lifespan_starts_telemetry_and_shuts_it_down() -> None:
+    events: list[str] = []
+
+    def initialize(_settings: Settings) -> RecordingTelemetryRuntime:
+        events.append("start")
+        return RecordingTelemetryRuntime(events)
+
+    app = create_app(Settings(environment="test"), telemetry_initializer=initialize)
+
+    async with app.router.lifespan_context(app):
+        assert events == ["start"]
+
+    assert events == ["start", "shutdown"]
+
+
+@pytest.mark.asyncio
+async def test_lifespan_fails_startup_when_enabled_telemetry_cannot_initialize() -> (
+    None
+):
+    def initialize(_settings: Settings) -> RecordingTelemetryRuntime:
+        raise RuntimeError("telemetry configuration failed")
+
+    app = create_app(Settings(environment="test"), telemetry_initializer=initialize)
+
+    with pytest.raises(RuntimeError, match="telemetry configuration failed"):
+        async with app.router.lifespan_context(app):
+            pass

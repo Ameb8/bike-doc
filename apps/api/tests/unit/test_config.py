@@ -147,6 +147,58 @@ def test_invalid_diagnostic_log_level_is_rejected(
         Settings()
 
 
+def test_telemetry_defaults_to_disabled_without_an_endpoint() -> None:
+    settings = Settings()
+
+    assert settings.telemetry_exporter == "none"
+    assert settings.telemetry_otlp_endpoint is None
+    assert settings.telemetry_service_name == "bike-doc-api"
+
+
+def test_otlp_telemetry_settings_are_normalized() -> None:
+    settings = Settings(
+        telemetry_exporter=" OTLP ",
+        telemetry_otlp_endpoint=" https://collector.example/otlp/ ",
+        telemetry_service_name=" bike-doc-test ",
+    )
+
+    assert settings.telemetry_exporter == "otlp"
+    assert settings.telemetry_otlp_endpoint == "https://collector.example/otlp/"
+    assert settings.telemetry_service_name == "bike-doc-test"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "collector.example",
+        "ftp://collector.example",
+        "https://user@collector.example",
+        "https://collector.example?token=secret",
+        "https://collector.example#fragment",
+    ],
+)
+def test_otlp_telemetry_rejects_unsafe_endpoints(endpoint: str) -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint"):
+        Settings(telemetry_exporter="otlp", telemetry_otlp_endpoint=endpoint)
+
+
+def test_otlp_telemetry_requires_an_endpoint() -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint is required"):
+        Settings(telemetry_exporter="otlp")
+
+
+def test_disabled_telemetry_forbids_an_endpoint() -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint is forbidden"):
+        Settings(telemetry_otlp_endpoint="https://collector.example")
+
+
+def test_telemetry_service_name_must_not_be_blank_or_unbounded() -> None:
+    with pytest.raises(ValidationError, match="telemetry_service_name"):
+        Settings(telemetry_service_name=" ")
+    with pytest.raises(ValidationError, match="telemetry_service_name"):
+        Settings(telemetry_service_name="x" * 256)
+
+
 def test_blank_diagnostic_agent_model_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -525,6 +577,9 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
         "BIKE_DOC_API_ARTIFACT_GCS_BUCKET",
         "GOOGLE_APPLICATION_CREDENTIALS",
         "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
+        "BIKE_DOC_API_TELEMETRY_EXPORTER",
+        "BIKE_DOC_API_TELEMETRY_OTLP_ENDPOINT",
+        "BIKE_DOC_API_TELEMETRY_SERVICE_NAME",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS",

@@ -29,7 +29,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 
 | Area | Owns | Main entry points |
 | --- | --- | --- |
-| `main.py`, `core/` | App construction, settings, logging, security primitives, and the public error envelope | `create_app`, `Settings`, `install_exception_handlers` |
+| `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
@@ -255,7 +255,13 @@ Do not import an agent from a route or use an ADK object in `schemas/`.
 ### `core/`
 
 `core/config.py` centralizes typed `BIKE_DOC_API_` settings and runtime
-validation for auth, artifact storage, and model/provider credentials.
+validation for auth, artifact storage, model/provider credentials, and the
+shared OTLP telemetry endpoint. `core/telemetry.py` is the only owner of
+process-level OpenTelemetry providers, OTLP HTTP exporters, processors/readers,
+and their bounded shutdown. The FastAPI lifespan starts that runtime before
+routes can schedule background work and performs best-effort shutdown on exit.
+In disabled mode it leaves the OpenTelemetry global providers untouched; in
+enabled mode its one provider pair is shared with both BikeDoc and ADK.
 `security.py` validates dev, local-fixture, or Firebase bearer identities;
 production settings permit Firebase only. `errors.py` is the sole public error
 mapping point, while `logging.py` configures process logging. Configuration
