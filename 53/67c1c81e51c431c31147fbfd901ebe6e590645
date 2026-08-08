@@ -1,0 +1,39 @@
+docs/specs/apps/diagnostic-telemetry.md
+  s_555141de69a9aa::t_a5fbb1af4ee94a 57-64,179-180,185-186,1065,1170-1171
+  s_555141de69a9aa::t_22f9bab3da9355 454-467
+  s_555141de69a9aa::t_a10f8b4e55a6ab 83,405-408,427,445,594
+  s_555141de69a9aa::t_42e342082c2373 773
+  s_555141de69a9aa::t_2f350a4b660bf1 775-787
+  s_555141de69a9aa::t_37952606d46f6b 402-404
+  s_555141de69a9aa::t_3ec28611c208e4 696-709,726-727,758
+  s_555141de69a9aa::t_77ea5a6d6a900b 1094-1095
+  s_555141de69a9aa::t_8a404de55ecc1c 195-196,211-218,1068-1069
+  s_555141de69a9aa::t_b5ef7f062ce144 228-234,1024-1029
+  s_555141de69a9aa::t_298a8b0f0c046d 412-416,430-444,446-452
+  s_555141de69a9aa::t_1653b174de13d9 566-568,710-714
+  s_555141de69a9aa::t_43f688b4830ab4 827-840,1043-1044,1074-1075
+  s_555141de69a9aa::t_ef6a4ee8f2f96c 715-719,1098-1099
+  s_555141de69a9aa::t_6bd9b0e31e9524 493-503,630-631,1100-1102,1177-1179
+  s_555141de69a9aa::t_0dc6bd1740e5fa 729-733
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "5367c1c81e51c431c31147fbfd901ebe6e590645",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_555141de69a9aa": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fda17-e2fb-72a2-ac9e-7f11f599a988",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
