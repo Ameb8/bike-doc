@@ -111,6 +111,101 @@ async def _create_user_bike_session(
     return user, bike, repair_session
 
 
+async def test_phase_session_turn_counts_exclude_other_sessions_and_events(
+    db_session: AsyncSession,
+) -> None:
+    """Count accepted turns by phase session and stable event-sequence ordinal."""
+    _, _, repair_session = await _create_user_bike_session(db_session)
+    phase_sessions = RepairPhaseSessionRepository(db_session)
+    diagnostic_phase_session = await phase_sessions.add(
+        RepairPhaseSession(
+            repair_session_id=repair_session.id,
+            phase="diagnostic",
+            adk_session_id="adk-diagnostic-counts",
+        ),
+    )
+    planning_phase_session = await phase_sessions.add(
+        RepairPhaseSession(
+            repair_session_id=repair_session.id,
+            phase="planning",
+            adk_session_id="adk-planning-counts",
+        ),
+    )
+    turns = RepairTurnRepository(db_session)
+    first_turn = await turns.add(
+        RepairTurn(
+            repair_session_id=repair_session.id,
+            repair_phase_session_id=diagnostic_phase_session.id,
+            client_turn_id="diagnostic-first",
+            request_hash="hash-diagnostic-first",
+            phase="diagnostic",
+            message={"artifact_ids": [], "text": "First diagnostic turn."},
+            start_event_sequence=1,
+        ),
+    )
+    await RepairSessionEventRepository(db_session).append_for_session(
+        repair_session_id=repair_session.id,
+        turn_id=first_turn.id,
+        event_type="turn.started",
+        data={"turn_id": first_turn.id, "phase": "diagnostic"},
+    )
+    await RepairSessionEventRepository(db_session).append_for_session(
+        repair_session_id=repair_session.id,
+        event_type="assistant.delta",
+        data={"message_id": "msg_count", "delta": "Need more detail."},
+    )
+    assert await turns.count_for_phase_session(diagnostic_phase_session.id) == 1
+    await turns.add(
+        RepairTurn(
+            repair_session_id=repair_session.id,
+            repair_phase_session_id=planning_phase_session.id,
+            client_turn_id="planning-turn",
+            request_hash="hash-planning-turn",
+            phase="planning",
+            message={"artifact_ids": [], "text": "Plan it."},
+            start_event_sequence=4,
+        ),
+    )
+    later_diagnostic_turn = await turns.add(
+        RepairTurn(
+            repair_session_id=repair_session.id,
+            repair_phase_session_id=diagnostic_phase_session.id,
+            client_turn_id="diagnostic-later",
+            request_hash="hash-diagnostic-later",
+            phase="diagnostic",
+            message={"artifact_ids": [], "text": "Second diagnostic turn."},
+            start_event_sequence=5,
+        ),
+    )
+    await db_session.flush()
+
+    assert (
+        await turns.count_for_phase_session(diagnostic_phase_session.id)
+        == 2
+    )
+    first_turn_index = (
+        await turns.count_for_phase_session_through_start_event_sequence(
+            repair_phase_session_id=diagnostic_phase_session.id,
+            start_event_sequence=first_turn.start_event_sequence,
+        )
+    )
+    retried_first_turn_index = (
+        await turns.count_for_phase_session_through_start_event_sequence(
+            repair_phase_session_id=diagnostic_phase_session.id,
+            start_event_sequence=first_turn.start_event_sequence,
+        )
+    )
+    assert first_turn_index == 1
+    assert retried_first_turn_index == 1
+    assert (
+        await turns.count_for_phase_session_through_start_event_sequence(
+            repair_phase_session_id=diagnostic_phase_session.id,
+            start_event_sequence=later_diagnostic_turn.start_event_sequence,
+        )
+        == 2
+    )
+
+
 async def test_repositories_create_get_and_list_full_diagnostic_graph(
     db_session: AsyncSession,
 ) -> None:

@@ -95,6 +95,22 @@ class _Store:
             return self.phase_session
         return None
 
+    async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
+        return 1 if repair_phase_session_id == self.phase_session.id else 0
+
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        if (
+            repair_phase_session_id == self.phase_session.id
+            and start_event_sequence >= 1
+        ):
+            return 1
+        return 0
+
     async def get_owned_for_update(
         self,
         *,
@@ -238,6 +254,11 @@ class _ExpiringTurn:
         self._raise_if_expired()
         return "phs_orch"
 
+    @property
+    def start_event_sequence(self) -> int:
+        self._raise_if_expired()
+        return 1
+
     def _raise_if_expired(self) -> None:
         if self.expired:
             raise RuntimeError("expired ORM attribute refresh attempted")
@@ -319,6 +340,7 @@ def _orchestrator(
     calls: list[dict[str, Any]] = []
     return DiagnosticTurnOrchestrator(
         phase_sessions=store,
+        turns=store,
         repair_sessions=store,
         events=store,
         artifacts=store,

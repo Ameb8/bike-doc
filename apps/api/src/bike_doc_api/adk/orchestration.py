@@ -60,6 +60,21 @@ class RepairPhaseSessionRepositoryProtocol(Protocol):
         """Return a phase session by app-owned ID."""
 
 
+class RepairTurnRepositoryProtocol(Protocol):
+    """Accepted-turn counts required by diagnostic telemetry."""
+
+    async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
+        """Return the total accepted turn count for one phase session."""
+
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        """Return the stable phase-session turn ordinal through an event sequence."""
+
+
 class RepairSessionRepositoryProtocol(Protocol):
     """Repair-session persistence required for terminal turn events."""
 
@@ -128,6 +143,7 @@ class DiagnosticTurnOrchestrator:
     """Connect accepted diagnostic turns to the internal ADK boundary."""
 
     phase_sessions: RepairPhaseSessionRepositoryProtocol
+    turns: RepairTurnRepositoryProtocol
     repair_sessions: RepairSessionRepositoryProtocol
     events: RepairSessionEventRepositoryProtocol
     artifacts: ArtifactRepositoryProtocol
@@ -573,6 +589,7 @@ class _AcceptedTurnSnapshot:
     id: str
     repair_session_id: str
     repair_phase_session_id: str
+    start_event_sequence: int
     message_text: str | None
     artifact_ids: tuple[str, ...]
 
@@ -584,6 +601,7 @@ class _AcceptedTurnSnapshot:
             id=turn.id,
             repair_session_id=turn.repair_session_id,
             repair_phase_session_id=turn.repair_phase_session_id,
+            start_event_sequence=turn.start_event_sequence,
             message_text=_turn_message_text(turn),
             artifact_ids=_turn_artifact_ids(turn),
         )

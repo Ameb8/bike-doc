@@ -350,6 +350,7 @@ def _build_background_orchestrator(
     )
     return DiagnosticTurnOrchestrator(
         phase_sessions=phase_sessions,
+        turns=RepairTurnRepository(session),
         repair_sessions=repair_sessions,
         events=events,
         artifacts=artifacts,

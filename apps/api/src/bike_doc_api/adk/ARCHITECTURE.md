@@ -141,6 +141,12 @@ possible; there is no automatic whole-turn retry.
 and visual-context counts, uses an injectable monotonic clock, and produces an
 immutable bounded final snapshot. It does not emit new logs, spans, or metrics;
 those signal adapters consume the finalized state in later telemetry slices.
+For those adapters, orchestration receives the narrow accepted-turn repository
+count seam: a phase-session total for completion summaries and a count through
+the current turn's durable `start_event_sequence` for the stable one-based
+`turn_index`. These counts never include non-turn events or another phase
+session, and the existing phase-session `created_at` remains the elapsed-time
+baseline.
 Existing report-rollout telemetry remains an adjacent compatibility adapter.
 Report and input-request notifications are treated as durable terminal actions
 because they are emitted only after their service-backed tool transactions
