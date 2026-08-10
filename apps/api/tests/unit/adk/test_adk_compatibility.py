@@ -109,6 +109,17 @@ def test_non_test_startup_rejects_optional_genai_instrumentation() -> None:
         )
 
 
+def test_non_test_startup_allows_absent_optional_genai_instrumentation_parent() -> None:
+    def find_missing_optional_module(_name: str) -> None:
+        raise ModuleNotFoundError("No module named 'opentelemetry.instrumentation'")
+
+    validate_diagnostic_telemetry_runtime_configuration(
+        Settings(environment="local"),
+        environ={},
+        find_spec=find_missing_optional_module,
+    )
+
+
 def test_non_test_startup_rejects_a_model_runtime_hook() -> None:
     def hooked_generate_content() -> None:
         return None

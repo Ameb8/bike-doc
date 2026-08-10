@@ -69,7 +69,14 @@ def validate_diagnostic_telemetry_runtime_configuration(
         env[ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS]
     ):
         violations.append(ADK_CAPTURE_MESSAGE_CONTENT_IN_SPANS)
-    if find_spec(_GOOGLE_GENAI_INSTRUMENTATION_MODULE) is not None:
+    try:
+        genai_instrumentation_installed = (
+            find_spec(_GOOGLE_GENAI_INSTRUMENTATION_MODULE) is not None
+        )
+    except ModuleNotFoundError:
+        # ``find_spec`` raises when an optional module's parent package is absent.
+        genai_instrumentation_installed = False
+    if genai_instrumentation_installed:
         violations.append(_GOOGLE_GENAI_INSTRUMENTATION_MODULE)
     if _has_external_generate_content_wrapper(
         generate_content or Models.generate_content
