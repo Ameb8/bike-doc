@@ -1,0 +1,26 @@
+apps/api/tests/unit/adk/test_background.py
+  s_7e739a886675b6::t_d9f3b6637df907 324-328,367-369,386-391
+apps/api/tests/unit/test_logging.py
+  s_7e739a886675b6::t_d9f3b6637df907 7,20-22,47-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "33ab459e626ecbf054818845e3afec3aaddf6a67",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7e739a886675b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fece1-f8de-7381-ace8-60f829bdf1b7",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
