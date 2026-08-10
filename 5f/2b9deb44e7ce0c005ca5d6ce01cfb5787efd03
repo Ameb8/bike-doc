@@ -1,0 +1,26 @@
+apps/api/tests/unit/adk/test_adk_compatibility.py
+  s_7ca1d83ec97bed::t_9dd4d3c787aeea 112-122
+apps/api/src/bike_doc_api/adk/telemetry.py
+  s_7ca1d83ec97bed::t_9dd4d3c787aeea 72-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "5f2b9deb44e7ce0c005ca5d6ce01cfb5787efd03",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_7ca1d83ec97bed": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe8f9-9e0d-7d73-97c8-4682a3bac1fb",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
