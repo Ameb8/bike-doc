@@ -76,6 +76,72 @@ The default `.env.example` is compose-oriented: its database URL points at
 BIKE_DOC_API_DATABASE_URL=postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc
 ```
 
+### Diagnostic Telemetry
+
+The API emits privacy-safe diagnostic lifecycle logs by default. OpenTelemetry
+trace and metric export is disabled unless explicitly configured. When enabled,
+BikeDoc uses OTLP over HTTP and sends both signals to the same receiver; it does
+not include a Collector, trace viewer, dashboard, or vendor integration in this
+repository.
+
+Configure these values in the root `.env` file:
+
+```text
+# Disable OpenTelemetry export (the default); structured diagnostic logs remain enabled.
+BIKE_DOC_API_TELEMETRY_EXPORTER=none
+
+# Enable both trace and metric export to an OTLP/HTTP receiver.
+BIKE_DOC_API_TELEMETRY_EXPORTER=otlp
+BIKE_DOC_API_TELEMETRY_OTLP_ENDPOINT=http://localhost:4318
+BIKE_DOC_API_TELEMETRY_SERVICE_NAME=bike-doc-api
+```
+
+`BIKE_DOC_API_TELEMETRY_OTLP_ENDPOINT` is the receiver's base URL, not a
+signal-specific URL. BikeDoc appends `/v1/traces` and `/v1/metrics`, so the
+example above exports to `http://localhost:4318/v1/traces` and
+`http://localhost:4318/v1/metrics`. The endpoint must be an absolute `http` or
+`https` URL without embedded credentials, a query string, or a fragment. It is
+required only when `BIKE_DOC_API_TELEMETRY_EXPORTER=otlp`; leave it blank when
+the exporter is `none`. The service name defaults to `bike-doc-api` and should
+identify this deployment in a shared backend.
+
+Run the API with `task run` after starting an OTLP/HTTP-compatible receiver or
+backend. The current Compose API service does not pass telemetry settings into
+the container, so use `task run` for local telemetry or add the three
+`BIKE_DOC_API_TELEMETRY_*` variables to that service's `environment` section.
+BikeDoc has no configuration for custom exporter headers, sampling, batch
+sizes, or separate trace and metric endpoints. If your backend requires
+authentication or another protocol, put a compatible OpenTelemetry Collector
+or relay in front of it.
+
+#### Viewing Telemetry
+
+Use the trace and metrics UI supplied by the OTLP-compatible backend you chose.
+Complete a diagnostic turn, then filter traces by `service.name=bike-doc-api`
+and the `bike_doc.diagnostic_session.id` attribute. Each accepted diagnostic
+execution creates a `bike_doc.diagnostic.turn` root trace; filter by
+`bike_doc.turn.id` to inspect one attempt, or by `bike_doc.repair_session.id`
+to correlate it with product events. The corresponding structured logs use the
+unprefixed `diagnostic_session_id`, `turn_id`, and `repair_session_id` fields.
+The root trace contains the ordered BikeDoc work and nested ADK model/tool
+spans. The gap between adjacent turn traces in the same diagnostic session is
+normally time spent waiting for rider input.
+
+For aggregate health and latency, graph or query the `bike_doc.diagnostic.*`
+metrics in the backend's metrics UI. Useful starting points are diagnostic-turn
+duration and count, input-request and report counters, report-validation
+failure count, safety-escalation count, runner-error count, and the session
+turns-to-completion and elapsed-time histograms. The selected backend may also
+show privacy-safe ADK metrics alongside these application metrics.
+
+Telemetry deliberately excludes rider and assistant text, prompts, tool
+payloads, image data, storage locations, user identity, and report content. Do
+not enable ADK or OpenTelemetry GenAI message-content capture: BikeDoc rejects
+unsafe content-capture configuration at non-test startup. Export outages after
+startup are warning-and-drop only and do not block a diagnostic turn; retain
+and control access to the selected backend according to your deployment's
+privacy requirements.
+
 ### Run The API With Compose
 
 Compose starts the API container and a PostgreSQL container:
