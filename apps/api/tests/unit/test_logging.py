@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 import pytest
 import structlog
@@ -14,6 +15,9 @@ from bike_doc_api.api.middleware import install_request_logging
 from bike_doc_api.core.config import Settings
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.main import create_app
+
+
+ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def test_json_renderer_preserves_structlog_and_stdlib_fields(
@@ -40,7 +44,9 @@ def test_console_renderer_preserves_structured_fields(
 
     structlog.get_logger("bike_doc_api.test").info("application_event", bike_id="b_1")
 
-    assert "bike_id=b_1" in capsys.readouterr().out
+    output = ANSI_ESCAPE_PATTERN.sub("", capsys.readouterr().out)
+
+    assert "bike_id=b_1" in output
 
 
 def test_diagnostic_debug_is_limited_to_approved_namespaces() -> None:

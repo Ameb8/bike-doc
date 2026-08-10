@@ -321,6 +321,11 @@ def test_background_composition_builds_visual_context_with_fresh_dependencies(
         def __init__(self, **kwargs: object) -> None:
             captured["orchestrator_kwargs"] = kwargs
 
+    class _SaveDiagnosticReportTool:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            captured["save_report_args"] = args
+            captured["save_report_kwargs"] = kwargs
+
     monkeypatch.setattr(background, "get_storage_provider", lambda _settings: storage)
     monkeypatch.setattr(background, "TurnService", lambda *args, **kwargs: object())
     monkeypatch.setattr(
@@ -359,7 +364,9 @@ def test_background_composition_builds_visual_context_with_fresh_dependencies(
         background, "RequestDiagnosticInputTool", lambda *args: object()
     )
     monkeypatch.setattr(background, "RaiseSafetyFlagTool", lambda *args: object())
-    monkeypatch.setattr(background, "SaveDiagnosticReportTool", lambda *args: object())
+    monkeypatch.setattr(
+        background, "SaveDiagnosticReportTool", _SaveDiagnosticReportTool
+    )
     monkeypatch.setattr(
         background, "DiagnosticVisualContextService", _VisualContextService
     )
@@ -376,4 +383,9 @@ def test_background_composition_builds_visual_context_with_fresh_dependencies(
         background.RepairSessionRepository,
     )
     assert isinstance(visual_context_kwargs["artifacts"], background.ArtifactRepository)
-    assert captured["orchestrator_kwargs"]["visual_context"] is not None  # type: ignore[index]
+    orchestrator_kwargs = captured["orchestrator_kwargs"]
+    assert isinstance(orchestrator_kwargs, dict)
+    assert orchestrator_kwargs["visual_context"] is not None
+    save_report_kwargs = captured["save_report_kwargs"]
+    assert isinstance(save_report_kwargs, dict)
+    assert save_report_kwargs["telemetry"] is orchestrator_kwargs["telemetry"]
