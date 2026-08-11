@@ -1,0 +1,28 @@
+docs/specs/apps/local-diagnostic-trace-content.md
+  s_2a7925dddb26c6::t_dbac63aec5e7fc 1-202
+docs/specs/apps/diagnostic-telemetry.md
+  s_2a7925dddb26c6::t_dbac63aec5e7fc 16-17
+apps/api/AGENTS.md
+  s_2a7925dddb26c6::t_dbac63aec5e7fc 34-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "693f0a24c3bedb2fa4efd72375daf11542086864",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_2a7925dddb26c6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ff1d1-d29f-7f10-9f9e-c9b7196b061b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
