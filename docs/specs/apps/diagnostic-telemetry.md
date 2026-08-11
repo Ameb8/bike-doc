@@ -13,6 +13,8 @@ This is the canonical Level 2 diagnostic telemetry specification. The general
 process logging behavior remains governed by `docs/specs/apps/logging-setup.md`.
 For a Level 2 deployment, the logger-specific defaults in Section 10.5 refine
 that spec's original global local-`DEBUG` default.
+The narrowly scoped, explicit local-development exception for ADK span content
+is governed by `docs/specs/apps/local-diagnostic-trace-content.md`.
 Product events remain governed by `docs/specs/apps/api-events-diagnostic.md`.
 Diagnostic behavior and semantic-quality evaluations remain governed by
 `docs/specs/apps/agent/diagnostic-observation-handling.md`.
