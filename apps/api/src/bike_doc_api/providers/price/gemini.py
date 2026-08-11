@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import structlog
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,7 +43,7 @@ Rules:
 - Use USD unless the observed source clearly uses another currency.
 """.strip()
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class _GeminiGenerateContent(Protocol):
@@ -163,17 +163,13 @@ class GeminiGroundedPriceProvider:
         looked_up_at = self._clock()
         logger.info(
             "price_lookup_search_started",
-            extra={
-                "item_type": requirement.item_type.value,
-                "requirement_name": requirement.display_name,
-                "quantity": requirement.quantity,
-                "search_query": requirement.search_query,
-                "exact_match_required": requirement.exact_match_required,
-                "generic_equivalent_acceptable": (
-                    requirement.generic_equivalent_acceptable
-                ),
-                "provider_model": self._model,
-            },
+            item_type=requirement.item_type.value,
+            requirement_name=requirement.display_name,
+            quantity=requirement.quantity,
+            search_query=requirement.search_query,
+            exact_match_required=requirement.exact_match_required,
+            generic_equivalent_acceptable=requirement.generic_equivalent_acceptable,
+            provider_model=self._model,
         )
         response = await asyncio.wait_for(
             self._generate_content(
@@ -192,10 +188,7 @@ class GeminiGroundedPriceProvider:
             requirement=requirement,
             looked_up_at=looked_up_at,
         )
-        logger.info(
-            "price_lookup_search_completed",
-            extra=_result_log_fields(result),
-        )
+        logger.info("price_lookup_search_completed", **_result_log_fields(result))
         return result
 
 

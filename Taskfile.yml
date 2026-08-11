@@ -16,7 +16,7 @@ tasks:
   run:
     desc: Run the FastAPI app locally with the repo-root .env.
     cmds:
-      - set -a && . ./.env && set +a && cd apps/api && uv run uvicorn bike_doc_api.main:app --reload
+      - set -a && . ./.env && set +a && cd apps/api && uv run uvicorn bike_doc_api.main:app --reload --no-access-log
 
   test:
     desc: Run API tests.

@@ -19,6 +19,7 @@ specifications linked below.
 | --- | --- | --- |
 | `background.py` | Process-independent background-task composition and safe setup failure handling | `execute_diagnostic_turn_background`, `_build_background_orchestrator` |
 | `orchestration.py` | Accepted-turn processing, seed-context assembly, and mapping normalized runner events to product events/status | `DiagnosticTurnOrchestrator` |
+| `turn_telemetry_state.py` | Process-local, privacy-safe accumulation and final precedence selection for one diagnostic turn | `DiagnosticTurnTelemetryState` |
 | `runner.py` | Google ADK `Runner` adaptation and raw-event normalization | `DiagnosticRunner`, `DiagnosticRunnerRequest`, `DiagnosticRunnerEvent` |
 | `sessions.py` | Mapping app-owned phase sessions to opaque ADK sessions | `DiagnosticPhaseSessionManager`, `DiagnosticADKSessionClient` |
 | `agents/` | Phase-specific agent construction and versioned prompt loading | `create_diagnostic_agent`, `create_planning_agent` |
@@ -114,6 +115,15 @@ second observation record. Cancellation propagates without manufacturing a
 failed extraction state. Once the marker is set, no recovery or late extraction
 completion may alter the run.
 
+`background.py` owns one fresh OpenTelemetry root span, `bike_doc.diagnostic.turn`,
+for each background invocation. It binds only repair-session, diagnostic-session,
+turn, trace, and span correlation IDs to structlog while that root is active and
+clears them on exit. The background boundary emits the one start and one
+completion lifecycle record; orchestration supplies its immutable, privacy-safe
+final snapshot so trace attributes and the completion record describe the same
+outcome. Telemetry export and logging failures are never allowed to change the
+durable product result or cancellation propagation.
+
 `background.py` constructs this visual-context service with fresh repositories,
 storage, settings-driven preprocessing, and the fresh background database
 session. It never retains route/request-scoped dependencies. `off` mode keeps
@@ -134,6 +144,32 @@ Recoverable errors are appended as public error events and finish in a safe,
 retryable awaiting-user state. A cancellation is re-raised. Unexpected
 orchestration failure follows the same safe error/completion path where
 possible; there is no automatic whole-turn retry.
+
+`DiagnosticTurnTelemetryState` is owned by one invocation of
+`DiagnosticTurnOrchestrator`. It consumes only normalized runner-event facts
+and visual-context counts, uses an injectable monotonic clock, and produces an
+immutable bounded final snapshot. It does not emit new logs, spans, or metrics;
+those signal adapters consume the finalized state in later telemetry slices.
+For those adapters, orchestration receives the narrow accepted-turn repository
+count seam: a phase-session total for completion summaries and a count through
+the current turn's durable `start_event_sequence` for the stable one-based
+`turn_index`. These counts never include non-turn events or another phase
+session, and the existing phase-session `created_at` remains the elapsed-time
+baseline.
+
+Within the active background root, orchestration owns content-free child
+boundaries for visual preparation, server seed-context assembly (and its three
+lookups), runner streaming, and terminal finalization. The runner stream runs
+while the agent boundary is current so ADK model and tool spans inherit it from
+the shared global provider. Assistant deltas remain durable product events and
+accumulator counters, not tracing boundaries.
+Existing report-rollout telemetry remains an adjacent compatibility adapter.
+Report and input-request notifications are treated as durable terminal actions
+because they are emitted only after their service-backed tool transactions
+succeed. At finalization, a report outranks an input request,
+which outranks visual blocking, cancellation, terminal/recoverable errors, and
+normal runner exhaustion. A later failure therefore cannot erase a committed
+product outcome.
 
 Background setup failure follows a similar rule. It restores a verified,
 owned repair session out of `running`, writes a retryable
@@ -172,6 +208,14 @@ responses are interpreted into typed input-request, safety, report, or error
 notifications. The convenience `run()` method merely collects `stream()` for
 compatibility; production orchestration consumes `stream()`.
 
+Every diagnostic `Runner.run_async(...)` also receives a fresh code-owned ADK
+`RunConfig.telemetry` policy with `NO_CONTENT`. This is not configurable by a
+BikeDoc setting. Non-test startup rejects ADK admin locks, content-capture
+environment overrides, active model runtime wrappers, and optional Google
+GenAI OpenTelemetry instrumentation because they can bypass the per-run
+policy. Tests may install controlled in-memory instrumentation only to assert
+that exported spans, events, and logs contain no content.
+
 The runner supports an injected invoker and runner factory for isolated tests.
 It converts unexpected runtime failures to a public-safe,
 retryable `DiagnosticRunnerRecoverableError`, while allowing cancellation to
@@ -195,8 +239,20 @@ the runner and tool context, so a deployment rollback changes only new phase
 sessions and cannot mix V1/V2 fields in a report already in progress. The
 orchestrator emits only privacy-safe diagnostic-completion telemetry: stable
 input-request, report-completed, and validation-failed events with scalar
-version/outcome/count dimensions. It never sends report text, completion-basis
-rationale, or model reasoning to telemetry.
+version/outcome/count dimensions. A private context-local tracker surrounds
+each runner invocation so repeated rejected report saves share one within-turn
+attempt sequence and the current root trace without entering ADK tool inputs,
+runner requests, or app-owned state. It never sends report text,
+completion-basis rationale, or model reasoning to telemetry.
+
+After a report tool transaction commits, its internal normalized completion
+notification carries a bounded creation flag and durable report timestamp.
+Only a notification marked as created by the current execution may trigger the
+best-effort session summary; orchestration combines that timestamp with the
+phase row's `created_at` and phase-scoped turn count. Observing an existing
+report does not emit a second summary. No marker or retry state is persisted,
+so a crash after commit may omit—or recovery may duplicate—observational
+telemetry while durable reports and events remain authoritative.
 
 The current `DiagnosticADKSessionClient` uses one process-lifetime
 `InMemorySessionService`, with fixed internal ADK app/user names. The exact

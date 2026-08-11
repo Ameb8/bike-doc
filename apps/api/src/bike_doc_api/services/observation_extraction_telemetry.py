@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import logging
 import re
 from collections.abc import Mapping
+from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Protocol, cast
 
-logger = logging.getLogger(__name__)
+import structlog
+from opentelemetry import metrics
+from opentelemetry.util.types import AttributeValue
+
+logger = structlog.get_logger(__name__)
 
 _EVENTS = frozenset(
     {
@@ -53,6 +57,21 @@ _SAFE_VALUES = {
     "outcome": frozenset({"started", "completed", "failed", "retried"}),
     "failure_class": frozenset({"provider", "validation", "privacy", "artifact"}),
     "validation_kind": frozenset({"schema", "artifact_reference", "privacy"}),
+}
+
+# Keep the established image names while routing measurements through the
+# process-global provider shared with diagnostic and ADK telemetry.
+_METER = metrics.get_meter(__name__)
+_METRICS = {
+    "observation_extraction_attempts": _METER.create_counter(
+        "observation_extraction_attempts", unit="{attempt}"
+    ),
+    "observation_extraction_failures": _METER.create_counter(
+        "observation_extraction_failures", unit="{failure}"
+    ),
+    "observation_extraction_observations": _METER.create_counter(
+        "observation_extraction_observations", unit="{observation}"
+    ),
 }
 
 
@@ -106,7 +125,7 @@ class RecordingObservationExtractionTelemetry:
 class LoggingObservationExtractionTelemetry:
     def event(self, name: str, *, fields: Mapping[str, object] | None = None) -> None:
         if name in _EVENTS:
-            logger.info(name, extra={"observation_extraction": _safe(fields or {})})
+            logger.info(name, **_safe(fields or {}))
 
     def metric(
         self,
@@ -115,13 +134,19 @@ class LoggingObservationExtractionTelemetry:
         value: int | float = 1,
         dimensions: Mapping[str, object] | None = None,
     ) -> None:
+        safe_dimensions = _safe(dimensions or {})
+        instrument = _METRICS.get(name)
+        if instrument is not None:
+            with suppress(Exception):
+                instrument.add(
+                    value,
+                    cast(dict[str, AttributeValue], safe_dimensions),
+                )
         logger.info(
             "observation_extraction_metric",
-            extra={
-                "observation_extraction_metric_name": name,
-                "observation_extraction_metric_value": value,
-                "observation_extraction_metric_dimensions": _safe(dimensions or {}),
-            },
+            metric_name=name,
+            metric_value=value,
+            dimensions=safe_dimensions,
         )
 
 

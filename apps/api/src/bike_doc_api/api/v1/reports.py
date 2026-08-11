@@ -1,8 +1,8 @@
 """Phase report read route boundary."""
 
-import logging
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,7 +30,7 @@ from bike_doc_api.services.reports import (
 )
 
 router = APIRouter(tags=["Reports"])
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def get_report_service(

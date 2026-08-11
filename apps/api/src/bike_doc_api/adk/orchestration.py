@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol, cast
+
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from bike_doc_api.adk.runner import (
     DiagnosticRunnerArtifactReferenced,
@@ -26,6 +30,10 @@ from bike_doc_api.adk.tools.input_requests import RequestDiagnosticInputTool
 from bike_doc_api.adk.tools.repair_history import LookupRepairHistoryTool
 from bike_doc_api.adk.tools.reports import SaveDiagnosticReportTool
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool
+from bike_doc_api.adk.turn_telemetry_state import (
+    DiagnosticTurnTelemetrySnapshot,
+    DiagnosticTurnTelemetryState,
+)
 from bike_doc_api.core.errors import NotFoundError, ServerError
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -47,7 +55,9 @@ from bike_doc_api.schemas.repair_session import (
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
     DiagnosticReportTelemetryOutcome,
+    DiagnosticSessionCompletion,
     default_diagnostic_completion_telemetry,
+    report_validation_attempt_scope,
 )
 from bike_doc_api.services.diagnostic_visual_context import DiagnosticVisualContext
 
@@ -57,6 +67,21 @@ class RepairPhaseSessionRepositoryProtocol(Protocol):
 
     async def get(self, phase_session_id: str) -> RepairPhaseSessionModel | None:
         """Return a phase session by app-owned ID."""
+
+
+class RepairTurnRepositoryProtocol(Protocol):
+    """Accepted-turn counts required by diagnostic telemetry."""
+
+    async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
+        """Return the total accepted turn count for one phase session."""
+
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        """Return the stable phase-session turn ordinal through an event sequence."""
 
 
 class RepairSessionRepositoryProtocol(Protocol):
@@ -121,12 +146,16 @@ class DiagnosticVisualContextServiceProtocol(Protocol):
     async def mark_diagnostic_agent_started(self, *, turn_id: str) -> None:
         """Close any extraction lifecycle immediately before runner invocation."""
 
+    def telemetry_attributes(self) -> Mapping[str, str]:
+        """Return approved visual extractor and preprocessing versions."""
+
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticTurnOrchestrator:
     """Connect accepted diagnostic turns to the internal ADK boundary."""
 
     phase_sessions: RepairPhaseSessionRepositoryProtocol
+    turns: RepairTurnRepositoryProtocol
     repair_sessions: RepairSessionRepositoryProtocol
     events: RepairSessionEventRepositoryProtocol
     artifacts: ArtifactRepositoryProtocol
@@ -142,6 +171,7 @@ class DiagnosticTurnOrchestrator:
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry,
     )
+    monotonic_clock: Callable[[], float] | None = None
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
 
@@ -150,11 +180,15 @@ class DiagnosticTurnOrchestrator:
         *,
         current_user: User,
         turn: RepairTurnModel,
-    ) -> None:
+    ) -> DiagnosticTurnTelemetrySnapshot:
         """Run diagnostic orchestration for an already accepted turn."""
 
         user_snapshot = _CurrentUserSnapshot.from_model(current_user)
         turn_snapshot = _AcceptedTurnSnapshot.from_model(turn)
+        telemetry_state = DiagnosticTurnTelemetryState(
+            clock=self.monotonic_clock,
+            artifact_count=len(turn_snapshot.artifact_ids),
+        )
         try:
             phase_session = await self.phase_sessions.get(
                 turn_snapshot.repair_phase_session_id,
@@ -162,9 +196,15 @@ class DiagnosticTurnOrchestrator:
             if phase_session is None:
                 raise NotFoundError()
 
-            visual_context = await self.visual_context.prepare_turn(
+            visual_context = await self._prepare_visual_context(
                 user_id=user_snapshot.id,
                 turn_id=turn_snapshot.id,
+            )
+            telemetry_state.note_visual_context(
+                invoke_agent=visual_context.invoke_agent,
+                current_image_count=len(visual_context.current_images),
+                current_observation_count=len(visual_context.current_observations),
+                prior_observation_count=len(visual_context.prior_observations),
             )
 
             context = DiagnosticToolContext(
@@ -192,14 +232,12 @@ class DiagnosticTurnOrchestrator:
                 visual_context=visual_context,
             )
             if not visual_context.invoke_agent:
-                await self._append_turn_completed(
+                return await self._finalize_turn(
+                    telemetry_state=telemetry_state,
                     user_id=user_snapshot.id,
                     repair_session_id=turn_snapshot.repair_session_id,
                     turn_id=turn_snapshot.id,
-                    status=RepairSessionStatus.AWAITING_USER,
                 )
-                return
-            processing_state = _TurnProcessingState()
             request = DiagnosticRunnerRequest(
                 user_id=user_snapshot.id,
                 user_skill_level=user_snapshot.skill_level,
@@ -223,23 +261,46 @@ class DiagnosticTurnOrchestrator:
             await self.visual_context.mark_diagnostic_agent_started(
                 turn_id=turn_snapshot.id,
             )
-            async for event in self.runner.stream(request):
-                await self._process_runner_event(
-                    context=context,
-                    turn=turn_snapshot,
-                    event=event,
-                    processing_state=processing_state,
-                )
+            telemetry_state.note_agent_started()
+            try:
+                with _start_span("bike_doc.diagnostic.agent.run") as span:
+                    try:
+                        with report_validation_attempt_scope(
+                            self.telemetry,
+                            on_failure=lambda stage: (
+                                telemetry_state.note_validation_failure(stage=stage)
+                            ),
+                        ):
+                            async for event in self.runner.stream(request):
+                                await self._process_runner_event(
+                                    context=context,
+                                    turn=turn_snapshot,
+                                    event=event,
+                                    telemetry_state=telemetry_state,
+                                )
+                    except Exception:
+                        span.set_status(
+                            Status(StatusCode.ERROR, "runner_stream_failed")
+                        )
+                        raise
+            finally:
+                telemetry_state.note_agent_ended()
 
-            await self._append_turn_completed(
+            return await self._finalize_turn(
+                telemetry_state=telemetry_state,
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=processing_state.terminal_status,
             )
         except asyncio.CancelledError:
+            telemetry_state.note_cancelled()
+            telemetry_state.finalize()
             raise
         except Exception:
+            telemetry_state.note_error(
+                code="diagnostic_processing_error",
+                retryable=True,
+            )
             await self._append_recoverable_error(
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
@@ -247,12 +308,64 @@ class DiagnosticTurnOrchestrator:
                 message="Diagnostic processing could not be completed.",
                 retryable=True,
             )
-            await self._append_turn_completed(
+            return await self._finalize_turn(
+                telemetry_state=telemetry_state,
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
-                status=RepairSessionStatus.AWAITING_USER,
             )
+
+    async def _prepare_visual_context(
+        self, *, user_id: str, turn_id: str
+    ) -> DiagnosticVisualContext:
+        """Prepare visual evidence inside its content-free trace boundary."""
+
+        with _start_span("bike_doc.diagnostic.visual_context.prepare") as span:
+            try:
+                visual_context = await self.visual_context.prepare_turn(
+                    user_id=user_id, turn_id=turn_id
+                )
+            except Exception:
+                span.set_status(Status(StatusCode.ERROR, "visual_context_failed"))
+                raise
+            span.set_attributes(_visual_span_attributes(visual_context))
+            telemetry_attributes = getattr(
+                self.visual_context, "telemetry_attributes", None
+            )
+            if callable(telemetry_attributes):
+                span.set_attributes(dict(telemetry_attributes()))
+            return visual_context
+
+    async def _finalize_turn(
+        self,
+        *,
+        telemetry_state: DiagnosticTurnTelemetryState,
+        user_id: str,
+        repair_session_id: str,
+        turn_id: str,
+    ) -> DiagnosticTurnTelemetrySnapshot:
+        """Derive and persist terminal state under one app-owned span."""
+
+        with _start_span("bike_doc.diagnostic.turn.finalize") as span:
+            snapshot = telemetry_state.finalize()
+            span.set_attributes(
+                {
+                    "bike_doc.turn.outcome": snapshot.outcome,
+                    "bike_doc.turn.terminal_status": snapshot.terminal_status.value,
+                    "bike_doc.terminal_action_count": snapshot.terminal_action_count,
+                }
+            )
+            try:
+                await self._append_turn_completed(
+                    user_id=user_id,
+                    repair_session_id=repair_session_id,
+                    turn_id=turn_id,
+                    status=snapshot.terminal_status,
+                )
+            except Exception:
+                span.set_status(Status(StatusCode.ERROR, "turn_completion_failed"))
+                raise
+            return snapshot
 
     async def _process_runner_event(
         self,
@@ -260,7 +373,7 @@ class DiagnosticTurnOrchestrator:
         context: DiagnosticToolContext,
         turn: _AcceptedTurnSnapshot,
         event: Any,
-        processing_state: _TurnProcessingState,
+        telemetry_state: DiagnosticTurnTelemetryState,
     ) -> None:
         """Map one app-owned runner event to public persistence/tool effects."""
 
@@ -271,6 +384,7 @@ class DiagnosticTurnOrchestrator:
                 event_type=RepairSessionEventType.ASSISTANT_DELTA,
                 data={"text": event.text},
             )
+            telemetry_state.note_assistant_delta()
             return
 
         if isinstance(event, DiagnosticRunnerAssistantMessageCompleted):
@@ -285,27 +399,47 @@ class DiagnosticTurnOrchestrator:
                     "display_safety_level": event.display_safety_level.value,
                 },
             )
+            telemetry_state.note_assistant_message()
             return
 
         if isinstance(event, DiagnosticRunnerInputRequested):
-            processing_state.note_input_requested()
+            telemetry_state.note_input_requested(
+                request_type=event.request_type,
+                required=event.required,
+            )
             self.telemetry.input_requested(
                 schema_version=context.diagnostic_report_schema_version,
             )
             return
 
         if isinstance(event, DiagnosticRunnerSafetyEscalated):
-            processing_state.note_safety_escalated(
+            telemetry_state.note_safety_escalated(
                 safety_state=event.safety_state,
-                safety_flags=event.safety_flags,
-                safety_flag=event.safety_flag,
+                blocks=_blocks_repair_guidance(
+                    safety_state=event.safety_state,
+                    safety_flags=(
+                        event.safety_flags
+                        if event.safety_flags
+                        else (event.safety_flag,)
+                    ),
+                ),
+                safety_flags=tuple(
+                    dict(flag)
+                    for flag in (
+                        event.safety_flags
+                        if event.safety_flags
+                        else (event.safety_flag,)
+                    )
+                ),
             )
             return
 
         if isinstance(event, DiagnosticRunnerReportCompleted):
-            processing_state.note_report_completed(
-                safety_state=event.safety_state,
-                safety_flags=event.safety_flags,
+            telemetry_state.note_report_completed(
+                observed_finding_count=event.observed_finding_count,
+                contributing_factor_count=event.contributing_factor_count,
+                alternate_hypothesis_count=event.alternate_hypothesis_count,
+                completion_reason=event.completion_reason,
             )
             self.telemetry.report_completed(
                 outcome=DiagnosticReportTelemetryOutcome(
@@ -314,11 +448,21 @@ class DiagnosticTurnOrchestrator:
                     contributing_factor_count=event.contributing_factor_count,
                     alternate_hypothesis_count=event.alternate_hypothesis_count,
                     completion_reason=event.completion_reason,
-                    same_turn_completion_after_first_finding=(
-                        event.observed_finding_count > 0
-                    ),
                 ),
             )
+            await self._emit_session_completion_if_created(
+                event=event,
+                phase_session_id=context.diagnostic_session_id,
+                repair_session_id=turn.repair_session_id,
+                report_schema_version=event.schema_version,
+            )
+            telemetry_state.note_safety_state(
+                safety_state=event.safety_state,
+                blocks=_blocks_repair_guidance(
+                    safety_state=event.safety_state,
+                    safety_flags=event.safety_flags,
+                ),
+            ) if event.safety_state is not None or event.safety_flags else None
             return
 
         if isinstance(event, DiagnosticRunnerArtifactReferenced):
@@ -338,7 +482,48 @@ class DiagnosticTurnOrchestrator:
                 message=event.message,
                 retryable=event.retryable,
             )
-            processing_state.note_error(retryable=event.retryable)
+            telemetry_state.note_error(code=event.code, retryable=event.retryable)
+
+    async def _emit_session_completion_if_created(
+        self,
+        *,
+        event: DiagnosticRunnerReportCompleted,
+        phase_session_id: str,
+        repair_session_id: str,
+        report_schema_version: str | None,
+    ) -> None:
+        """Best-effort summary only for the execution that committed the report."""
+
+        if (
+            not event.created_by_current_execution
+            or event.report_created_at is None
+            or event.completion_reason is None
+            or report_schema_version is None
+        ):
+            return
+        try:
+            phase_session = await self.phase_sessions.get(phase_session_id)
+            if phase_session is None:
+                return
+            turn_count = await self.turns.count_for_phase_session(phase_session.id)
+            self.telemetry.session_completed(
+                completion=DiagnosticSessionCompletion(
+                    repair_session_id=repair_session_id,
+                    diagnostic_session_id=phase_session.id,
+                    completion_reason=event.completion_reason,
+                    turn_count=turn_count,
+                    phase_session_created_at=phase_session.created_at,
+                    report_created_at=event.report_created_at,
+                    report_schema_version=cast(
+                        Literal["diagnostic_report.v1", "diagnostic_report.v2"],
+                        report_schema_version,
+                    ),
+                )
+            )
+        except Exception:
+            # Count queries and telemetry export are post-commit observations.
+            # Failure must not alter public events, safety, or terminal status.
+            return
 
     async def _build_seed_context(
         self,
@@ -352,32 +537,43 @@ class DiagnosticTurnOrchestrator:
         repair_history: tuple[Mapping[str, Any], ...] = ()
         diagnostic_artifacts: tuple[Mapping[str, Any], ...] = ()
 
-        bike_profile_result = await self.get_bike_profile.run(
-            {"repair_session_id": turn.repair_session_id},
-            context,
-        )
+        with _start_span("bike_doc.diagnostic.seed_context.build"):
+            bike_profile_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.get_bike_profile",
+                self.get_bike_profile.run(
+                    {"repair_session_id": turn.repair_session_id}, context
+                ),
+                item_key="bike_profile",
+            )
+            history_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.lookup_repair_history",
+                self.lookup_repair_history.run(
+                    {
+                        "repair_session_id": turn.repair_session_id,
+                        "component_terms": [],
+                        "limit": 5,
+                    },
+                    context,
+                ),
+                item_key="entries",
+            )
+            artifacts_result = await self._run_seed_lookup(
+                "bike_doc.diagnostic.seed.list_artifacts",
+                self.list_diagnostic_artifacts.run(
+                    {"repair_session_id": turn.repair_session_id}, context
+                ),
+                item_key="artifacts",
+            )
         if bike_profile_result.get("ok") is True:
             data = cast(Mapping[str, Any], bike_profile_result.get("data", {}))
             profile = data.get("bike_profile")
             if isinstance(profile, Mapping):
                 bike_profile = profile
 
-        history_result = await self.lookup_repair_history.run(
-            {
-                "repair_session_id": turn.repair_session_id,
-                "component_terms": [],
-                "limit": 5,
-            },
-            context,
-        )
         if history_result.get("ok") is True:
             data = cast(Mapping[str, Any], history_result.get("data", {}))
             repair_history = _mapping_items(data.get("entries"))
 
-        artifacts_result = await self.list_diagnostic_artifacts.run(
-            {"repair_session_id": turn.repair_session_id},
-            context,
-        )
         if artifacts_result.get("ok") is True:
             data = cast(Mapping[str, Any], artifacts_result.get("data", {}))
             diagnostic_artifacts = _mapping_items(data.get("artifacts"))
@@ -387,6 +583,30 @@ class DiagnosticTurnOrchestrator:
             repair_history=repair_history,
             diagnostic_artifacts=diagnostic_artifacts,
         )
+
+    async def _run_seed_lookup(
+        self,
+        name: str,
+        operation: Awaitable[dict[str, Any]],
+        *,
+        item_key: str,
+    ) -> dict[str, Any]:
+        """Trace one bounded seed result without retaining its payload."""
+
+        with _start_span(name) as span:
+            try:
+                result = await operation
+            except Exception:
+                span.set_attributes(
+                    {
+                        "bike_doc.seed.success": False,
+                        "bike_doc.seed.error_code": "unknown",
+                    }
+                )
+                span.set_status(Status(StatusCode.ERROR, "seed_lookup_failed"))
+                raise
+            span.set_attributes(_seed_span_attributes(result, item_key=item_key))
+            return result
 
     async def _emit_turn_artifact_references(
         self,
@@ -531,6 +751,7 @@ class _AcceptedTurnSnapshot:
     id: str
     repair_session_id: str
     repair_phase_session_id: str
+    start_event_sequence: int
     message_text: str | None
     artifact_ids: tuple[str, ...]
 
@@ -542,6 +763,7 @@ class _AcceptedTurnSnapshot:
             id=turn.id,
             repair_session_id=turn.repair_session_id,
             repair_phase_session_id=turn.repair_phase_session_id,
+            start_event_sequence=turn.start_event_sequence,
             message_text=_turn_message_text(turn),
             artifact_ids=_turn_artifact_ids(turn),
         )
@@ -554,58 +776,6 @@ class _DiagnosticSeedContext:
     bike_profile: Mapping[str, Any] | None
     repair_history: tuple[Mapping[str, Any], ...]
     diagnostic_artifacts: tuple[Mapping[str, Any], ...]
-
-
-@dataclass(slots=True)
-class _TurnProcessingState:
-    """Track the terminal public status implied by streamed runner events."""
-
-    terminal_status: RepairSessionStatus = RepairSessionStatus.AWAITING_USER
-
-    def note_input_requested(self) -> None:
-        """Record that direct ADK tool execution requested more user input."""
-
-        self.terminal_status = RepairSessionStatus.AWAITING_USER
-
-    def note_safety_escalated(
-        self,
-        *,
-        safety_state: str | None,
-        safety_flags: tuple[Mapping[str, Any], ...],
-        safety_flag: Mapping[str, Any],
-    ) -> None:
-        """Record the status implied by an already-persisted safety update."""
-
-        flags: tuple[Mapping[str, Any], ...]
-        flags = safety_flags if safety_flags else (safety_flag,)
-        if _blocks_repair_guidance(safety_state=safety_state, safety_flags=flags):
-            self.terminal_status = RepairSessionStatus.BLOCKED_SAFETY
-
-    def note_report_completed(
-        self,
-        *,
-        safety_state: str | None,
-        safety_flags: tuple[Mapping[str, Any], ...],
-    ) -> None:
-        """Record the status implied by an already-persisted report."""
-
-        self.terminal_status = (
-            RepairSessionStatus.BLOCKED_SAFETY
-            if _blocks_repair_guidance(
-                safety_state=safety_state,
-                safety_flags=safety_flags,
-            )
-            else RepairSessionStatus.AWAITING_DECISION
-        )
-
-    def note_error(self, *, retryable: bool) -> None:
-        """Record the status implied by a handled recoverable runner error."""
-
-        self.terminal_status = (
-            RepairSessionStatus.AWAITING_USER
-            if retryable
-            else RepairSessionStatus.FAILED
-        )
 
 
 def _turn_message_text(turn: RepairTurnModel) -> str | None:
@@ -669,3 +839,58 @@ def _visual_error_message(code: str) -> str:
         "image_normalization_failed": "Image could not be normalized.",
         "image_analysis_unavailable": "Image analysis is unavailable for this turn.",
     }.get(code, "Image processing could not be completed.")
+
+
+def _start_span(name: str) -> AbstractContextManager[trace.Span]:
+    """Resolve the process-global tracer at use time for ADK provider sharing."""
+
+    return trace.get_tracer(__name__).start_as_current_span(name)
+
+
+def _visual_span_attributes(context: DiagnosticVisualContext) -> dict[str, bool | int]:
+    """Return only aggregate visual-preparation facts for a span."""
+
+    statuses = [status.status for status in context.artifact_processing_statuses]
+    return {
+        "bike_doc.visual.invoke_agent": context.invoke_agent,
+        "bike_doc.visual.current_image_count": len(context.current_images),
+        "bike_doc.visual.current_observation_count": len(context.current_observations),
+        "bike_doc.visual.prior_observation_count": len(context.prior_observations),
+        "bike_doc.visual.status_usable_count": statuses.count("available"),
+        "bike_doc.visual.status_limited_count": 0,
+        "bike_doc.visual.status_unusable_count": statuses.count("unavailable"),
+        "bike_doc.visual.recoverable_error_count": len(context.recoverable_errors),
+    }
+
+
+_SEED_ERROR_CODES = frozenset(
+    {
+        "not_found",
+        "invalid_phase",
+        "stale_session",
+        "validation_error",
+        "artifact_not_found",
+        "unknown",
+    }
+)
+
+
+def _seed_span_attributes(
+    result: Mapping[str, Any], *, item_key: str
+) -> dict[str, bool | int | str]:
+    """Summarize a tool result without attaching its response payload."""
+
+    success = result.get("ok") is True
+    attributes: dict[str, bool | int | str] = {"bike_doc.seed.success": success}
+    if success:
+        data = result.get("data")
+        value = data.get(item_key) if isinstance(data, Mapping) else None
+        count = len(value) if isinstance(value, list) else int(value is not None)
+        attributes["bike_doc.seed.returned_item_count"] = count
+    else:
+        error = result.get("error")
+        code = error.get("code") if isinstance(error, Mapping) else None
+        attributes["bike_doc.seed.error_code"] = (
+            code if code in _SEED_ERROR_CODES else "unknown"
+        )
+    return attributes

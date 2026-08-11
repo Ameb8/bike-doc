@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol, cast
 
+import structlog
 from google.auth.transport.requests import Request
 from google.oauth2.id_token import verify_firebase_token as google_verify_firebase_token
 
 from bike_doc_api.core.config import Settings
 from bike_doc_api.core.errors import AuthenticationError
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,14 +71,14 @@ def verify_firebase_bearer_token(token: str, *, settings: Settings) -> AuthIdent
 
     project_id = settings.firebase_project_id
     if project_id is None:
-        logger.debug("firebase_token_verification_skipped reason=missing_project_id")
+        logger.debug("firebase_token_verification_skipped", reason="missing_project_id")
         raise AuthenticationError()
 
     token_claims = _firebase_token_debug_claims(token)
     logger.debug(
-        "firebase_token_verification_started project_id=%s token_claims=%s",
-        project_id,
-        token_claims,
+        "firebase_token_verification_started",
+        project_id=project_id,
+        token_claims=token_claims,
     )
     try:
         claims = google_verify_firebase_token(
@@ -88,20 +88,19 @@ def verify_firebase_bearer_token(token: str, *, settings: Settings) -> AuthIdent
         )  # type: ignore[no-untyped-call]
     except Exception as exc:  # pragma: no cover - exercised via tests with fakes
         logger.debug(
-            "firebase_token_verification_failed project_id=%s error_type=%s "
-            "token_claims=%s",
-            project_id,
-            type(exc).__name__,
-            token_claims,
+            "firebase_token_verification_failed",
+            project_id=project_id,
+            error_type=type(exc).__name__,
+            token_claims=token_claims,
         )
         raise AuthenticationError() from exc
 
     if not isinstance(claims, Mapping):
         logger.debug(
-            "firebase_token_verification_failed project_id=%s "
-            "reason=claims_not_mapping token_claims=%s",
-            project_id,
-            token_claims,
+            "firebase_token_verification_failed",
+            project_id=project_id,
+            reason="claims_not_mapping",
+            token_claims=token_claims,
         )
         raise AuthenticationError()
 
@@ -109,40 +108,40 @@ def verify_firebase_bearer_token(token: str, *, settings: Settings) -> AuthIdent
     expected_issuer = f"https://securetoken.google.com/{project_id}"
     if issuer != expected_issuer:
         logger.debug(
-            "firebase_token_verification_failed project_id=%s reason=issuer_mismatch "
-            "issuer=%s expected_issuer=%s token_claims=%s",
-            project_id,
-            issuer,
-            expected_issuer,
-            token_claims,
+            "firebase_token_verification_failed",
+            project_id=project_id,
+            reason="issuer_mismatch",
+            issuer=issuer,
+            expected_issuer=expected_issuer,
+            token_claims=token_claims,
         )
         raise AuthenticationError()
 
     audience = _normalized_optional_string(claims.get("aud"))
     if audience != project_id:
         logger.debug(
-            "firebase_token_verification_failed project_id=%s reason=audience_mismatch "
-            "audience=%s token_claims=%s",
-            project_id,
-            audience,
-            token_claims,
+            "firebase_token_verification_failed",
+            project_id=project_id,
+            reason="audience_mismatch",
+            audience=audience,
+            token_claims=token_claims,
         )
         raise AuthenticationError()
 
     subject = _normalized_optional_string(claims.get("sub"))
     if subject is None:
         logger.debug(
-            "firebase_token_verification_failed project_id=%s reason=missing_subject "
-            "token_claims=%s",
-            project_id,
-            token_claims,
+            "firebase_token_verification_failed",
+            project_id=project_id,
+            reason="missing_subject",
+            token_claims=token_claims,
         )
         raise AuthenticationError()
 
     logger.debug(
-        "firebase_token_verification_succeeded project_id=%s token_claims=%s",
-        project_id,
-        token_claims,
+        "firebase_token_verification_succeeded",
+        project_id=project_id,
+        token_claims=token_claims,
     )
     return AuthIdentity(
         subject=subject,

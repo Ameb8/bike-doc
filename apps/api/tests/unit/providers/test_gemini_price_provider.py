@@ -488,15 +488,15 @@ async def test_gemini_provider_logs_search_lifecycle(
         ),
     )
 
-    events = [record.msg for record in caplog.records]
+    events = [record.msg["event"] for record in caplog.records]
     assert "price_lookup_search_started" in events
     assert "price_lookup_search_completed" in events
 
     completed = next(
         record
         for record in caplog.records
-        if record.msg == "price_lookup_search_completed"
+        if record.msg["event"] == "price_lookup_search_completed"
     )
-    assert completed.requirement_name == "Chain checker"
-    assert completed.status == "priced_listing_found"
-    assert completed.primary_listing_price == 17.95
+    assert completed.msg["requirement_name"] == "Chain checker"
+    assert completed.msg["status"] == "priced_listing_found"
+    assert completed.msg["primary_listing_price"] == 17.95

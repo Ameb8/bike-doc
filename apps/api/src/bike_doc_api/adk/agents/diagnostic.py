@@ -15,11 +15,13 @@ from bike_doc_api.core.config import Settings, get_settings
 
 DIAGNOSTIC_AGENT_NAME = "diagnostic_agent"
 DIAGNOSTIC_COMPLETION_TOOL_NAME = "save_diagnostic_report"
+DIAGNOSTIC_PROMPT_VERSION = "diagnostic-observation.v1"
 _PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "diagnostic.md"
 __all__ = [
     "DIAGNOSTIC_AGENT_NAME",
     "DIAGNOSTIC_COMPLETION_TOOL_NAME",
     "DIAGNOSTIC_PROMPT",
+    "DIAGNOSTIC_PROMPT_VERSION",
     "V2_DIAGNOSTIC_TOOL_NAMES",
     "DiagnosticAgentToolDependencies",
     "create_diagnostic_agent",

@@ -19,6 +19,7 @@ from bike_doc_api.adk.report_schemas.diagnostic import (
     DiagnosticReportV2ToolPayload,
 )
 from bike_doc_api.adk.tools.common import (
+    ArtifactToolNotFoundError,
     DiagnosticToolContext,
     ReportValidationToolError,
     current_tool_user,
@@ -29,7 +30,11 @@ from bike_doc_api.adk.tools.common import (
     validate_tool_context,
     validation_error_details,
 )
-from bike_doc_api.core.errors import SessionStateConflictError, ValidationAppError
+from bike_doc_api.core.errors import (
+    SessionStateConflictError,
+    StaleSessionError,
+    ValidationAppError,
+)
 from bike_doc_api.schemas.report import (
     DiagnosticReportV1,
     DiagnosticReportV2,
@@ -39,6 +44,7 @@ from bike_doc_api.schemas.report import (
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
     default_diagnostic_completion_telemetry,
+    record_report_validation_failure,
 )
 
 CompletionReason = Literal[
@@ -129,6 +135,7 @@ class DiagnosticReportPersistenceResultProtocol(Protocol):
     """Service result shape required by this tool."""
 
     report: PhaseReportEnvelope
+    created_by_current_execution: bool
     events: ReportPersistenceEventsProtocol
     safety_state: str
     active_safety_flags: list[SafetyFlag]
@@ -171,6 +178,15 @@ class SaveDiagnosticReportTool:
     ) -> dict[str, Any]:
         """Run save_diagnostic_report and return the common tool envelope."""
 
+        expected_version = context.diagnostic_report_schema_version
+
+        def rejected(stage: str) -> None:
+            record_report_validation_failure(
+                telemetry=self._telemetry,
+                stage=stage,
+                schema_version=expected_version,
+            )
+
         try:
             parsed: SaveDiagnosticReportInput = parse_tool_input(
                 SaveDiagnosticReportInput,
@@ -186,33 +202,29 @@ class SaveDiagnosticReportTool:
                 field["path"].startswith("completion_basis")
                 for field in details["fields"]
             ):
-                self._telemetry.report_validation_failed(
-                    schema_version=context.diagnostic_report_schema_version,
-                )
+                rejected("completion_basis")
                 return tool_error(
                     "report_validation_failed",
                     "Diagnostic report validation failed.",
                     details,
                 )
+            rejected("tool_input")
             return tool_error("validation_error", "Tool input validation failed.")
         except ValidationAppError:
+            rejected("tool_input")
             return tool_error("validation_error", "Tool input validation failed.")
         except SessionStateConflictError:
+            rejected("phase_state")
             return tool_error("invalid_phase", "Diagnostic phase is not active.")
 
         async def call() -> dict[str, Any]:
-            expected_version = context.diagnostic_report_schema_version
             if parsed.report.get("schema_version") != expected_version:
-                self._telemetry.report_validation_failed(
-                    schema_version=expected_version
-                )
+                rejected("report_schema")
                 raise ReportValidationToolError()
             try:
                 if expected_version == "diagnostic_report.v1":
                     if parsed.summary is None or not parsed.summary.strip():
-                        self._telemetry.report_validation_failed(
-                            schema_version=expected_version,
-                        )
+                        rejected("report_schema")
                         raise ReportValidationToolError()
                     report_payload: (
                         DiagnosticReportToolPayload | DiagnosticReportV2ToolPayload
@@ -221,37 +233,46 @@ class SaveDiagnosticReportTool:
                     )
                 else:
                     if parsed.summary is not None:
-                        self._telemetry.report_validation_failed(
-                            schema_version=expected_version,
-                        )
+                        rejected("report_schema")
                         raise ReportValidationToolError()
                     report_payload = DiagnosticReportV2ToolPayload.model_validate(
                         parsed.report,
                     )
             except ValidationError as exc:
-                self._telemetry.report_validation_failed(
-                    schema_version=expected_version
-                )
+                rejected("report_schema")
                 raise ReportValidationToolError(
                     validation_error_details(exc, prefix="report"),
                 ) from exc
 
             payload = report_payload.model_dump(mode="json")
             # The completion basis is intentionally never persisted or returned.
-            result = await self._service.persist_diagnostic_report_from_tool(
-                current_user=current_tool_user(context),
-                repair_session_id=parsed.repair_session_id,
-                diagnostic_session_id=context.diagnostic_session_id,
-                summary=parsed.summary,
-                payload=payload,
-                report_schema_version=expected_version,
-                completion_reason=(
-                    parsed.completion_basis.completion_reason
-                    if expected_version == "diagnostic_report.v2"
-                    else None
-                ),
-                turn_id=context.turn_id,
-            )
+            try:
+                result = await self._service.persist_diagnostic_report_from_tool(
+                    current_user=current_tool_user(context),
+                    repair_session_id=parsed.repair_session_id,
+                    diagnostic_session_id=context.diagnostic_session_id,
+                    summary=parsed.summary,
+                    payload=payload,
+                    report_schema_version=expected_version,
+                    completion_reason=(
+                        parsed.completion_basis.completion_reason
+                        if expected_version == "diagnostic_report.v2"
+                        else None
+                    ),
+                    turn_id=context.turn_id,
+                )
+            except ArtifactToolNotFoundError:
+                rejected("artifact_reference")
+                raise
+            except (SessionStateConflictError, StaleSessionError):
+                rejected("phase_state")
+                raise
+            except ValidationAppError:
+                rejected("report_schema")
+                raise
+            except Exception:
+                rejected("unknown")
+                raise
             report = result.report
             if isinstance(report.payload, (DiagnosticReportV1, DiagnosticReportV2)):
                 diagnostic_session_id = report.payload.diagnostic_session_id
@@ -273,6 +294,12 @@ class SaveDiagnosticReportTool:
                 "phase_report_created_event_sequence": (
                     result.events.phase_report_created.sequence
                 ),
+                # These fields are internal runner-notification metadata.  The
+                # public report API remains unchanged.
+                "created_by_current_execution": bool(
+                    getattr(result, "created_by_current_execution", False)
+                ),
+                "report_created_at": report.created_at.isoformat(),
             }
             if result.events.phase_transitioned is not None:
                 data["phase_transitioned_event_id"] = (

@@ -7,12 +7,14 @@ from functools import lru_cache
 from math import isfinite
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlparse
 
 import google.auth
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 ImageAnalysisMode = Literal["off", "pixels_only", "shadow", "enabled"]
 DiagnosticReportVersion = Literal["diagnostic_report.v2"]
@@ -95,6 +97,12 @@ class Settings(BaseSettings):
     firebase_project_id: str | None = None
     log_level: str | None = None
     log_format: Literal["console", "json"] | None = None
+    diagnostic_log_level: str = "INFO"
+    telemetry_exporter: Literal["none", "otlp"] = "none"
+    telemetry_otlp_endpoint: str | None = None
+    telemetry_service_name: str = Field(
+        default="bike-doc-api", min_length=1, max_length=255
+    )
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_gcs_bucket: str | None = None
@@ -213,6 +221,48 @@ class Settings(BaseSettings):
             if log_level in logging.getLevelNamesMapping():
                 return log_level
         raise ValueError("log_level must be a valid stdlib logging level name")
+
+    @field_validator("diagnostic_log_level", mode="before")
+    @classmethod
+    def validate_diagnostic_log_level(cls, value: object) -> str:
+        """Normalize the diagnostic-only stdlib logging level name."""
+
+        if isinstance(value, str):
+            log_level = value.strip().upper()
+            if log_level in logging.getLevelNamesMapping():
+                return log_level
+        raise ValueError(
+            "diagnostic_log_level must be a valid stdlib logging level name"
+        )
+
+    @field_validator("telemetry_exporter", mode="before")
+    @classmethod
+    def validate_telemetry_exporter(cls, value: object) -> object:
+        """Normalize the process telemetry exporter selection."""
+
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("telemetry_otlp_endpoint")
+    @classmethod
+    def validate_telemetry_otlp_endpoint(cls, value: str | None) -> str | None:
+        """Normalize an OTLP HTTP base endpoint before cross-field validation."""
+
+        if value is None:
+            return None
+        endpoint = value.strip()
+        return endpoint or None
+
+    @field_validator("telemetry_service_name")
+    @classmethod
+    def validate_telemetry_service_name(cls, value: str) -> str:
+        """Reject blank service names while preserving the configured identifier."""
+
+        service_name = value.strip()
+        if not service_name:
+            raise ValueError("telemetry_service_name must not be blank")
+        return service_name
 
     @field_validator("log_format", mode="before")
     @classmethod
@@ -379,6 +429,39 @@ class Settings(BaseSettings):
             raise ValueError(
                 "artifact_gcs_bucket is required when artifact_storage_provider=gcs"
             )
+        if self.telemetry_exporter == "none":
+            if self.telemetry_otlp_endpoint is not None:
+                raise ValueError(
+                    "telemetry_otlp_endpoint is forbidden when telemetry_exporter=none"
+                )
+        else:
+            endpoint = self.telemetry_otlp_endpoint
+            if endpoint is None:
+                raise ValueError(
+                    "telemetry_otlp_endpoint is required when telemetry_exporter=otlp"
+                )
+            parsed = urlparse(endpoint)
+            try:
+                port = parsed.port
+            except ValueError as exc:
+                raise ValueError(
+                    "telemetry_otlp_endpoint must contain a valid port"
+                ) from exc
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.hostname is None
+                or port == 0
+                or any(character.isspace() for character in endpoint)
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    "telemetry_otlp_endpoint must be an absolute HTTP(S) URL without "
+                    "user information, query, or fragment"
+                )
         if self.profile_inference_resolver_policy is not None:
             legacy_mode = {
                 "production": "evaluated",
@@ -573,11 +656,9 @@ def validate_artifact_storage_runtime_configuration(
         storage.Client(project=effective_project, credentials=credentials)
     except Exception as exc:
         logger.exception(
-            "failed to initialize GCS artifact storage client",
-            extra={
-                "bucket_name": settings.artifact_gcs_bucket,
-                "project_id": effective_project,
-            },
+            "gcs_artifact_storage_client_initialization_failed",
+            bucket_name=settings.artifact_gcs_bucket,
+            project_id=effective_project,
         )
         raise ValueError(
             "gcs artifact storage could not initialize the storage client; verify "

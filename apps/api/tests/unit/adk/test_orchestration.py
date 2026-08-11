@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Mapping
 from copy import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+
+import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
 from bike_doc_api.adk.runner import (
@@ -48,6 +55,8 @@ class _Store:
     """In-memory repositories for orchestration tests."""
 
     def __init__(self) -> None:
+        self.turn_count = 1
+        self.fail_completion_count = False
         self.phase_session = RepairPhaseSession(
             id="phs_orch",
             repair_session_id="rs_orch",
@@ -94,6 +103,26 @@ class _Store:
         if phase_session_id == self.phase_session.id:
             return self.phase_session
         return None
+
+    async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
+        if self.fail_completion_count:
+            raise RuntimeError("telemetry count unavailable")
+        return (
+            self.turn_count if repair_phase_session_id == self.phase_session.id else 0
+        )
+
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        if (
+            repair_phase_session_id == self.phase_session.id
+            and start_event_sequence >= 1
+        ):
+            return 1
+        return 0
 
     async def get_owned_for_update(
         self,
@@ -174,23 +203,6 @@ class _VisualContext:
         self.agent_started_turn_ids.append(turn_id)
 
 
-class _Telemetry:
-    """Captures only the privacy-safe rollout telemetry boundary."""
-
-    def __init__(self) -> None:
-        self.input_versions: list[str] = []
-        self.completed: list[DiagnosticReportTelemetryOutcome] = []
-
-    def input_requested(self, *, schema_version: str) -> None:
-        self.input_versions.append(schema_version)
-
-    def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
-        self.completed.append(outcome)
-
-    def report_validation_failed(self, *, schema_version: str) -> None:
-        raise AssertionError(f"unexpected validation signal: {schema_version}")
-
-
 class _Runner:
     """Fake runner streaming configured app-owned events."""
 
@@ -254,6 +266,11 @@ class _ExpiringTurn:
     def repair_phase_session_id(self) -> str:
         self._raise_if_expired()
         return "phs_orch"
+
+    @property
+    def start_event_sequence(self) -> int:
+        self._raise_if_expired()
+        return 1
 
     def _raise_if_expired(self) -> None:
         if self.expired:
@@ -336,6 +353,7 @@ def _orchestrator(
     calls: list[dict[str, Any]] = []
     return DiagnosticTurnOrchestrator(
         phase_sessions=store,
+        turns=store,
         repair_sessions=store,
         events=store,
         artifacts=store,
@@ -356,6 +374,144 @@ def _orchestrator(
         visual_context=visual_context or _VisualContext(),
         telemetry=telemetry or _Telemetry(),
     )
+
+
+def _span_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[InMemorySpanExporter, TracerProvider]:
+    """Install an isolated provider at the orchestration tracing seam."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(
+        "bike_doc_api.adk.orchestration.trace.get_tracer",
+        lambda _name: provider.get_tracer("orchestration-test"),
+    )
+    return exporter, provider
+
+
+async def test_orchestration_emits_required_ordered_child_span_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    runner = _Runner([DiagnosticRunnerAssistantDelta("ASSISTANT_SENTINEL")])
+
+    with provider.get_tracer("orchestration-test").start_as_current_span(
+        "bike_doc.diagnostic.turn"
+    ):
+        await _orchestrator(store=_Store(), runner=runner).process_turn(
+            current_user=_user(), turn=_turn()
+        )
+
+    spans = exporter.get_finished_spans()
+    by_name = {span.name: span for span in spans}
+    root = by_name["bike_doc.diagnostic.turn"]
+    expected = {
+        "bike_doc.diagnostic.visual_context.prepare",
+        "bike_doc.diagnostic.seed_context.build",
+        "bike_doc.diagnostic.agent.run",
+        "bike_doc.diagnostic.turn.finalize",
+    }
+    assert expected <= by_name.keys()
+    assert all(
+        by_name[name].parent is not None
+        and by_name[name].parent.span_id == root.context.span_id
+        for name in expected
+    )
+    for name in (
+        "bike_doc.diagnostic.seed.get_bike_profile",
+        "bike_doc.diagnostic.seed.lookup_repair_history",
+        "bike_doc.diagnostic.seed.list_artifacts",
+    ):
+        assert by_name[name].parent is not None
+        assert (
+            by_name[name].parent.span_id
+            == by_name["bike_doc.diagnostic.seed_context.build"].context.span_id
+        )
+        assert set(by_name[name].attributes) <= {
+            "bike_doc.seed.success",
+            "bike_doc.seed.returned_item_count",
+            "bike_doc.seed.error_code",
+        }
+    assert [span.name for span in spans if span.name.startswith("bike_doc.")] == [
+        "bike_doc.diagnostic.visual_context.prepare",
+        "bike_doc.diagnostic.seed.get_bike_profile",
+        "bike_doc.diagnostic.seed.lookup_repair_history",
+        "bike_doc.diagnostic.seed.list_artifacts",
+        "bike_doc.diagnostic.seed_context.build",
+        "bike_doc.diagnostic.agent.run",
+        "bike_doc.diagnostic.turn.finalize",
+        "bike_doc.diagnostic.turn",
+    ]
+    assert "ASSISTANT_SENTINEL" not in str(
+        [(span.attributes, span.events) for span in spans]
+    )
+    provider.shutdown()
+
+
+async def test_visual_blocked_turn_has_no_agent_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    visual_context = _VisualContext(DiagnosticVisualContext(False, (), (), (), (), ()))
+
+    with provider.get_tracer("orchestration-test").start_as_current_span(
+        "bike_doc.diagnostic.turn"
+    ):
+        await _orchestrator(
+            store=_Store(), runner=_Runner(), visual_context=visual_context
+        ).process_turn(current_user=_user(), turn=_turn(text=None, artifact_ids=[]))
+
+    names = [span.name for span in exporter.get_finished_spans()]
+    assert "bike_doc.diagnostic.agent.run" not in names
+    assert "bike_doc.diagnostic.turn.finalize" in names
+    provider.shutdown()
+
+
+async def test_runner_failure_and_cancellation_close_agent_spans(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    exporter, provider = _span_exporter(monkeypatch)
+    tracer = provider.get_tracer("orchestration-test")
+
+    with tracer.start_as_current_span("bike_doc.diagnostic.turn"):
+        await _orchestrator(store=_Store(), runner=_Runner(raises=True)).process_turn(
+            current_user=_user(), turn=_turn()
+        )
+
+    failed_agent = next(
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "bike_doc.diagnostic.agent.run"
+    )
+    assert failed_agent.status.status_code is StatusCode.ERROR
+    assert any(
+        span.name == "bike_doc.diagnostic.turn.finalize"
+        for span in exporter.get_finished_spans()
+    )
+
+    exporter.clear()
+    with (
+        tracer.start_as_current_span("bike_doc.diagnostic.turn"),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await _orchestrator(
+            store=_Store(),
+            runner=_Runner([asyncio.CancelledError()]),
+        ).process_turn(current_user=_user(), turn=_turn())
+
+    cancelled_agent = next(
+        span
+        for span in exporter.get_finished_spans()
+        if span.name == "bike_doc.diagnostic.agent.run"
+    )
+    assert cancelled_agent.status.status_code is StatusCode.UNSET
+    assert all(
+        span.name != "bike_doc.diagnostic.turn.finalize"
+        for span in exporter.get_finished_spans()
+    )
+    provider.shutdown()
 
 
 async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
@@ -397,10 +553,9 @@ async def test_accepted_turn_invokes_runner_with_server_owned_context() -> None:
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
 
 
-async def test_orchestration_records_safe_report_outcomes() -> None:
+async def test_orchestration_uses_committed_terminal_notifications() -> None:
     store = _Store()
     telemetry = _Telemetry()
-
     await _orchestrator(
         store=store,
         telemetry=telemetry,
@@ -418,17 +573,87 @@ async def test_orchestration_records_safe_report_outcomes() -> None:
         ),
     ).process_turn(current_user=_user(), turn=_turn())
 
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
     assert telemetry.input_versions == ["diagnostic_report.v2"]
-    assert telemetry.completed == [
-        DiagnosticReportTelemetryOutcome(
-            schema_version="diagnostic_report.v2",
-            observed_finding_count=0,
-            contributing_factor_count=0,
-            alternate_hypothesis_count=2,
-            completion_reason=None,
-            same_turn_completion_after_first_finding=False,
+
+
+async def test_report_creating_execution_emits_session_summary_after_commit() -> None:
+    store = _Store()
+    store.turn_count = 3
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_1",
+                    schema_version="diagnostic_report.v2",
+                    diagnostic_session_id="phs_orch",
+                    created_by_current_execution=True,
+                    report_created_at=datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == [
+        (
+            "rs_orch",
+            "phs_orch",
+            "diagnosis_supported",
+            3,
+            300000,
+            "diagnostic_report.v2",
         )
     ]
+
+
+async def test_observed_report_does_not_emit_session_summary() -> None:
+    store = _Store()
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_existing",
+                    schema_version="diagnostic_report.v2",
+                    diagnostic_session_id="phs_orch",
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == []
+
+
+async def test_session_summary_query_failure_does_not_change_terminal_turn() -> None:
+    store = _Store()
+    store.fail_completion_count = True
+    telemetry = _Telemetry()
+    await _orchestrator(
+        store=store,
+        telemetry=telemetry,
+        runner=_Runner(
+            [
+                DiagnosticRunnerReportCompleted(
+                    report_id="rpt_1",
+                    schema_version="diagnostic_report.v2",
+                    created_by_current_execution=True,
+                    report_created_at=datetime(2026, 1, 1, 0, 5, tzinfo=UTC),
+                    completion_reason="diagnosis_supported",
+                ),
+            ],
+        ),
+    ).process_turn(current_user=_user(), turn=_turn())
+
+    assert telemetry.session_completions == []
+    assert store.events[-1].type == "turn.completed"
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
 
 
 async def test_pixels_only_turn_passes_labeled_pixels_to_runner() -> None:
@@ -829,6 +1054,28 @@ async def test_stream_exception_after_prior_event_preserves_order() -> None:
     assert store.events[-1].data["session"]["status"] != "running"
 
 
+async def test_post_report_runner_failure_preserves_committed_report_status() -> None:
+    store = _Store()
+    runner = _Runner(
+        [
+            DiagnosticRunnerReportCompleted(
+                report_id="rpt_1",
+                schema_version="diagnostic_report.v2",
+                observed_finding_count=1,
+            ),
+            RuntimeError("provider failed after report commit"),
+        ],
+    )
+
+    await _orchestrator(store=store, runner=runner).process_turn(
+        current_user=_user(),
+        turn=_turn(),
+    )
+
+    assert [event.type for event in store.events] == ["error", "turn.completed"]
+    assert store.events[-1].data["session"]["status"] == "awaiting_decision"
+
+
 async def test_turn_scalar_snapshot_survives_expired_orm_state() -> None:
     store = _Store()
     turn = _ExpiringTurn()
@@ -870,3 +1117,41 @@ async def test_user_scalar_snapshot_survives_tool_commit_expiry() -> None:
 
     assert [event.type for event in store.events] == ["turn.completed"]
     assert store.events[-1].data["session"]["status"] == "awaiting_user"
+
+
+class _Telemetry:
+    """Captures the existing completion signal until its dedicated replacement."""
+
+    def __init__(self) -> None:
+        self.input_versions: list[str] = []
+        self.completed: list[DiagnosticReportTelemetryOutcome] = []
+        self.session_completions: list[tuple[str, str, str, int, int, str]] = []
+
+    def input_requested(self, *, schema_version: str) -> None:
+        self.input_versions.append(schema_version)
+
+    def report_completed(self, *, outcome: DiagnosticReportTelemetryOutcome) -> None:
+        self.completed.append(outcome)
+
+    def report_validation_failed(
+        self, *, stage: str, attempt_number: int, schema_version: str
+    ) -> None:
+        raise AssertionError(f"unexpected validation signal: {schema_version}")
+
+    def session_completed(self, *, completion: Any) -> None:
+        self.session_completions.append(
+            (
+                completion.repair_session_id,
+                completion.diagnostic_session_id,
+                completion.completion_reason,
+                completion.turn_count,
+                int(
+                    (
+                        completion.report_created_at
+                        - completion.phase_session_created_at
+                    ).total_seconds()
+                    * 1000
+                ),
+                completion.report_schema_version,
+            )
+        )

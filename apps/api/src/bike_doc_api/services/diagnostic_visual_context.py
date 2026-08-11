@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from time import monotonic
 from typing import Any, Literal, Protocol
+
+import structlog
 
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
 from bike_doc_api.models.observation_extraction import (
@@ -42,7 +42,7 @@ from bike_doc_api.services.observation_extraction_telemetry import (
 )
 
 _ACCEPTED_IMAGE_MIME_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class RepairTurnRepositoryProtocol(Protocol):
@@ -218,6 +218,21 @@ class DiagnosticVisualContextService:
         self._prompt_version = prompt_version
         self._preprocess = preprocess
         self._telemetry = telemetry or default_observation_extraction_telemetry()
+
+    def telemetry_attributes(self) -> dict[str, str]:
+        """Expose only approved implementation versions to orchestration spans."""
+
+        return {
+            "bike_doc.visual.extractor.provider": getattr(
+                self._extractor, "provider", "unavailable"
+            ),
+            "bike_doc.visual.extractor.model": getattr(
+                self._extractor, "model", "unavailable"
+            ),
+            "bike_doc.visual.extractor.version": self._extractor_version,
+            "bike_doc.visual.prompt.version": self._prompt_version,
+            "bike_doc.visual.preprocessing.version": PREPROCESSING_VERSION,
+        }
 
     async def prepare_turn(
         self,
@@ -702,13 +717,6 @@ class DiagnosticVisualContextService:
             run,
             validated_output=validated.model_dump(mode="json"),
         )
-        for observation in validated.observations:
-            observation_data = observation.model_dump(mode="json")
-            logger.debug(
-                "observation_extraction_observation observation=%s",
-                json.dumps(observation_data, separators=(",", ":"), sort_keys=True),
-                extra={"observation": observation_data},
-            )
         assessment_counts = _assessment_counts(validated)
         fields = {
             **event_fields,

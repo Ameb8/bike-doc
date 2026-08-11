@@ -1204,13 +1204,12 @@ retain their originally selected version.
 The stable, privacy-safe operational events are
 `diagnostic_turn_input_requested`, `diagnostic_report_completed`, and
 `diagnostic_report_validation_failed`. They contain only schema version,
-completion reason, report-composition counts, and the boolean
-`same_turn_completion_after_first_finding`; no report prose, completion-basis
-rationale, prompts, or model reasoning is allowed. The boolean means the
-completed V2 report first persisted one or more observed findings on that same
-report turn. Input/report turn counts, retry/continuation rates, turn count,
-and elapsed time remain derivable from durable `repair_turns`, report events,
-and their timestamps; telemetry must not treat larger counts as better.
+completion reason, and report-composition counts; no first-finding same-turn
+measure, report prose, completion-basis rationale, prompts, or model reasoning
+is allowed. Input/report turn counts,
+retry/continuation rates, turn count, and elapsed time remain derivable from
+durable `repair_turns`, report events, and their timestamps; telemetry must not
+treat larger counts as better.
 
 Changes to report versions, prompt behavior, completion-basis shape, or
 diagnostic relevance values require regression evaluation against the accepted

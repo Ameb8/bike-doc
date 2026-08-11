@@ -1,6 +1,6 @@
 """Repair session repository."""
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.repair_session import (
@@ -179,6 +179,32 @@ class RepairTurnRepository:
             ),
         )
         return result.scalar_one_or_none()
+
+    async def count_for_phase_session(self, repair_phase_session_id: str) -> int:
+        """Return the total accepted turn count for one phase session."""
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(RepairTurn)
+            .where(RepairTurn.repair_phase_session_id == repair_phase_session_id),
+        )
+        return result.scalar_one()
+
+    async def count_for_phase_session_through_start_event_sequence(
+        self,
+        *,
+        repair_phase_session_id: str,
+        start_event_sequence: int,
+    ) -> int:
+        """Return the stable turn ordinal through a durable event sequence."""
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(RepairTurn)
+            .where(
+                RepairTurn.repair_phase_session_id == repair_phase_session_id,
+                RepairTurn.start_event_sequence <= start_event_sequence,
+            ),
+        )
+        return result.scalar_one()
 
     async def list_for_session(
         self,

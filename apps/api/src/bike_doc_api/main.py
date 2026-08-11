@@ -1,12 +1,16 @@
 """FastAPI application entrypoint."""
 
-import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from bike_doc_api.adk.telemetry import (
+    validate_diagnostic_telemetry_runtime_configuration,
+)
+from bike_doc_api.api.middleware import install_request_logging
 from bike_doc_api.api.router import router as api_router
 from bike_doc_api.core.config import (
     Settings,
@@ -15,28 +19,43 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.core.errors import install_exception_handlers
 from bike_doc_api.core.logging import configure_logging
+from bike_doc_api.core.telemetry import TelemetryRuntime, initialize_telemetry
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Application lifespan hook reserved for shared resources."""
-    yield
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Start telemetry before routes can schedule background work."""
+
+    runtime = app.state.telemetry_initializer(app.state.settings)
+    app.state.telemetry_runtime = runtime
+    try:
+        yield
+    finally:
+        await runtime.shutdown()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    telemetry_initializer: Callable[
+        [Settings], TelemetryRuntime
+    ] = initialize_telemetry,
+) -> FastAPI:
     """Create the FastAPI application shell."""
     settings = settings or get_settings()
     validate_artifact_storage_runtime_configuration(settings)
+    validate_diagnostic_telemetry_runtime_configuration(settings)
     configure_logging(
         environment=settings.environment,
         log_level=settings.log_level,
         log_format=settings.log_format,
+        diagnostic_log_level=settings.diagnostic_log_level,
     )
     logger.info(
-        "diagnostic_report_version_configured version=%s",
-        settings.diagnostic_report_version,
+        "diagnostic_report_version_configured",
+        version=settings.diagnostic_report_version,
     )
 
     app = FastAPI(
@@ -45,6 +64,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         debug=settings.debug,
         lifespan=lifespan,
     )
+    app.state.settings = settings
+    app.state.telemetry_initializer = telemetry_initializer
     app.dependency_overrides[get_settings] = lambda: settings
     if settings.cors_origins:
         app.add_middleware(
@@ -54,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    install_request_logging(app)
     install_exception_handlers(app)
     app.include_router(api_router)
     return app

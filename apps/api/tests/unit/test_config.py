@@ -53,6 +53,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     monkeypatch.setenv("BIKE_DOC_API_FIREBASE_PROJECT_ID", "bike-doc-dev")
     monkeypatch.setenv("BIKE_DOC_API_LOG_LEVEL", "warning")
     monkeypatch.setenv("BIKE_DOC_API_LOG_FORMAT", "json")
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL", "debug")
     monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER", "gcs")
     monkeypatch.setenv("BIKE_DOC_API_ARTIFACT_GCS_BUCKET", "bike-doc-artifacts")
     monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER", "google_ai")
@@ -86,6 +87,7 @@ def test_settings_read_bike_doc_api_prefixed_environment(
     assert settings.firebase_project_id == "bike-doc-dev"
     assert settings.log_level == "WARNING"
     assert settings.log_format == "json"
+    assert settings.diagnostic_log_level == "DEBUG"
     assert settings.artifact_storage_provider == "gcs"
     assert settings.artifact_gcs_bucket == "bike-doc-artifacts"
     assert settings.diagnostic_llm_provider == "google_ai"
@@ -134,6 +136,67 @@ def test_invalid_log_level_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_invalid_diagnostic_log_level_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_LOG_LEVEL", "verbose")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_telemetry_defaults_to_disabled_without_an_endpoint() -> None:
+    settings = Settings()
+
+    assert settings.telemetry_exporter == "none"
+    assert settings.telemetry_otlp_endpoint is None
+    assert settings.telemetry_service_name == "bike-doc-api"
+
+
+def test_otlp_telemetry_settings_are_normalized() -> None:
+    settings = Settings(
+        telemetry_exporter=" OTLP ",
+        telemetry_otlp_endpoint=" https://collector.example/otlp/ ",
+        telemetry_service_name=" bike-doc-test ",
+    )
+
+    assert settings.telemetry_exporter == "otlp"
+    assert settings.telemetry_otlp_endpoint == "https://collector.example/otlp/"
+    assert settings.telemetry_service_name == "bike-doc-test"
+
+
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "collector.example",
+        "ftp://collector.example",
+        "https://user@collector.example",
+        "https://collector.example?token=secret",
+        "https://collector.example#fragment",
+    ],
+)
+def test_otlp_telemetry_rejects_unsafe_endpoints(endpoint: str) -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint"):
+        Settings(telemetry_exporter="otlp", telemetry_otlp_endpoint=endpoint)
+
+
+def test_otlp_telemetry_requires_an_endpoint() -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint is required"):
+        Settings(telemetry_exporter="otlp")
+
+
+def test_disabled_telemetry_forbids_an_endpoint() -> None:
+    with pytest.raises(ValidationError, match="telemetry_otlp_endpoint is forbidden"):
+        Settings(telemetry_otlp_endpoint="https://collector.example")
+
+
+def test_telemetry_service_name_must_not_be_blank_or_unbounded() -> None:
+    with pytest.raises(ValidationError, match="telemetry_service_name"):
+        Settings(telemetry_service_name=" ")
+    with pytest.raises(ValidationError, match="telemetry_service_name"):
+        Settings(telemetry_service_name="x" * 256)
 
 
 def test_blank_diagnostic_agent_model_is_rejected(
@@ -324,7 +387,7 @@ def test_gcs_artifact_runtime_validation_logs_client_initialization_failure(
     with pytest.raises(ValueError, match="could not initialize the storage client"):
         validate_artifact_storage_runtime_configuration(settings, environ={})
 
-    assert "failed to initialize GCS artifact storage client" in caplog.text
+    assert "gcs_artifact_storage_client_initialization_failed" in caplog.text
     assert "denied:client-init" in caplog.text
 
 
@@ -514,6 +577,9 @@ def test_env_example_documents_diagnostic_runtime_settings() -> None:
         "BIKE_DOC_API_ARTIFACT_GCS_BUCKET",
         "GOOGLE_APPLICATION_CREDENTIALS",
         "BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER",
+        "BIKE_DOC_API_TELEMETRY_EXPORTER",
+        "BIKE_DOC_API_TELEMETRY_OTLP_ENDPOINT",
+        "BIKE_DOC_API_TELEMETRY_SERVICE_NAME",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MODEL",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE",
         "BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS",

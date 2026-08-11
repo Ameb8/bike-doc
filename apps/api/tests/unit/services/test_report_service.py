@@ -441,6 +441,7 @@ async def test_tool_v2_persistence_stamps_outcome_summary_and_artifact_union() -
     assert result.report.payload.diagnostic_outcome == "diagnosis_supported"
     assert result.report.payload.diagnostic_session_id == PHASE_SESSION_ID
     assert result.report.source_artifact_ids == [OWNED_ARTIFACT_ID]
+    assert result.created_by_current_execution is True
 
 
 @pytest.mark.parametrize(

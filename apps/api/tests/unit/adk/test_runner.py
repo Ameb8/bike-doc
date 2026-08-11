@@ -7,9 +7,19 @@ from collections.abc import AsyncIterator
 from dataclasses import replace
 from typing import Any, cast
 
+import pytest
+from google.adk.agents import Agent
 from google.adk.events import Event
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_response import LlmResponse
 from google.adk.sessions import InMemorySessionService
+from google.adk.telemetry import tracing
+from google.adk.tools import FunctionTool
 from google.genai import types
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from pydantic import PrivateAttr
 
 from bike_doc_api.adk.runner import (
     DiagnosticRunner,
@@ -244,6 +254,215 @@ async def test_stream_returns_async_iterator_of_app_owned_events() -> None:
         )
         for event in events
     )
+
+
+async def test_adk_invocation_owns_a_no_content_telemetry_policy() -> None:
+    """The runner passes the pinned ADK policy on every production invocation."""
+
+    service = InMemorySessionService()
+    await _seed_session(service)
+    fake_adk = _FakeADKRunner([_final()])
+
+    await _collect(
+        DiagnosticRunner(
+            agent=cast(Any, object()),
+            session_service=service,
+            runner_factory=lambda _agent, _service: fake_adk,
+            sleep=_sleep_never,
+        )
+    )
+
+    run_config = fake_adk.calls[0]["run_config"]
+    assert run_config.telemetry is not None
+    assert run_config.telemetry.content_capturing_mode_value == ""
+    assert run_config.telemetry.should_add_content_to_legacy_spans is False
+    assert run_config.telemetry.should_add_content_to_logs is False
+
+
+class _SentinelModel(BaseLlm):
+    """Provider-free ADK model that exercises one tool call and response."""
+
+    _calls: int = PrivateAttr(default=0)
+
+    async def generate_content_async(  # type: ignore[override]
+        self, _request: Any, stream: bool = False
+    ) -> AsyncIterator[LlmResponse]:
+        del stream
+        self._calls += 1
+        if self._calls == 1:
+            yield LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[
+                        types.Part.from_function_call(
+                            name="sentinel_tool",
+                            args={"argument": "TOOL_ARGUMENT_SENTINEL"},
+                        )
+                    ],
+                )
+            )
+            return
+        yield LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[types.Part.from_text(text="MODEL_RESPONSE_SENTINEL")],
+            )
+        )
+
+
+class _RecordingOtelLogger:
+    def __init__(self) -> None:
+        self.records: list[Any] = []
+
+    def emit(self, record: Any) -> None:
+        self.records.append(record)
+
+
+def _flatten_telemetry(value: Any) -> str:
+    if isinstance(value, dict):
+        return " ".join(_flatten_telemetry(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return " ".join(_flatten_telemetry(item) for item in value)
+    return str(value)
+
+
+async def test_real_adk_export_contains_no_diagnostic_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Content cannot reach spans, events, or ADK telemetry logs in a real run."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    telemetry_logger = _RecordingOtelLogger()
+    monkeypatch.setattr(tracing, "tracer", provider.get_tracer("adk-test"))
+    monkeypatch.setattr(tracing, "otel_logger", telemetry_logger)
+
+    def sentinel_tool(argument: str) -> dict[str, str]:
+        assert argument == "TOOL_ARGUMENT_SENTINEL"
+        return {
+            "result": "TOOL_RESPONSE_SENTINEL",
+            "provider_request_id": "PROVIDER_REQUEST_ID_SENTINEL",
+        }
+
+    service = InMemorySessionService()
+    await _seed_session(service)
+    agent = Agent(
+        name="diagnostic_agent",
+        model=_SentinelModel(model="provider-free"),
+        instruction="PROMPT_SENTINEL",
+        tools=[FunctionTool(sentinel_tool)],
+    )
+    request = replace(
+        _request(),
+        user_id="USER_ID_SENTINEL",
+        message_text="USER_MESSAGE_SENTINEL",
+        current_images=(_image("art_1", b"IMAGE_DATA_SENTINEL"),),
+        bike_profile={
+            "rationale": "REPORT_RATIONALE_SENTINEL",
+            "storage_location": "gs://STORAGE_LOCATION_SENTINEL",
+        },
+    )
+
+    events = [
+        event
+        async for event in DiagnosticRunner(
+            agent=agent,
+            session_service=service,
+            sleep=_sleep_never,
+        ).stream(request)
+    ]
+
+    assert any(
+        isinstance(event, DiagnosticRunnerAssistantMessageCompleted) for event in events
+    )
+    exported = " ".join(
+        _flatten_telemetry(
+            [span.attributes, [event.attributes for event in span.events]]
+        )
+        for span in exporter.get_finished_spans()
+    ) + _flatten_telemetry(
+        [(record.body, record.attributes) for record in telemetry_logger.records]
+    )
+    for sentinel in (
+        "USER_MESSAGE_SENTINEL",
+        "MODEL_RESPONSE_SENTINEL",
+        "PROMPT_SENTINEL",
+        "TOOL_ARGUMENT_SENTINEL",
+        "TOOL_RESPONSE_SENTINEL",
+        "REPORT_RATIONALE_SENTINEL",
+        "IMAGE_DATA_SENTINEL",
+        "USER_ID_SENTINEL",
+        "PROVIDER_REQUEST_ID_SENTINEL",
+        "STORAGE_LOCATION_SENTINEL",
+        "rs_runner",
+        "turn_runner",
+        "phs_runner",
+    ):
+        assert sentinel not in exported
+    provider.shutdown()
+
+
+async def test_real_adk_model_and_tool_spans_descend_from_agent_run_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shared provider preserves app-to-ADK nesting without provider I/O."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(tracing, "tracer", provider.get_tracer("shared-provider"))
+
+    def sentinel_tool(argument: str) -> dict[str, str]:
+        assert argument == "TOOL_ARGUMENT_SENTINEL"
+        return {"result": "TOOL_RESPONSE_SENTINEL"}
+
+    service = InMemorySessionService()
+    await _seed_session(service)
+    agent = Agent(
+        name="diagnostic_agent",
+        model=_SentinelModel(model="provider-free"),
+        instruction="PROMPT_SENTINEL",
+        tools=[FunctionTool(sentinel_tool)],
+    )
+    with provider.get_tracer("shared-provider").start_as_current_span(
+        "bike_doc.diagnostic.agent.run"
+    ) as agent_run:
+        await _collect(
+            DiagnosticRunner(
+                agent=agent,
+                session_service=service,
+                sleep=_sleep_never,
+            )
+        )
+
+    spans = exporter.get_finished_spans()
+    descendants = [
+        span
+        for span in spans
+        if span.name != "bike_doc.diagnostic.agent.run"
+        and _is_descendant_of(span.context.span_id, agent_run.context.span_id, spans)
+    ]
+    # Names and attributes remain owned by ADK; a real model-and-tool run must
+    # nevertheless contribute more than its app-owned parent span.
+    assert len(descendants) >= 2
+    provider.shutdown()
+
+
+def _is_descendant_of(span_id: int, ancestor_id: int, spans: list[Any]) -> bool:
+    """Follow exported parent IDs without coupling to ADK span names."""
+
+    parents = {
+        span.context.span_id: span.parent.span_id
+        for span in spans
+        if span.parent is not None
+    }
+    current = parents.get(span_id)
+    while current is not None:
+        if current == ancestor_id:
+            return True
+        current = parents.get(current)
+    return False
 
 
 async def test_adk_stream_yields_delta_before_later_final_response() -> None:

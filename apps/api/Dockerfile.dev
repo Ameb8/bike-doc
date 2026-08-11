@@ -17,4 +17,4 @@ RUN cd apps/api && uv sync --frozen --group dev
 
 EXPOSE 8000
 
-CMD ["uv", "run", "--directory", "/workspace/apps/api", "uvicorn", "bike_doc_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/workspace/apps/api/src"]
+CMD ["uv", "run", "--directory", "/workspace/apps/api", "uvicorn", "bike_doc_api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--no-access-log", "--reload-dir", "/workspace/apps/api/src"]
