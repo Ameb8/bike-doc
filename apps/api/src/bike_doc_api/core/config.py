@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     telemetry_service_name: str = Field(
         default="bike-doc-api", min_length=1, max_length=255
     )
+    diagnostic_trace_content: bool = False
     artifact_storage_provider: Literal["local", "gcs"] = "local"
     artifact_local_storage_root: Path = Path("apps/api/.local/artifacts")
     artifact_gcs_bucket: str | None = None
@@ -154,7 +155,7 @@ class Settings(BaseSettings):
     @classmethod
     def validate_environment(cls, value: str) -> str:
         """Normalize the runtime environment name."""
-        environment = value.strip()
+        environment = value.strip().lower()
         if not environment:
             raise ValueError("environment must not be empty")
         return environment
@@ -462,6 +463,10 @@ class Settings(BaseSettings):
                     "telemetry_otlp_endpoint must be an absolute HTTP(S) URL without "
                     "user information, query, or fragment"
                 )
+        if self.diagnostic_trace_content and environment != "local":
+            raise ValueError(
+                "diagnostic_trace_content is permitted only when environment=local"
+            )
         if self.profile_inference_resolver_policy is not None:
             legacy_mode = {
                 "production": "evaluated",

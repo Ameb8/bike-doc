@@ -32,6 +32,7 @@ from bike_doc_api.adk.runner import (
     DiagnosticRunnerResult,
 )
 from bike_doc_api.adk.sessions import DIAGNOSTIC_ADK_APP_NAME, DIAGNOSTIC_ADK_USER_ID
+from bike_doc_api.core.config import Settings
 from bike_doc_api.schemas.observation_extraction import (
     ArtifactProcessingStatus,
     DiagnosticVisualObservationProjection,
@@ -279,6 +280,28 @@ async def test_adk_invocation_owns_a_no_content_telemetry_policy() -> None:
     assert run_config.telemetry.should_add_content_to_logs is False
 
 
+async def test_adk_invocation_enables_span_only_content_for_local_opt_in() -> None:
+    service = InMemorySessionService()
+    await _seed_session(service)
+    fake_adk = _FakeADKRunner([_final()])
+
+    await _collect(
+        DiagnosticRunner(
+            agent=cast(Any, object()),
+            session_service=service,
+            runner_factory=lambda _agent, _service: fake_adk,
+            sleep=_sleep_never,
+            settings=Settings(environment="local", diagnostic_trace_content=True),
+        )
+    )
+
+    telemetry = fake_adk.calls[0]["run_config"].telemetry
+    assert telemetry is not None
+    assert telemetry.content_capturing_mode_value == "SPAN_ONLY"
+    assert telemetry.should_add_content_to_legacy_spans is True
+    assert telemetry.should_add_content_to_logs is False
+
+
 class _SentinelModel(BaseLlm):
     """Provider-free ADK model that exercises one tool call and response."""
 
@@ -400,6 +423,61 @@ async def test_real_adk_export_contains_no_diagnostic_content(
         "phs_runner",
     ):
         assert sentinel not in exported
+    provider.shutdown()
+
+
+async def test_real_adk_export_contains_local_opted_in_span_content_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local opt-in exposes ADK content in spans but never telemetry logs."""
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    telemetry_logger = _RecordingOtelLogger()
+    monkeypatch.setattr(tracing, "tracer", provider.get_tracer("adk-test"))
+    monkeypatch.setattr(tracing, "otel_logger", telemetry_logger)
+
+    def sentinel_tool(argument: str) -> dict[str, str]:
+        assert argument == "TOOL_ARGUMENT_SENTINEL"
+        return {"result": "TOOL_RESPONSE_SENTINEL"}
+
+    service = InMemorySessionService()
+    await _seed_session(service)
+    agent = Agent(
+        name="diagnostic_agent",
+        model=_SentinelModel(model="provider-free"),
+        instruction="PROMPT_SENTINEL",
+        tools=[FunctionTool(sentinel_tool)],
+    )
+    request = replace(_request(), message_text="USER_MESSAGE_SENTINEL")
+
+    runner = DiagnosticRunner(
+        agent=agent,
+        session_service=service,
+        sleep=_sleep_never,
+        settings=Settings(environment="local", diagnostic_trace_content=True),
+    )
+    _ = [event async for event in runner.stream(request)]
+
+    span_content = _flatten_telemetry(
+        [
+            [span.attributes, [event.attributes for event in span.events]]
+            for span in exporter.get_finished_spans()
+        ]
+    )
+    log_content = _flatten_telemetry(
+        [(record.body, record.attributes) for record in telemetry_logger.records]
+    )
+    for sentinel in (
+        "USER_MESSAGE_SENTINEL",
+        "MODEL_RESPONSE_SENTINEL",
+        "PROMPT_SENTINEL",
+        "TOOL_ARGUMENT_SENTINEL",
+        "TOOL_RESPONSE_SENTINEL",
+    ):
+        assert sentinel in span_content
+        assert sentinel not in log_content
     provider.shutdown()
 
 

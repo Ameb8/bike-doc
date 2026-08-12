@@ -16,6 +16,7 @@ from google.genai import types
 
 from bike_doc_api.adk.telemetry import (
     DiagnosticTelemetryConfigurationError,
+    diagnostic_run_config,
     validate_diagnostic_telemetry_runtime_configuration,
 )
 from bike_doc_api.core.config import Settings
@@ -69,6 +70,31 @@ def test_pinned_adk_no_content_telemetry_suppresses_spans_and_logs() -> None:
 
     assert telemetry.content_capturing_mode_value == ""
     assert telemetry.should_add_content_to_legacy_spans is False
+    assert telemetry.should_add_content_to_logs is False
+
+
+def test_local_content_capture_selects_adk_span_only_mode() -> None:
+    telemetry = diagnostic_run_config(
+        Settings(environment="local", diagnostic_trace_content=True)
+    ).telemetry
+
+    assert telemetry is not None
+    assert telemetry.content_capturing_mode_value == "SPAN_ONLY"
+    assert telemetry.should_add_content_to_legacy_spans is True
+    assert telemetry.should_add_content_to_experimental_spans is True
+    assert telemetry.should_add_content_to_logs is False
+
+
+@pytest.mark.parametrize("environment", ["local", "test", "development", "staging"])
+def test_disabled_capture_selects_no_content_in_every_environment(
+    environment: str,
+) -> None:
+    telemetry = diagnostic_run_config(Settings(environment=environment)).telemetry
+
+    assert telemetry is not None
+    assert telemetry.content_capturing_mode_value == ""
+    assert telemetry.should_add_content_to_legacy_spans is False
+    assert telemetry.should_add_content_to_experimental_spans is False
     assert telemetry.should_add_content_to_logs is False
 
 
