@@ -20,7 +20,8 @@ from bike_doc_api.adk.sessions import (
     StaleInMemoryADKSessionError,
     ensure_adk_session_available,
 )
-from bike_doc_api.adk.telemetry import diagnostic_no_content_run_config
+from bike_doc_api.adk.telemetry import diagnostic_run_config
+from bike_doc_api.core.config import Settings
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
 from bike_doc_api.schemas.observation_extraction import (
@@ -193,6 +194,7 @@ class DiagnosticRunner:
         runner_factory: DiagnosticADKRunnerFactory | None = None,
         clock: MonotonicClock | None = None,
         sleep: SleepFunction | None = None,
+        settings: Settings | None = None,
         delta_character_threshold: int = 25,
         delta_flush_interval_seconds: float = 0.150,
     ) -> None:
@@ -202,6 +204,7 @@ class DiagnosticRunner:
         self._runner_factory = runner_factory or _default_runner_factory
         self._clock = clock or monotonic
         self._sleep = sleep or asyncio.sleep
+        self._settings = settings or Settings()
         self._delta_character_threshold = delta_character_threshold
         self._delta_flush_interval_seconds = delta_flush_interval_seconds
 
@@ -323,7 +326,7 @@ class DiagnosticRunner:
             session_id=request.adk_session_id,
             new_message=_content_from_request(request),
             state_delta=_state_delta_from_request(request),
-            run_config=diagnostic_no_content_run_config(),
+            run_config=diagnostic_run_config(self._settings),
         )
         coalescer = _TextDeltaCoalescer(
             clock=self._clock,

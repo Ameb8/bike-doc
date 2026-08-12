@@ -208,13 +208,13 @@ responses are interpreted into typed input-request, safety, report, or error
 notifications. The convenience `run()` method merely collects `stream()` for
 compatibility; production orchestration consumes `stream()`.
 
-Every diagnostic `Runner.run_async(...)` also receives a fresh code-owned ADK
-`RunConfig.telemetry` policy with `NO_CONTENT`. This is not configurable by a
-BikeDoc setting. Non-test startup rejects ADK admin locks, content-capture
+Every diagnostic `Runner.run_async(...)` receives a fresh ADK
+`RunConfig.telemetry` policy derived from the typed application setting. It is
+`NO_CONTENT` by default and `SPAN_ONLY` only for explicitly enabled `local`
+runtimes. Non-test startup rejects ADK admin locks, independent content-capture
 environment overrides, active model runtime wrappers, and optional Google
-GenAI OpenTelemetry instrumentation because they can bypass the per-run
-policy. Tests may install controlled in-memory instrumentation only to assert
-that exported spans, events, and logs contain no content.
+GenAI OpenTelemetry instrumentation because they can bypass the per-run policy.
+Tests may install controlled in-memory instrumentation to assert both modes.
 
 The runner supports an injected invoker and runner factory for isolated tests.
 It converts unexpected runtime failures to a public-safe,

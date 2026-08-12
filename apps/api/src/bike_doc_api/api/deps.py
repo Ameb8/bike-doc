@@ -129,4 +129,4 @@ def get_diagnostic_runner(
     """Build the diagnostic runner with the shared ADK session service."""
 
     validate_diagnostic_runtime_configuration(settings)
-    return DiagnosticRunner(session_service=session_service)
+    return DiagnosticRunner(session_service=session_service, settings=settings)

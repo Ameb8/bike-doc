@@ -676,6 +676,7 @@ def _build_background_orchestrator(
     runner = DiagnosticRunner(
         agent=create_diagnostic_agent(tool_dependencies, settings=settings),
         session_service=session_service,
+        settings=settings,
     )
     return DiagnosticTurnOrchestrator(
         phase_sessions=phase_sessions,

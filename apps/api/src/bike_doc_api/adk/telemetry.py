@@ -29,12 +29,33 @@ class DiagnosticTelemetryConfigurationError(ValueError):
     """The installed ADK telemetry runtime can export diagnostic content."""
 
 
+def diagnostic_run_config(settings: Settings) -> RunConfig:
+    """Build the setting-governed ADK telemetry policy for one invocation."""
+
+    capture_mode = (
+        ContentCapturingMode.SPAN_ONLY
+        if settings.diagnostic_trace_content
+        else ContentCapturingMode.NO_CONTENT
+    )
+
+    return RunConfig(
+        telemetry=TelemetryConfig(
+            capture_message_content=capture_mode,
+            # ADK's experimental semantic convention records request and
+            # response content on spans. The legacy convention routes message
+            # bodies to logs, which would defeat span-only capture.
+            genai_semconv_stability_opt_in="experimental",
+        )
+    )
+
+
 def diagnostic_no_content_run_config() -> RunConfig:
-    """Build the immutable-in-effect policy supplied to every ADK invocation."""
+    """Build the default privacy-safe policy for unconfigured test adapters."""
 
     return RunConfig(
         telemetry=TelemetryConfig(
             capture_message_content=ContentCapturingMode.NO_CONTENT,
+            genai_semconv_stability_opt_in="experimental",
         )
     )
 
@@ -83,11 +104,16 @@ def validate_diagnostic_telemetry_runtime_configuration(
     ):
         violations.append("google.genai.Models.generate_content runtime hook")
 
-    policy = diagnostic_no_content_run_config().telemetry
+    policy = diagnostic_run_config(settings).telemetry
     if (
         policy is None
-        or policy.should_add_content_to_legacy_spans
-        or policy.should_add_content_to_experimental_spans
+        or (
+            not settings.diagnostic_trace_content
+            and (
+                policy.should_add_content_to_legacy_spans
+                or policy.should_add_content_to_experimental_spans
+            )
+        )
         or policy.should_add_content_to_logs
     ):
         violations.append("installed ADK RunConfig.telemetry resolution")

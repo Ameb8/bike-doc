@@ -31,6 +31,8 @@ Read only the files relevant to the change:
 - `docs/specs/apps/adk-diagnostic-tools.md`: Internal diagnostic ADK tool contracts.
 - `docs/specs/apps/diagnostic-telemetry.md`: Level 2 diagnostic logs, traces,
   metrics, correlation, and privacy rules.
+- `docs/specs/apps/local-diagnostic-trace-content.md`: Explicitly opted-in local
+  capture of diagnostic model and tool content in trace spans.
 - `docs/specs/apps/safety-diagnostic.md`: Diagnostic safety flags and state rules.
 - `docs/specs/apps/agent/bike-profile-inference.md`: Automatic image-based bike
   profile inference, claim resolution, and expanded profile schema.

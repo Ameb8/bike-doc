@@ -155,6 +155,37 @@ def test_telemetry_defaults_to_disabled_without_an_endpoint() -> None:
     assert settings.telemetry_service_name == "bike-doc-api"
 
 
+def test_diagnostic_trace_content_defaults_to_disabled() -> None:
+    assert Settings().diagnostic_trace_content is False
+
+
+def test_diagnostic_trace_content_is_read_from_the_prefixed_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BIKE_DOC_API_DIAGNOSTIC_TRACE_CONTENT", "true")
+
+    assert Settings().diagnostic_trace_content is True
+
+
+@pytest.mark.parametrize(
+    "environment", ["test", "development", "staging", "production"]
+)
+def test_diagnostic_trace_content_is_rejected_outside_local(environment: str) -> None:
+    settings = {"environment": environment, "diagnostic_trace_content": True}
+    if environment == "production":
+        settings.update(auth_mode="firebase", firebase_project_id="bike-doc")
+
+    with pytest.raises(ValidationError, match="diagnostic_trace_content"):
+        Settings(**settings)  # type: ignore[arg-type]
+
+
+def test_diagnostic_trace_content_allows_normalized_local_environment() -> None:
+    settings = Settings(environment=" LOCAL ", diagnostic_trace_content=True)
+
+    assert settings.environment == "local"
+    assert settings.diagnostic_trace_content is True
+
+
 def test_otlp_telemetry_settings_are_normalized() -> None:
     settings = Settings(
         telemetry_exporter=" OTLP ",
