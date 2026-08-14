@@ -1,0 +1,29 @@
+docs/specs/android/mvp-spec.md
+  s_1da21fec5b2514::t_83e642a712b12a 587-589,621-623
+  s_1da21fec5b2514::t_29368a45c69ab4 344-347,356-357,360-366,369-377,379-399,430,448
+  s_1da21fec5b2514::t_fafecbf784bba7 566-567,569-571,573-576,582-586,590-593,596-620,624-668,688,691,695-702,728,744-746
+  s_1da21fec5b2514::t_3408bc5f7ece66 1144,1156,1167-1168
+  s_1da21fec5b2514::t_5d7fd1dd6b6c29 4,14-15,367-368,378,674
+  s_1da21fec5b2514::t_c5f592eab78e3b 5,149-150,160-163,185,190-191,193,199-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "9558dd63cc9fe0c9f4b80fd0f470b5b8be2c5699",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_1da21fec5b2514": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ffc32-1df5-72f2-a918-d2252cafa178",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
