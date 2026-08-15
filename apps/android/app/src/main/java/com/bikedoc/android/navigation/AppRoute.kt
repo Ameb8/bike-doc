@@ -5,8 +5,11 @@ sealed class AppRoute(val route: String) {
 
     data object Home : AppRoute("home")
 
-    data object Bikes : AppRoute("bikes?selectionMode={selectionMode}") {
-        fun create(selectionMode: Boolean): String = "bikes?selectionMode=$selectionMode"
+    data object Bikes : AppRoute("bikes?selectionMode={selectionMode}&resumeOnly={resumeOnly}") {
+        fun create(
+            selectionMode: Boolean,
+            resumeOnly: Boolean = false,
+        ): String = "bikes?selectionMode=$selectionMode&resumeOnly=$resumeOnly"
     }
 
     data object BikeNew : AppRoute("bikes/new")

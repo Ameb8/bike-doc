@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.bikes
 
 import androidx.compose.foundation.clickable
@@ -109,7 +111,7 @@ private fun BikeListContent(
 ) {
     Scaffold(
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
-        topBar = { BikeListTopBar(selectionMode = state.selectionMode) },
+        topBar = { BikeListTopBar(selectionMode = state.selectionMode, resumeOnly = state.resumeOnly) },
         floatingActionButton = {
             BikeListFloatingActionButton(
                 selectionMode = state.selectionMode,
@@ -141,14 +143,24 @@ private fun BikeListContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BikeListTopBar(selectionMode: Boolean) {
+private fun BikeListTopBar(
+    selectionMode: Boolean,
+    resumeOnly: Boolean,
+) {
     TopAppBar(
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(text = stringResource(R.string.bike_list_title))
                 if (selectionMode) {
                     Text(
-                        text = stringResource(R.string.bike_list_selection_subtitle),
+                        text =
+                            stringResource(
+                                if (resumeOnly) {
+                                    R.string.bike_list_resume_selection_subtitle
+                                } else {
+                                    R.string.bike_list_selection_subtitle
+                                },
+                            ),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -196,6 +208,7 @@ private fun BikeListOverlays(
             onResumeLatestSession = onResumeLatestSession,
             onSelectSession = onSelectSessionFromChooser,
             onStartNewSession = onRequestStartNewSession,
+            canStartNewSession = chooser.canStartNewSession,
         )
     }
     if (state.showStartNewSessionConfirmation) {
@@ -287,8 +300,18 @@ private fun BikeListBody(
         state.bikes.isEmpty() ->
             BikeListMessageState(
                 padding = padding,
-                title = stringResource(R.string.bike_list_empty_title),
-                message = stringResource(R.string.bike_list_empty_message),
+                title =
+                    stringResource(
+                        if (state.resumeOnly) {
+                            R.string.bike_list_resume_empty_title
+                        } else {
+                            R.string.bike_list_empty_title
+                        },
+                    ),
+                message =
+                    stringResource(
+                        if (state.resumeOnly) R.string.bike_list_resume_empty_message else R.string.bike_list_empty_message,
+                    ),
                 actionLabel =
                     if (state.selectionMode) {
                         null
@@ -321,6 +344,7 @@ private fun SessionChooserSheet(
     onResumeLatestSession: () -> Unit,
     onSelectSession: (String) -> Unit,
     onStartNewSession: () -> Unit,
+    canStartNewSession: Boolean,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         SessionChooserSheetContent(
@@ -329,6 +353,7 @@ private fun SessionChooserSheet(
             onResumeLatestSession = onResumeLatestSession,
             onSelectSession = onSelectSession,
             onStartNewSession = onStartNewSession,
+            canStartNewSession = canStartNewSession,
         )
     }
 }
@@ -340,6 +365,7 @@ private fun SessionChooserSheetContent(
     onResumeLatestSession: () -> Unit,
     onSelectSession: (String) -> Unit,
     onStartNewSession: () -> Unit,
+    canStartNewSession: Boolean,
 ) {
     Column(
         modifier =
@@ -359,10 +385,12 @@ private fun SessionChooserSheetContent(
                 onResumeLatestSession = onResumeLatestSession,
             )
         }
-        StartNewSessionButton(
-            isCreatingSession = isCreatingSession,
-            onStartNewSession = onStartNewSession,
-        )
+        if (canStartNewSession) {
+            StartNewSessionButton(
+                isCreatingSession = isCreatingSession,
+                onStartNewSession = onStartNewSession,
+            )
+        }
         OlderSessionList(
             sessions = chooser.olderSessions,
             isCreatingSession = isCreatingSession,

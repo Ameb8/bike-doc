@@ -9,6 +9,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -28,20 +29,26 @@ fun HomeScreen(viewModel: HomeViewModel) {
     HomeContent(
         state = uiState,
         onMyBikes = { viewModel.openBikes(selectionMode = false) },
-        onStartRepair = { viewModel.openBikes(selectionMode = true) },
+        onSelectRepairBike = viewModel::selectRepairBike,
+        onStartRepair = viewModel::startRepair,
+        onResumeRepair = viewModel::openResumeRepair,
         onSignOut = viewModel::signOut,
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+@Suppress("LongMethod")
 private fun HomeContent(
     state: HomeUiState,
     onMyBikes: () -> Unit,
+    onSelectRepairBike: (String?) -> Unit,
     onStartRepair: () -> Unit,
+    onResumeRepair: () -> Unit,
     onSignOut: () -> Unit,
 ) {
     val menuExpanded = remember { mutableStateOf(false) }
+    val bikeSelectorExpanded = remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -92,8 +99,55 @@ private fun HomeContent(
                 Button(onClick = onMyBikes) {
                     Text(text = stringResource(R.string.home_my_bikes))
                 }
-                Button(onClick = onStartRepair) {
-                    Text(text = stringResource(R.string.home_start_repair))
+                Text(
+                    text = stringResource(R.string.home_repair_bike_label),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                OutlinedButton(onClick = { bikeSelectorExpanded.value = true }) {
+                    Text(
+                        text =
+                            state.bikes
+                                .firstOrNull { it.id == state.selectedBikeId }
+                                ?.name
+                                ?: stringResource(R.string.home_new_bike),
+                    )
+                }
+                DropdownMenu(
+                    expanded = bikeSelectorExpanded.value,
+                    onDismissRequest = { bikeSelectorExpanded.value = false },
+                ) {
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.home_new_bike)) },
+                        onClick = {
+                            bikeSelectorExpanded.value = false
+                            onSelectRepairBike(null)
+                        },
+                    )
+                    state.bikes.forEach { bike ->
+                        DropdownMenuItem(
+                            text = { Text(text = bike.name) },
+                            onClick = {
+                                bikeSelectorExpanded.value = false
+                                onSelectRepairBike(bike.id)
+                            },
+                        )
+                    }
+                }
+                Button(
+                    onClick = onStartRepair,
+                    enabled = !state.isStartingRepair,
+                ) {
+                    Text(
+                        text =
+                            if (state.isStartingRepair) {
+                                stringResource(R.string.home_start_repair_in_progress)
+                            } else {
+                                stringResource(R.string.home_start_repair)
+                            },
+                    )
+                }
+                OutlinedButton(onClick = onResumeRepair) {
+                    Text(text = stringResource(R.string.home_resume_repair))
                 }
             }
         }

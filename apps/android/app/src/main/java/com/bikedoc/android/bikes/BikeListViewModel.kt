@@ -23,6 +23,7 @@ data class BikeListUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectionMode: Boolean = false,
+    val resumeOnly: Boolean = false,
     val selectedBikeId: String? = null,
     val isLoadingBikeSessions: Boolean = false,
     val pendingDeleteBike: BikeListItem? = null,
@@ -36,6 +37,7 @@ data class SessionChooserState(
     val bikeId: String,
     val primaryResumeSession: SessionChooserItem?,
     val olderSessions: List<SessionChooserItem>,
+    val canStartNewSession: Boolean,
 )
 
 data class SessionChooserItem(
@@ -58,6 +60,7 @@ class BikeListViewModel
             MutableStateFlow(
                 BikeListUiState(
                     selectionMode = savedStateHandle["selectionMode"] ?: false,
+                    resumeOnly = savedStateHandle["resumeOnly"] ?: false,
                 ),
             )
         val uiState: StateFlow<BikeListUiState> = _uiState.asStateFlow()
@@ -73,10 +76,12 @@ class BikeListViewModel
             repository: BikeListRepository,
             sessionRepository: SessionRepository,
             selectionMode: Boolean,
+            resumeOnly: Boolean = false,
         ) : this(
             repository = repository,
             sessionRepository = sessionRepository,
-            savedStateHandle = SavedStateHandle(mapOf("selectionMode" to selectionMode)),
+            savedStateHandle =
+                SavedStateHandle(mapOf("selectionMode" to selectionMode, "resumeOnly" to resumeOnly)),
         )
 
         fun refresh() {
@@ -94,6 +99,7 @@ class BikeListViewModel
             _uiState.value = _uiState.value.copy(pendingDeleteBike = bike)
         }
 
+        @Suppress("LongMethod")
         fun selectBike(bike: BikeListItem) {
             if (
                 !_uiState.value.selectionMode ||
@@ -113,8 +119,15 @@ class BikeListViewModel
 
                 when (val sessionsResult = sessionRepository.getRepairSessions(bike.id)) {
                     is ApiResult.Success -> {
+                        val sessions =
+                            sessionsResult.data.items.filter { session ->
+                                !_uiState.value.resumeOnly || session.phase == "diagnostic"
+                            }
                         _uiState.value = _uiState.value.copy(isLoadingBikeSessions = false)
-                        if (sessionsResult.data.items.isEmpty()) {
+                        if (sessions.isEmpty() && _uiState.value.resumeOnly) {
+                            clearSelectionState()
+                            eventChannel.send(UiEvent.ShowSnackbar(NO_DIAGNOSTIC_SESSIONS_MESSAGE))
+                        } else if (sessions.isEmpty()) {
                             createRepairSession(bike.id)
                         } else {
                             _uiState.value =
@@ -125,17 +138,18 @@ class BikeListViewModel
                                         SessionChooserState(
                                             bikeId = bike.id,
                                             primaryResumeSession =
-                                                sessionsResult.data.items
+                                                sessions
                                                     .firstOrNull { it.isResumable() }
                                                     ?.toChooserItem(),
                                             olderSessions =
-                                                sessionsResult.data.items
+                                                sessions
                                                     .filterNot { session ->
                                                         session.id ==
-                                                            sessionsResult.data.items
+                                                            sessions
                                                                 .firstOrNull { it.isResumable() }
                                                                 ?.id
                                                     }.map { it.toChooserItem() },
+                                            canStartNewSession = !_uiState.value.resumeOnly,
                                         ),
                                 )
                         }
@@ -273,12 +287,16 @@ class BikeListViewModel
 
                 when (val result = repository.getBikes()) {
                     is ApiResult.Success ->
-                        _uiState.value =
-                            _uiState.value.copy(
-                                bikes = result.data,
-                                isLoading = false,
-                                error = null,
-                            )
+                        if (_uiState.value.resumeOnly) {
+                            loadResumeBikes(result.data)
+                        } else {
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    bikes = result.data,
+                                    isLoading = false,
+                                    error = null,
+                                )
+                        }
 
                     is ApiResult.Error ->
                         _uiState.value =
@@ -347,6 +365,23 @@ class BikeListViewModel
         companion object {
             const val DELETE_REPAIR_HISTORY_MESSAGE =
                 "This bike can't be removed because it has repair session history."
+            const val NO_DIAGNOSTIC_SESSIONS_MESSAGE = "This bike has no diagnostic sessions to resume."
+        }
+
+        private suspend fun loadResumeBikes(bikes: List<BikeListItem>) {
+            val diagnosticBikes =
+                bikes.filter { it.hasRepairSessions }.filter { bike ->
+                    when (val result = sessionRepository.getRepairSessions(bike.id)) {
+                        is ApiResult.Success -> result.data.items.any { it.phase == "diagnostic" }
+                        is ApiResult.Error, ApiResult.Loading -> false
+                    }
+                }
+            _uiState.value =
+                _uiState.value.copy(
+                    bikes = diagnosticBikes,
+                    isLoading = false,
+                    error = null,
+                )
         }
     }
 

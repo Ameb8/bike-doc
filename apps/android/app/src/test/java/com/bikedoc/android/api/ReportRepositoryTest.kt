@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.ArtifactUploadResponse
@@ -31,85 +33,91 @@ import org.junit.Test
 
 class ReportRepositoryTest {
     @Test
-    fun `maps every supported V2 nested type at the repository boundary`() = runTest {
-        val report =
-            repositoryFor(envelope(v2SupportedPayload()))
-                .getDiagnosticReport("session-1", "report-1")
+    fun `maps every supported V2 nested type at the repository boundary`() =
+        runTest {
+            val report =
+                repositoryFor(envelope(v2SupportedPayload()))
+                    .getDiagnosticReport("session-1", "report-1")
 
-        val mapped = assertSuccess<DiagnosticReportV2>(report)
-        assertEquals(DiagnosticOutcome.DIAGNOSIS_SUPPORTED, mapped.diagnosticOutcome)
-        assertEquals(listOf("Chain skips under load."), mapped.reportedSymptoms)
-        assertEquals(listOf("finding-1"), mapped.primaryDiagnosis?.supportingFindingIds)
-        assertEquals(EvidenceSource.IMAGE, mapped.observedFindings.single().evidenceSource)
-        assertEquals(
-            DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS,
-            mapped.observedFindings.single().relationshipToSymptoms,
-        )
-        assertEquals("artifact-1", mapped.observedFindings.single().artifactIds.single())
-        assertEquals("Indexing is slightly out.", mapped.contributingFactors.single().issue)
-        assertEquals("Freehub engagement", mapped.alternateHypotheses.single().issue)
-        assertEquals("Hanger alignment was not measured.", mapped.unresolvedUncertainties.single())
-        assertEquals("phase-session-1", mapped.diagnosticSessionId)
-    }
-
-    @Test
-    fun `maps a limited V2 report with null primary diagnosis and empty collections`() = runTest {
-        val report =
-            repositoryFor(envelope(v2LimitedPayload()))
-                .getDiagnosticReport("session-1", "report-1")
-
-        val mapped = assertSuccess<DiagnosticReportV2>(report)
-        assertEquals(
-            DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED,
-            mapped.diagnosticOutcome,
-        )
-        assertNull(mapped.primaryDiagnosis)
-        assertTrue(mapped.contributingFactors.isEmpty())
-        assertTrue(mapped.alternateHypotheses.isEmpty())
-        assertTrue(mapped.unresolvedUncertainties.isEmpty())
-        assertEquals(
-            EvidenceSource.USER_REPORT,
-            mapped.observedFindings.single().evidenceSource,
-        )
-    }
+            val mapped = assertSuccess<DiagnosticReportV2>(report)
+            assertEquals(DiagnosticOutcome.DIAGNOSIS_SUPPORTED, mapped.diagnosticOutcome)
+            assertEquals(listOf("Chain skips under load."), mapped.reportedSymptoms)
+            assertEquals(listOf("finding-1"), mapped.primaryDiagnosis?.supportingFindingIds)
+            assertEquals(EvidenceSource.IMAGE, mapped.observedFindings.single().evidenceSource)
+            assertEquals(
+                DiagnosticRelevance.SUPPORTS_PRIMARY_DIAGNOSIS,
+                mapped.observedFindings.single().relationshipToSymptoms,
+            )
+            assertEquals("artifact-1", mapped.observedFindings.single().artifactIds.single())
+            assertEquals("Indexing is slightly out.", mapped.contributingFactors.single().issue)
+            assertEquals("Freehub engagement", mapped.alternateHypotheses.single().issue)
+            assertEquals("Hanger alignment was not measured.", mapped.unresolvedUncertainties.single())
+            assertEquals("phase-session-1", mapped.diagnosticSessionId)
+        }
 
     @Test
-    fun `preserves V1 diagnosis repair estimate and ruled out evidence`() = runTest {
-        val report =
-            repositoryFor(envelope(v1Payload()))
-                .getDiagnosticReport("session-1", "report-1")
+    fun `maps a limited V2 report with null primary diagnosis and empty collections`() =
+        runTest {
+            val report =
+                repositoryFor(envelope(v2LimitedPayload()))
+                    .getDiagnosticReport("session-1", "report-1")
 
-        val mapped = assertSuccess<DiagnosticReport>(report)
-        assertEquals("Bent hanger", mapped.primaryDiagnosis.issue)
-        assertEquals("Chain wear measurement", mapped.alternateHypotheses.single().ruledOutBy)
-        assertEquals(30, mapped.repairEstimate.repairTime.lowMinutes)
-        assertEquals(120, mapped.repairEstimate.shopRepairCost.highUsd)
-    }
-
-    @Test
-    fun `rejects unknown and envelope payload mismatched report versions`() = runTest {
-        val unknown = repositoryFor(envelope(v2SupportedPayload().replace("v2", "v3")))
-            .getDiagnosticReport("session-1", "report-1")
-        val mismatched =
-            repositoryFor(envelope(v2SupportedPayload(), schemaVersion = "diagnostic_report.v1"))
-                .getDiagnosticReport("session-1", "report-1")
-
-        assertVersionError(unknown)
-        assertVersionError(mismatched)
-    }
+            val mapped = assertSuccess<DiagnosticReportV2>(report)
+            assertEquals(
+                DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED,
+                mapped.diagnosticOutcome,
+            )
+            assertNull(mapped.primaryDiagnosis)
+            assertTrue(mapped.contributingFactors.isEmpty())
+            assertTrue(mapped.alternateHypotheses.isEmpty())
+            assertTrue(mapped.unresolvedUncertainties.isEmpty())
+            assertEquals(
+                EvidenceSource.USER_REPORT,
+                mapped.observedFindings.single().evidenceSource,
+            )
+        }
 
     @Test
-    fun `rejects malformed V2 payloads without guessing a version`() = runTest {
-        val malformed =
-            repositoryFor(
-                envelope(
-                    """{"schema_version":"diagnostic_report.v2","diagnostic_outcome":"unknown"}""",
-                ),
-            ).getDiagnosticReport("session-1", "report-1")
+    fun `preserves V1 diagnosis repair estimate and ruled out evidence`() =
+        runTest {
+            val report =
+                repositoryFor(envelope(v1Payload()))
+                    .getDiagnosticReport("session-1", "report-1")
 
-        assertTrue(malformed is ApiResult.Error)
-        assertEquals("Unexpected diagnostic report format.", (malformed as ApiResult.Error).message)
-    }
+            val mapped = assertSuccess<DiagnosticReport>(report)
+            assertEquals("Bent hanger", mapped.primaryDiagnosis.issue)
+            assertEquals("Chain wear measurement", mapped.alternateHypotheses.single().ruledOutBy)
+            assertEquals(30, mapped.repairEstimate.repairTime.lowMinutes)
+            assertEquals(120, mapped.repairEstimate.shopRepairCost.highUsd)
+        }
+
+    @Test
+    fun `rejects unknown and envelope payload mismatched report versions`() =
+        runTest {
+            val unknown =
+                repositoryFor(envelope(v2SupportedPayload().replace("v2", "v3")))
+                    .getDiagnosticReport("session-1", "report-1")
+            val mismatched =
+                repositoryFor(envelope(v2SupportedPayload(), schemaVersion = "diagnostic_report.v1"))
+                    .getDiagnosticReport("session-1", "report-1")
+
+            assertVersionError(unknown)
+            assertVersionError(mismatched)
+        }
+
+    @Test
+    fun `rejects malformed V2 payloads without guessing a version`() =
+        runTest {
+            val malformed =
+                repositoryFor(
+                    envelope(
+                        """{"schema_version":"diagnostic_report.v2","diagnostic_outcome":"unknown"}""",
+                    ),
+                ).getDiagnosticReport("session-1", "report-1")
+
+            assertTrue(malformed is ApiResult.Error)
+            assertEquals("Unexpected diagnostic report format.", (malformed as ApiResult.Error).message)
+        }
 
     @Test
     fun `V2 enum DTOs use the OpenAPI wire values`() {
@@ -183,19 +191,38 @@ private class FakeReportApiService(
     private val report: PhaseReportEnvelope,
 ) : BikeDocApiService {
     override suspend fun getMe(): UserProfile = error("unused")
-    override suspend fun getBikes(limit: Int, cursor: String?): BikeListResponseDto = error("unused")
+
+    override suspend fun getBikes(
+        limit: Int,
+        cursor: String?,
+    ): BikeListResponseDto = error("unused")
+
     override suspend fun createBike(bike: JsonObject): BikeProfileDto = error("unused")
+
     override suspend fun getBike(bikeId: String): BikeProfileDto = error("unused")
-    override suspend fun updateBike(bikeId: String, bike: JsonObject): BikeProfileDto = error("unused")
+
+    override suspend fun updateBike(
+        bikeId: String,
+        bike: JsonObject,
+    ): BikeProfileDto = error("unused")
+
     override suspend fun deleteBike(bikeId: String) = error("unused")
+
     override suspend fun getRepairSessions(
         bikeId: String,
         limit: Int?,
         cursor: String?,
     ): RepairSessionListResponse = error("unused")
+
     override suspend fun createRepairSession(body: RepairSessionCreate): RepairSession = error("unused")
+
     override suspend fun getRepairSession(sessionId: String): RepairSession = error("unused")
-    override suspend fun createTurn(sessionId: String, body: TurnCreate): TurnAccepted = error("unused")
+
+    override suspend fun createTurn(
+        sessionId: String,
+        body: TurnCreate,
+    ): TurnAccepted = error("unused")
+
     override suspend fun uploadArtifact(
         file: MultipartBody.Part,
         purpose: RequestBody,
@@ -208,7 +235,11 @@ private class FakeReportApiService(
         limit: Int,
         cursor: String?,
     ): PhaseReportList = error("unused")
-    override suspend fun getReport(sessionId: String, reportId: String): PhaseReportEnvelope = report
+
+    override suspend fun getReport(
+        sessionId: String,
+        reportId: String,
+    ): PhaseReportEnvelope = report
 }
 
 private fun v2SupportedPayload(): String =

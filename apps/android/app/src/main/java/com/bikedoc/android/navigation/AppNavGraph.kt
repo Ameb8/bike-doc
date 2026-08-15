@@ -96,6 +96,10 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("resumeOnly") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
     ) {
         val bikeListViewModel: BikeListViewModel = hiltViewModel()

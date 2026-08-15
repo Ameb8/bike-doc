@@ -17,7 +17,10 @@ import javax.inject.Inject
 
 data class HomeUiState(
     val displayName: String? = null,
+    val bikes: List<HomeBike> = emptyList(),
+    val selectedBikeId: String? = null,
     val isLoading: Boolean = false,
+    val isStartingRepair: Boolean = false,
     val error: String? = null,
 )
 
@@ -44,6 +47,34 @@ class HomeViewModel
             }
         }
 
+        fun openResumeRepair() {
+            viewModelScope.launch {
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.Bikes.create(selectionMode = true, resumeOnly = true)))
+            }
+        }
+
+        fun selectRepairBike(bikeId: String?) {
+            _uiState.value = _uiState.value.copy(selectedBikeId = bikeId)
+        }
+
+        fun startRepair() {
+            if (_uiState.value.isStartingRepair) return
+
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(isStartingRepair = true, error = null)
+                when (val result = homeRepository.startRepair(_uiState.value.selectedBikeId)) {
+                    is ApiResult.Success -> {
+                        _uiState.value = _uiState.value.copy(isStartingRepair = false)
+                        eventChannel.send(UiEvent.NavigateTo(AppRoute.DiagnosticChat.create(result.data.id)))
+                    }
+                    is ApiResult.Error -> {
+                        _uiState.value = _uiState.value.copy(isStartingRepair = false, error = result.message)
+                    }
+                    ApiResult.Loading -> _uiState.value = _uiState.value.copy(isStartingRepair = true)
+                }
+            }
+        }
+
         fun refresh() {
             viewModelScope.launch {
                 if (!authProvider.isSignedIn()) {
@@ -54,12 +85,7 @@ class HomeViewModel
                 _uiState.value = _uiState.value.copy(isLoading = true, error = null)
                 when (val result = homeRepository.getCurrentUser()) {
                     is ApiResult.Success -> {
-                        _uiState.value =
-                            HomeUiState(
-                                displayName = result.data.displayName,
-                                isLoading = false,
-                                error = null,
-                            )
+                        loadBikes(displayName = result.data.displayName)
                     }
                     is ApiResult.Error -> {
                         if (result.code == 401) {
@@ -87,5 +113,25 @@ class HomeViewModel
 
         private suspend fun redirectToAuth() {
             eventChannel.send(UiEvent.NavigateTo(AppRoute.Auth.route))
+        }
+
+        private suspend fun loadBikes(displayName: String?) {
+            when (val result = homeRepository.getBikes()) {
+                is ApiResult.Success ->
+                    _uiState.value =
+                        HomeUiState(
+                            displayName = displayName,
+                            bikes = result.data,
+                            isLoading = false,
+                        )
+                is ApiResult.Error ->
+                    _uiState.value =
+                        HomeUiState(
+                            displayName = displayName,
+                            isLoading = false,
+                            error = result.message,
+                        )
+                ApiResult.Loading -> _uiState.value = _uiState.value.copy(isLoading = true)
+            }
         }
     }

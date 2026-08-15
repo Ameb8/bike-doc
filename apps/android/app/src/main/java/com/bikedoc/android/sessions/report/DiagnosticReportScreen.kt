@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.sessions.report
 
 import android.content.Intent
@@ -42,9 +44,9 @@ import com.bikedoc.android.api.Diagnosis
 import com.bikedoc.android.api.DiagnosisV2
 import com.bikedoc.android.api.DiagnosticConfidence
 import com.bikedoc.android.api.DiagnosticOutcome
+import com.bikedoc.android.api.DiagnosticRelevance
 import com.bikedoc.android.api.DiagnosticReport
 import com.bikedoc.android.api.DiagnosticReportV2
-import com.bikedoc.android.api.DiagnosticRelevance
 import com.bikedoc.android.api.DiySuitability
 import com.bikedoc.android.api.EvidenceSource
 import com.bikedoc.android.api.ObservedFinding
@@ -870,6 +872,7 @@ private fun String.toDisplayLabel(): String =
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 1200)
 @Composable
+@Suppress("UnusedPrivateMember")
 private fun DiagnosticReportV2SupportedPreview() {
     DiagnosticReportContent(
         state = DiagnosticReportUiState(report = previewV2SupportedReport),
@@ -880,6 +883,7 @@ private fun DiagnosticReportV2SupportedPreview() {
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 900)
 @Composable
+@Suppress("UnusedPrivateMember")
 private fun DiagnosticReportV2LimitedPreview() {
     DiagnosticReportContent(
         state = DiagnosticReportUiState(report = previewV2LimitedReport),
@@ -890,6 +894,7 @@ private fun DiagnosticReportV2LimitedPreview() {
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 900)
 @Composable
+@Suppress("UnusedPrivateMember")
 private fun DiagnosticReportV1Preview() {
     DiagnosticReportContent(
         state = DiagnosticReportUiState(report = previewV1Report),

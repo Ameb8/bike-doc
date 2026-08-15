@@ -21,8 +21,9 @@ details in this document should not be used to override either contract.
 
 The current client implements the diagnostic portion of the repair journey.
 At launch it selects the authentication or home destination from Firebase's
-current user. An authenticated user can manage their bikes, select a bike to
-resume an eligible diagnostic repair session or start a new one, exchange turns
+current user. An authenticated user can manage their bikes, select a repair
+target on Home to start a new session, or select a bike with diagnostic history
+to resume an eligible diagnostic repair session, exchange turns
 with the diagnostic service, attach diagnostic photos, follow server-sent
 events, and open a resulting report. There is deliberately no Room or
 DataStore cache: API reads are the normal source of screen data and the app is
@@ -36,7 +37,7 @@ not designed for offline diagnostic work.
 | `navigation/` | Route definitions, the single Navigation Compose graph, navigation events and back-stack results | `AppRoute`, `AppNavGraph`, `UiEvent` |
 | `auth/` | Firebase-facing authentication boundary, auth state and sign-in UI | `AuthProvider`, `FirebaseAuthProvider`, `AuthViewModel`, `AuthScreen` |
 | `api/` | HTTP contract, auth interceptor, serialization DTOs, common errors, and API-level repositories | `BikeDocApiService`, `ApiResult`, repository interfaces |
-| `home/` | Signed-in landing screen and user-profile loading | `HomeRepository`, `HomeViewModel`, `HomeScreen` |
+| `home/` | Signed-in landing screen, repair-target selection, profile loading, and new-session creation | `HomeRepository`, `HomeViewModel`, `HomeScreen` |
 | `bikes/` | Bike list/edit UI, presentation mapping, repair-session choice, and bike navigation results | `BikeListViewModel`, `BikeEditViewModel` |
 | `sessions/chat/` | Diagnostic conversation state, turn/photo submission, SSE lifecycle, and chat UI | `DiagnosticChatViewModel`, `SseEventSource` |
 | `sessions/models/` and `sessions/report/` | Local chat/event model and safe report decoding/presentation | `SseEvent`, `ChatMessage`, `ReportRepository` |
@@ -110,9 +111,11 @@ composables. This keeps rendering testable, supports Compose state hoisting,
 and prevents leaf UI from gaining infrastructure dependencies. A channel/flow
 is used for one-off effects that must not replay after recomposition.
 
-`home/` is a small example: its repository retrieves `/v1/me`, its ViewModel
-models loading, loaded data, and errors, and `HomeScreen` offers the entry
-actions for bikes and sign-out. `bikes/` contains two closely related flows.
+`home/` retrieves `/v1/me` and the available bikes, and creates a minimal
+"New bike" profile before starting a session when that default repair target
+is selected. Its ViewModel models loading, target selection, session creation,
+and errors; `HomeScreen` offers entry actions for bikes, resume, and sign-out.
+`bikes/` contains two closely related flows.
 `BikeEditViewModel` loads, validates, creates, updates, and deletes an
 individual profile through `BikeRepository`. Bike writes are encoded at that
 repository seam: creates omit unspecified optional fields, while updates diff
@@ -120,11 +123,10 @@ the loaded profile and send explicit JSON null only for a user-requested clear.
 `BikeListRepository` deliberately
 maps API `Bike` DTOs to the list-specific `BikeListItem` display model, and
 normalizes a delete conflict into `BikeDeleteResult.RepairHistoryConflict`.
-The list ViewModel owns selection mode and the session chooser: it queries
-sessions for the selected bike, resumes a session that is diagnostic and in a
-resumable status, or creates a new repair session after the appropriate
-confirmation. That product rule belongs in the ViewModel/repository layer, not
-in the list composable.
+The list ViewModel owns resume selection mode and the session chooser: it
+filters the list to bikes with diagnostic sessions, then resumes a session that
+is diagnostic and in a resumable status. That product rule belongs in the
+ViewModel/repository layer, not in the list composable.
 
 `sessions/` is split by user experience rather than by transport concern.
 `sessions/chat/` owns the ongoing diagnostic conversation; `sessions/models/`

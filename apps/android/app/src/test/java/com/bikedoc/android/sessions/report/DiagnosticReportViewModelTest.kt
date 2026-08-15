@@ -31,64 +31,68 @@ class DiagnosticReportViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun `loads a supported V2 report for presentation`() = runTest {
-        val report = supportedV2Report()
+    fun `loads a supported V2 report for presentation`() =
+        runTest {
+            val report = supportedV2Report()
 
-        val viewModel = viewModelFor(report)
+            val viewModel = viewModelFor(report)
 
-        assertEquals(report, viewModel.uiState.value.report)
-        assertFalse(viewModel.uiState.value.isLoading)
-        assertNull(viewModel.uiState.value.error)
-    }
-
-    @Test
-    fun `loads a limited V2 report with a null primary diagnosis`() = runTest {
-        val report = supportedV2Report().copy(
-            diagnosticOutcome = DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED,
-            primaryDiagnosis = null,
-            contributingFactors = emptyList(),
-            alternateHypotheses = emptyList(),
-            unresolvedUncertainties = emptyList(),
-        )
-
-        val viewModel = viewModelFor(report)
-
-        val loaded = viewModel.uiState.value.report as DiagnosticReportV2
-        assertNull(loaded.primaryDiagnosis)
-        assertEquals(DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED, loaded.diagnosticOutcome)
-        assertTrue(loaded.contributingFactors.isEmpty())
-    }
+            assertEquals(report, viewModel.uiState.value.report)
+            assertFalse(viewModel.uiState.value.isLoading)
+            assertNull(viewModel.uiState.value.error)
+        }
 
     @Test
-    fun `loads V1 reports without changing their estimate data`() = runTest {
-        val report =
-            DiagnosticReport(
-                id = "report-1",
-                createdAt = "2026-07-31T12:00:00Z",
-                primaryDiagnosis = Diagnosis("derailleur", "Bent hanger", "high", "caution"),
-                alternateHypotheses = emptyList(),
-                evidenceSummary = "The hanger is bent.",
-                repairEstimate =
-                    RepairEstimate(
-                        difficulty = "medium",
-                        difficultyNotes = "Alignment required.",
-                        toolsRequired = emptyList(),
-                        partsRequired = emptyList(),
-                        repairTime = RepairTimeEstimate(30, 60),
-                        shopRepairCost = ShopRepairCostEstimate(80, 120, null),
-                    ),
-                userSkillLevel = "beginner",
-                safetyFlags = emptyList(),
-                keyArtifactIds = emptyList(),
-                costEstimate = null,
-            )
+    fun `loads a limited V2 report with a null primary diagnosis`() =
+        runTest {
+            val report =
+                supportedV2Report().copy(
+                    diagnosticOutcome = DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED,
+                    primaryDiagnosis = null,
+                    contributingFactors = emptyList(),
+                    alternateHypotheses = emptyList(),
+                    unresolvedUncertainties = emptyList(),
+                )
 
-        val viewModel = viewModelFor(report)
+            val viewModel = viewModelFor(report)
 
-        val loaded = viewModel.uiState.value.report as DiagnosticReport
-        assertEquals(30, loaded.repairEstimate.repairTime.lowMinutes)
-        assertEquals(120, loaded.repairEstimate.shopRepairCost.highUsd)
-    }
+            val loaded = viewModel.uiState.value.report as DiagnosticReportV2
+            assertNull(loaded.primaryDiagnosis)
+            assertEquals(DiagnosticOutcome.IN_PERSON_ASSESSMENT_REQUIRED, loaded.diagnosticOutcome)
+            assertTrue(loaded.contributingFactors.isEmpty())
+        }
+
+    @Test
+    fun `loads V1 reports without changing their estimate data`() =
+        runTest {
+            val report =
+                DiagnosticReport(
+                    id = "report-1",
+                    createdAt = "2026-07-31T12:00:00Z",
+                    primaryDiagnosis = Diagnosis("derailleur", "Bent hanger", "high", "caution"),
+                    alternateHypotheses = emptyList(),
+                    evidenceSummary = "The hanger is bent.",
+                    repairEstimate =
+                        RepairEstimate(
+                            difficulty = "medium",
+                            difficultyNotes = "Alignment required.",
+                            toolsRequired = emptyList(),
+                            partsRequired = emptyList(),
+                            repairTime = RepairTimeEstimate(30, 60),
+                            shopRepairCost = ShopRepairCostEstimate(80, 120, null),
+                        ),
+                    userSkillLevel = "beginner",
+                    safetyFlags = emptyList(),
+                    keyArtifactIds = emptyList(),
+                    costEstimate = null,
+                )
+
+            val viewModel = viewModelFor(report)
+
+            val loaded = viewModel.uiState.value.report as DiagnosticReport
+            assertEquals(30, loaded.repairEstimate.repairTime.lowMinutes)
+            assertEquals(120, loaded.repairEstimate.shopRepairCost.highUsd)
+        }
 
     private fun viewModelFor(report: RepairReport): DiagnosticReportViewModel =
         DiagnosticReportViewModel(
