@@ -1,0 +1,24 @@
+prototypes/android/diagnostic-quickstart/README.md
+  s_d4af8bf6bba374::t_91f7456a629100 1-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8e34afb57ff052f4f53740491187b5ff938f5595",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_d4af8bf6bba374": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a00954-ac2c-7de3-8664-7d2e21b41458",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
