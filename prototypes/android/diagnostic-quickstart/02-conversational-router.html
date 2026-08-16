@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike Doc prototype — Conversational router</title>
+  <style>
+    :root {
+      --primary: #1b3a4b;
+      --secondary: #2d6a4f;
+      --background: #f8faf9;
+      --surface: #fff;
+      --surface-2: #e9f0ed;
+      --ink: #172126;
+      --muted: #5c696f;
+      --outline: #c0c9c5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 28px;
+      color: var(--ink); background: #e8edeb;
+      font-family: Roboto, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .stage { width: min(980px, 100%); display: grid; grid-template-columns: minmax(320px, 412px) minmax(260px, 380px); gap: 48px; align-items: center; justify-content: center; }
+    .phone {
+      width: 412px; height: min(860px, calc(100vh - 56px)); min-height: 700px; overflow: hidden;
+      border: 8px solid #11191d; border-radius: 38px; background: var(--background);
+      box-shadow: 0 18px 50px rgba(19, 35, 42, .18);
+    }
+    #app { height: 100%; }
+    button, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .screen { height: 100%; display: flex; flex-direction: column; background: var(--background); animation: fade-in 170ms ease-out; }
+    @keyframes fade-in { from { opacity: .55; transform: translateX(5px); } }
+    .status-bar { min-height: 28px; padding: 7px 22px 0; display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; background: #fff; }
+    .app-bar { min-height: 64px; padding: 8px 18px; display: flex; gap: 12px; align-items: center; background: #fff; border-bottom: 1px solid #edf0ee; }
+    .app-bar h1 { margin: 0; font-size: 22px; line-height: 1.1; font-weight: 650; }
+    .sub { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .grow { flex: 1; }
+    .icon-button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--primary); background: transparent; font-size: 24px; }
+    .content { flex: 1; overflow: auto; padding: 24px 20px 28px; }
+    .eyebrow { color: var(--secondary); font-size: 12px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
+    .greeting { margin: 8px 0 4px; font-size: 30px; line-height: 1.15; letter-spacing: -.5px; }
+    .lede { margin: 0 0 24px; color: var(--muted); font-size: 15px; line-height: 1.45; }
+    .bike-card { padding: 18px; border-radius: 18px; background: #fff; border: 1px solid #e2e8e5; box-shadow: 0 3px 10px rgba(25, 52, 62, .06); }
+    .field-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 750; }
+    .select-wrap { position: relative; }
+    select { width: 100%; min-height: 54px; appearance: none; padding: 0 44px 0 16px; border: 1.5px solid #77858a; border-radius: 12px; color: var(--ink); background: #fff; font-weight: 650; }
+    .select-wrap::after { content: "⌄"; position: absolute; right: 16px; top: 14px; color: var(--primary); font-weight: 800; pointer-events: none; }
+    .bike-meta { margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .primary { width: 100%; min-height: 54px; margin-top: 18px; padding: 12px 20px; border: 0; border-radius: 16px; color: #fff; background: var(--primary); font-weight: 750; box-shadow: 0 3px 8px rgba(27, 58, 75, .18); }
+    .primary:active { transform: scale(.99); background: #102b39; }
+    .secondary-action { width: 100%; min-height: 50px; margin-top: 10px; border: 1px solid var(--outline); border-radius: 16px; color: var(--primary); background: transparent; font-weight: 700; }
+    .home-note { margin: 18px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .chat { flex: 1; overflow: auto; padding: 18px 16px 14px; scroll-behavior: smooth; }
+    .context { display: flex; justify-content: center; margin-bottom: 18px; }
+    .context-pill { padding: 7px 12px; border: 1px solid #c9dbd2; border-radius: 20px; color: var(--secondary); background: #f4f8f6; font-size: 12px; font-weight: 750; }
+    .message { display: flex; gap: 8px; align-items: flex-end; margin: 0 0 12px; }
+    .message.user { justify-content: flex-end; }
+    .avatar { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: var(--secondary); font-size: 13px; font-weight: 800; }
+    .bubble { max-width: 82%; padding: 13px 15px; border-radius: 6px 18px 18px 18px; background: var(--surface-2); font-size: 14px; line-height: 1.45; }
+    .user .bubble { color: #fff; background: var(--primary); border-radius: 18px 6px 18px 18px; }
+    .mode-grid { margin: 16px 0 20px 36px; display: grid; gap: 10px; }
+    .mode-button { width: 100%; min-height: 64px; display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: center; padding: 10px 12px; text-align: left; border: 1px solid #cbd7d1; border-radius: 16px; color: var(--ink); background: #fff; }
+    .mode-button:hover, .mode-button:focus-visible { outline: none; border-color: var(--secondary); background: #f3f8f5; }
+    .mode-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: #e6f0eb; font-size: 20px; }
+    .mode-title { display: block; font-size: 14px; font-weight: 780; }
+    .mode-copy { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.3; }
+    .quick-prompts { margin: 8px 0 0 36px; display: flex; flex-wrap: wrap; gap: 8px; }
+    .quick { padding: 9px 12px; border: 1px solid #9badb4; border-radius: 18px; color: var(--primary); background: #fff; font-size: 12px; font-weight: 700; }
+    .composer { padding: 10px 14px 18px; background: #fff; border-top: 1px solid #e5e9e7; }
+    .helper { margin: 0 0 7px 4px; color: var(--muted); font-size: 11px; }
+    .composer-box { display: flex; gap: 8px; align-items: center; padding: 7px 7px 7px 14px; border: 1px solid #aab5b1; border-radius: 18px; color: var(--muted); font-size: 13px; }
+    .send { margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; color: #fff; background: var(--primary); font-size: 18px; }
+    .disabled { opacity: .58; }
+
+    .notes h2 { margin: 0 0 8px; color: var(--primary); font-size: 25px; }
+    .notes p { margin: 0 0 18px; color: #46545a; font-size: 14px; line-height: 1.55; }
+    .notes ol { margin: 0 0 24px; padding-left: 20px; color: #334247; font-size: 14px; line-height: 1.65; }
+    .tag { display: inline-block; margin-bottom: 12px; padding: 6px 10px; border-radius: 20px; color: #fff; background: var(--secondary); font-size: 11px; font-weight: 800; letter-spacing: .6px; }
+    .reset { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 12px; color: var(--primary); background: transparent; font-weight: 700; }
+    .seam { margin-top: 18px !important; color: #6d5b4c !important; font-size: 12px !important; }
+
+    @media (max-width: 800px) {
+      body { padding: 0; background: #11191d; }
+      .stage { display: block; width: 100%; }
+      .phone { width: 100%; height: 100vh; min-height: 620px; border: 0; border-radius: 0; }
+      .notes { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="phone" aria-label="Android phone prototype"><div id="app"></div></section>
+    <aside class="notes">
+      <span class="tag">Idea 2 · Let the conversation route</span>
+      <h2>Conversational router</h2>
+      <p>The Home CTA jumps straight into a neutral AI session. Bike Doc asks the first routing question in chat, so future help modes become part of the conversation.</p>
+      <ol>
+        <li>Choose a bike on Home.</li>
+        <li>Tap <strong>Talk to Bike Doc</strong>.</li>
+        <li>Choose any suggested intent.</li>
+        <li>Notice how the session title and next prompt adapt.</li>
+      </ol>
+      <button class="reset" data-reset>Reset prototype</button>
+      <p class="seam">Prototype seam: no server session exists until an intent is chosen; replies and composer behavior are simulated.</p>
+    </aside>
+  </main>
+
+  <script>
+    const state = { screen: "home", bike: "Maya’s Trek FX 3", mode: null };
+    const modes = {
+      diagnose: { icon: "⌕", title: "Diagnose a problem", user: "Something isn’t working right", reply: "Got it—we’ll diagnose it together. What changed, and when do you notice it?", prompts: ["A new noise", "Braking problem", "Shifting problem"] },
+      checkup: { icon: "✓", title: "Full bike check", user: "I want to check the whole bike", reply: "Let’s do a structured health check, starting with safety-critical parts. Is the bike stable and safe to inspect?", prompts: ["Yes, ready", "Help me set up"] },
+      repair: { icon: "⌁", title: "Repair guidance", user: "I know the repair I need", reply: "I can guide the repair and check tools, parts, and safety first. What job are you planning?", prompts: ["Fix a flat", "Adjust brakes", "Replace a chain"] }
+    };
+
+    function chrome(title, subtitle = "") {
+      return `<div class="status-bar"><span>9:41</span><span>● 5G ▰</span></div>
+        <header class="app-bar">
+          ${state.screen === "chat" ? '<button class="icon-button" data-back aria-label="Back">‹</button>' : ''}
+          <div class="grow"><h1>${title}</h1>${subtitle ? `<div class="sub">${subtitle}</div>` : ""}</div>
+          ${state.screen === "home" ? '<button class="icon-button" aria-label="Menu">⋮</button>' : ''}
+        </header>`;
+    }
+
+    function homeScreen() {
+      return `<div class="screen">
+        ${chrome("Bike Doc")}
+        <main class="content">
+          <div class="eyebrow">Ready when you are</div>
+          <h2 class="greeting">Hi, Maya</h2>
+          <p class="lede">Pick a bike and start a conversation. Bike Doc will help you choose the right kind of session.</p>
+          <section class="bike-card">
+            <label class="field-label" for="bike">Working on</label>
+            <div class="select-wrap"><select id="bike" data-bike>
+              <option ${state.bike === "Maya’s Trek FX 3" ? "selected" : ""}>Maya’s Trek FX 3</option>
+              <option ${state.bike === "Trail bike" ? "selected" : ""}>Trail bike</option>
+              <option ${state.bike === "New bike" ? "selected" : ""}>New bike</option>
+            </select></div>
+            <div class="bike-meta">Trek · FX 3 Disc · 2022</div>
+          </section>
+          <button class="primary" data-start>Talk to Bike Doc</button>
+          <button class="secondary-action">Resume a session</button>
+          <p class="home-note">No second bike-selection step. The conversation opens with this bike already attached.</p>
+        </main>
+      </div>`;
+    }
+
+    function modeButtons() {
+      return `<div class="mode-grid">${Object.entries(modes).map(([id, mode]) => `
+        <button class="mode-button" data-mode="${id}">
+          <span class="mode-icon">${mode.icon}</span>
+          <span><span class="mode-title">${mode.title}</span><span class="mode-copy">${id === "diagnose" ? "Find the cause of a symptom" : id === "checkup" ? "Review safety and condition" : "Work through a known job"}</span></span>
+        </button>`).join("")}</div>`;
+    }
+
+    function chatScreen() {
+      const selected = state.mode ? modes[state.mode] : null;
+      const title = selected ? selected.title : "New bike session";
+      return `<div class="screen">
+        ${chrome(title, state.bike)}
+        <main class="chat" id="chat">
+          <div class="context"><span class="context-pill">${state.bike}</span></div>
+          <div class="message"><span class="avatar">BD</span><div class="bubble">Hi Maya—what would you like help with today?</div></div>
+          ${selected ? `
+            <div class="message user"><div class="bubble">${selected.user}</div></div>
+            <div class="message"><span class="avatar">BD</span><div class="bubble">${selected.reply}</div></div>
+            <div class="quick-prompts">${selected.prompts.map((prompt) => `<button class="quick">${prompt}</button>`).join("")}</div>
+          ` : modeButtons()}
+        </main>
+        <footer class="composer ${selected ? "" : "disabled"}">
+          <div class="helper">${selected ? "You can answer in your own words" : "Choose a direction to begin"}</div>
+          <div class="composer-box"><span>${selected ? "Describe it or add a photo…" : "Message available after selection"}</span><button class="send" aria-label="Send">➜</button></div>
+        </footer>
+      </div>`;
+    }
+
+    function render() {
+      document.getElementById("app").innerHTML = state.screen === "home" ? homeScreen() : chatScreen();
+      bind();
+      requestAnimationFrame(() => { const chat = document.getElementById("chat"); if (chat) chat.scrollTop = chat.scrollHeight; });
+    }
+    function reset() { state.screen = "home"; state.bike = "Maya’s Trek FX 3"; state.mode = null; render(); }
+    function bind() {
+      document.querySelector("[data-bike]")?.addEventListener("change", (event) => { state.bike = event.target.value; render(); });
+      document.querySelector("[data-start]")?.addEventListener("click", () => { state.screen = "chat"; render(); });
+      document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => { state.mode = button.dataset.mode; render(); }));
+      document.querySelector("[data-back]")?.addEventListener("click", reset);
+      document.querySelectorAll("[data-reset]").forEach((button) => { button.onclick = reset; });
+    }
+    render();
+  </script>
+</body>
+</html>

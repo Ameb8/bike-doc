@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike Doc prototype — Mode picker</title>
+  <style>
+    :root {
+      --primary: #1b3a4b;
+      --primary-strong: #102b39;
+      --secondary: #2d6a4f;
+      --tertiary: #7a4e2d;
+      --background: #f8faf9;
+      --surface: #ffffff;
+      --surface-2: #eef4f1;
+      --ink: #172126;
+      --muted: #5c696f;
+      --outline: #c0c9c5;
+      --shadow: 0 18px 50px rgba(19, 35, 42, .18);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      color: var(--ink);
+      font-family: Roboto, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #e8edeb;
+    }
+
+    .stage {
+      width: min(980px, 100%);
+      display: grid;
+      grid-template-columns: minmax(320px, 412px) minmax(260px, 380px);
+      gap: 48px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .phone {
+      width: 412px;
+      height: min(860px, calc(100vh - 56px));
+      min-height: 700px;
+      overflow: hidden;
+      position: relative;
+      border: 8px solid #11191d;
+      border-radius: 38px;
+      background: var(--background);
+      box-shadow: var(--shadow);
+    }
+
+    #app { height: 100%; }
+    button, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+
+    .screen {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+      animation: fade-in 160ms ease-out;
+    }
+
+    @keyframes fade-in { from { opacity: .55; transform: translateY(3px); } }
+
+    .status-bar {
+      min-height: 28px;
+      padding: 7px 22px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .2px;
+      background: var(--surface);
+    }
+
+    .app-bar {
+      min-height: 64px;
+      padding: 8px 18px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      background: var(--surface);
+      border-bottom: 1px solid #edf0ee;
+    }
+
+    .app-bar h1 { margin: 0; font-size: 22px; line-height: 1.1; font-weight: 650; }
+    .app-bar .sub { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .grow { flex: 1; }
+
+    .icon-button {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 0;
+      border-radius: 50%;
+      color: var(--primary);
+      background: transparent;
+      font-size: 24px;
+    }
+
+    .content { flex: 1; overflow: auto; padding: 24px 20px 28px; }
+    .eyebrow { color: var(--secondary); font-size: 12px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
+    .greeting { margin: 8px 0 4px; font-size: 30px; line-height: 1.15; letter-spacing: -.5px; }
+    .lede { margin: 0 0 24px; color: var(--muted); font-size: 15px; line-height: 1.45; }
+
+    .bike-card {
+      padding: 18px;
+      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid #e2e8e5;
+      box-shadow: 0 3px 10px rgba(25, 52, 62, .06);
+    }
+
+    .field-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 750; }
+    .select-wrap { position: relative; }
+    select {
+      width: 100%;
+      min-height: 54px;
+      appearance: none;
+      padding: 0 44px 0 16px;
+      border: 1.5px solid #77858a;
+      border-radius: 12px;
+      color: var(--ink);
+      background: #fff;
+      font-weight: 650;
+    }
+    .select-wrap::after { content: "⌄"; position: absolute; right: 16px; top: 14px; color: var(--primary); font-weight: 800; pointer-events: none; }
+    .bike-meta { margin-top: 10px; color: var(--muted); font-size: 12px; }
+
+    .primary {
+      width: 100%;
+      min-height: 54px;
+      margin-top: 18px;
+      padding: 12px 20px;
+      border: 0;
+      border-radius: 16px;
+      color: #fff;
+      background: var(--primary);
+      font-weight: 750;
+      box-shadow: 0 3px 8px rgba(27, 58, 75, .18);
+    }
+    .primary:active { transform: scale(.99); background: var(--primary-strong); }
+
+    .secondary-action {
+      width: 100%; min-height: 50px; margin-top: 10px; border: 1px solid var(--outline);
+      border-radius: 16px; color: var(--primary); background: transparent; font-weight: 700;
+    }
+
+    .home-note { margin: 18px 2px 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+
+    .scrim {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      display: flex;
+      align-items: flex-end;
+      background: rgba(12, 24, 29, .42);
+      animation: scrim-in 170ms ease-out;
+    }
+    @keyframes scrim-in { from { background: rgba(12, 24, 29, 0); } }
+
+    .sheet {
+      width: 100%;
+      max-height: 82%;
+      overflow: auto;
+      padding: 10px 20px 26px;
+      border-radius: 28px 28px 0 0;
+      background: var(--surface);
+      box-shadow: 0 -12px 30px rgba(11, 29, 36, .16);
+      animation: sheet-in 220ms cubic-bezier(.2, .8, .2, 1);
+    }
+    @keyframes sheet-in { from { transform: translateY(100%); } }
+    .grabber { width: 34px; height: 4px; margin: 0 auto 18px; border-radius: 3px; background: #aab4b0; }
+    .sheet h2 { margin: 0; font-size: 24px; letter-spacing: -.25px; }
+    .sheet-intro { margin: 7px 0 16px; color: var(--muted); font-size: 14px; line-height: 1.4; }
+
+    .mode {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 46px 1fr 22px;
+      gap: 12px;
+      align-items: center;
+      min-height: 82px;
+      margin-top: 10px;
+      padding: 13px;
+      text-align: left;
+      border: 1px solid #dce4e0;
+      border-radius: 16px;
+      color: var(--ink);
+      background: #fff;
+    }
+    .mode:hover, .mode:focus-visible { border-color: var(--secondary); background: #f4f8f6; outline: none; }
+    .mode-icon { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 14px; background: var(--surface-2); font-size: 24px; }
+    .mode-title { display: block; font-size: 15px; font-weight: 780; }
+    .mode-copy { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.3; }
+    .chevron { color: var(--primary); font-size: 22px; }
+
+    .session-body { flex: 1; overflow: auto; padding: 18px 16px; }
+    .context-pill { width: fit-content; margin: 0 auto 18px; padding: 7px 12px; border-radius: 20px; color: var(--secondary); background: #e5f1eb; font-size: 12px; font-weight: 750; }
+    .bubble { max-width: 86%; margin-bottom: 12px; padding: 13px 15px; border-radius: 6px 18px 18px 18px; background: #e9efec; font-size: 14px; line-height: 1.45; }
+    .composer { padding: 12px 14px 18px; background: #fff; border-top: 1px solid #e5e9e7; }
+    .composer-box { display: flex; gap: 8px; align-items: center; padding: 7px 7px 7px 14px; border: 1px solid #aab5b1; border-radius: 18px; color: var(--muted); font-size: 13px; }
+    .send { margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; color: #fff; background: var(--primary); font-size: 18px; }
+
+    .notes h2 { margin: 0 0 8px; color: var(--primary); font-size: 25px; }
+    .notes p { margin: 0 0 18px; color: #46545a; font-size: 14px; line-height: 1.55; }
+    .notes ol { margin: 0 0 24px; padding-left: 20px; color: #334247; font-size: 14px; line-height: 1.65; }
+    .tag { display: inline-block; margin-bottom: 12px; padding: 6px 10px; border-radius: 20px; color: #fff; background: var(--secondary); font-size: 11px; font-weight: 800; letter-spacing: .6px; }
+    .reset { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 12px; color: var(--primary); background: transparent; font-weight: 700; }
+    .seam { margin-top: 18px !important; color: #6d5b4c !important; font-size: 12px !important; }
+
+    @media (max-width: 800px) {
+      body { padding: 0; background: #11191d; }
+      .stage { display: block; width: 100%; }
+      .phone { width: 100%; height: 100vh; min-height: 620px; border: 0; border-radius: 0; }
+      .notes { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="phone" aria-label="Android phone prototype">
+      <div id="app"></div>
+    </section>
+
+    <aside class="notes">
+      <span class="tag">Idea 1 · Choose before creating</span>
+      <h2>Mode picker sheet</h2>
+      <p>The Home CTA opens a focused bottom sheet. The user chooses what kind of help they want, and only then is the right AI session created.</p>
+      <ol>
+        <li>Choose a bike on Home.</li>
+        <li>Tap <strong>Start a session</strong>.</li>
+        <li>Try each help mode in the sheet.</li>
+        <li>Use Back or Reset to compare paths.</li>
+      </ol>
+      <button class="reset" data-reset>Reset prototype</button>
+      <p class="seam">Prototype seam: session creation, bike creation, and AI replies are simulated in memory.</p>
+    </aside>
+  </main>
+
+  <script>
+    const state = { screen: "home", sheet: false, bike: "Maya’s Trek FX 3", mode: null };
+
+    const modes = {
+      diagnose: {
+        icon: "⌕",
+        title: "Diagnose a problem",
+        copy: "Figure out what’s causing a noise, failure, or change.",
+        prompt: "Tell me what changed, what you can see or hear, and when it happens. We’ll narrow it down safely."
+      },
+      checkup: {
+        icon: "✓",
+        title: "Check the whole bike",
+        copy: "Walk through a complete safety and condition check.",
+        prompt: "I’ll guide you through a full bike check, starting with safety-critical parts. Is the bike stable and somewhere safe to inspect?"
+      },
+      repair: {
+        icon: "⌁",
+        title: "Get repair guidance",
+        copy: "Work through a repair you already know you need.",
+        prompt: "What repair are you planning? I’ll check the bike details, tools, parts, and safety steps before we begin."
+      }
+    };
+
+    function chrome(title, subtitle = "") {
+      return `
+        <div class="status-bar"><span>9:41</span><span>● 5G ▰</span></div>
+        <header class="app-bar">
+          ${state.screen === "session" ? '<button class="icon-button" data-back aria-label="Back">‹</button>' : ''}
+          <div class="grow"><h1>${title}</h1>${subtitle ? `<div class="sub">${subtitle}</div>` : ""}</div>
+          ${state.screen === "home" ? '<button class="icon-button" aria-label="Menu">⋮</button>' : ''}
+        </header>`;
+    }
+
+    function homeScreen() {
+      return `
+        <div class="screen">
+          ${chrome("Bike Doc")}
+          <div class="content">
+            <div class="eyebrow">Ready when you are</div>
+            <h2 class="greeting">Hi, Maya</h2>
+            <p class="lede">Choose the bike you’re working on, then start with Bike Doc.</p>
+            <section class="bike-card">
+              <label class="field-label" for="bike">Working on</label>
+              <div class="select-wrap">
+                <select id="bike" data-bike>
+                  <option ${state.bike === "Maya’s Trek FX 3" ? "selected" : ""}>Maya’s Trek FX 3</option>
+                  <option ${state.bike === "Trail bike" ? "selected" : ""}>Trail bike</option>
+                  <option ${state.bike === "New bike" ? "selected" : ""}>New bike</option>
+                </select>
+              </div>
+              <div class="bike-meta">Trek · FX 3 Disc · 2022</div>
+            </section>
+            <button class="primary" data-open-sheet>Start a session</button>
+            <button class="secondary-action">Resume a session</button>
+            <p class="home-note">Your bike choice carries into the session. You can change it here without visiting My Bikes.</p>
+          </div>
+          ${state.sheet ? modeSheet() : ""}
+        </div>`;
+    }
+
+    function modeSheet() {
+      return `
+        <div class="scrim" data-dismiss-sheet>
+          <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="mode-title" data-sheet>
+            <div class="grabber"></div>
+            <h2 id="mode-title">How can I help?</h2>
+            <p class="sheet-intro">Starting with <strong>${state.bike}</strong></p>
+            ${Object.entries(modes).map(([id, mode]) => `
+              <button class="mode" data-mode="${id}">
+                <span class="mode-icon">${mode.icon}</span>
+                <span><span class="mode-title">${mode.title}</span><span class="mode-copy">${mode.copy}</span></span>
+                <span class="chevron">›</span>
+              </button>`).join("")}
+          </section>
+        </div>`;
+    }
+
+    function sessionScreen() {
+      const mode = modes[state.mode];
+      return `
+        <div class="screen">
+          ${chrome(mode.title, state.bike)}
+          <main class="session-body">
+            <div class="context-pill">${mode.title} · ${state.bike}</div>
+            <div class="bubble">Hi Maya. ${mode.prompt}</div>
+          </main>
+          <footer class="composer">
+            <div class="composer-box"><span>Describe it or add a photo…</span><button class="send" aria-label="Send">➜</button></div>
+          </footer>
+        </div>`;
+    }
+
+    function render() {
+      document.getElementById("app").innerHTML = state.screen === "home" ? homeScreen() : sessionScreen();
+      bind();
+    }
+
+    function reset() {
+      state.screen = "home";
+      state.sheet = false;
+      state.bike = "Maya’s Trek FX 3";
+      state.mode = null;
+      render();
+    }
+
+    function bind() {
+      document.querySelector("[data-bike]")?.addEventListener("change", (event) => {
+        state.bike = event.target.value;
+        render();
+      });
+      document.querySelector("[data-open-sheet]")?.addEventListener("click", () => { state.sheet = true; render(); });
+      document.querySelector("[data-dismiss-sheet]")?.addEventListener("click", () => { state.sheet = false; render(); });
+      document.querySelector("[data-sheet]")?.addEventListener("click", (event) => event.stopPropagation());
+      document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
+        state.mode = button.dataset.mode;
+        state.sheet = false;
+        state.screen = "session";
+        render();
+      }));
+      document.querySelector("[data-back]")?.addEventListener("click", reset);
+      document.querySelectorAll("[data-reset]").forEach((button) => { button.onclick = reset; });
+    }
+
+    render();
+  </script>
+</body>
+</html>
