@@ -21,6 +21,8 @@ data class HomeUiState(
     val selectedBikeId: String? = null,
     val isLoading: Boolean = false,
     val isStartingRepair: Boolean = false,
+    val isSetupExpanded: Boolean = false,
+    val startingDetail: String = "",
     val error: String? = null,
 )
 
@@ -53,6 +55,25 @@ class HomeViewModel
             }
         }
 
+        fun openSelectedBikeProfile() {
+            val bikeId = _uiState.value.selectedBikeId ?: return
+            viewModelScope.launch {
+                eventChannel.send(UiEvent.NavigateTo(AppRoute.BikeEdit.create(bikeId)))
+            }
+        }
+
+        fun startSetup() {
+            _uiState.value = _uiState.value.copy(isSetupExpanded = true, error = null)
+        }
+
+        fun closeSetup() {
+            _uiState.value = _uiState.value.copy(isSetupExpanded = false)
+        }
+
+        fun onStartingDetailChanged(value: String) {
+            _uiState.value = _uiState.value.copy(startingDetail = value)
+        }
+
         fun selectRepairBike(bikeId: String?) {
             _uiState.value = _uiState.value.copy(selectedBikeId = bikeId)
         }
@@ -61,11 +82,19 @@ class HomeViewModel
             if (_uiState.value.isStartingRepair) return
 
             viewModelScope.launch {
+                val startingDetail = _uiState.value.startingDetail.trim()
                 _uiState.value = _uiState.value.copy(isStartingRepair = true, error = null)
                 when (val result = homeRepository.startRepair(_uiState.value.selectedBikeId)) {
                     is ApiResult.Success -> {
                         _uiState.value = _uiState.value.copy(isStartingRepair = false)
-                        eventChannel.send(UiEvent.NavigateTo(AppRoute.DiagnosticChat.create(result.data.id)))
+                        eventChannel.send(
+                            UiEvent.NavigateTo(
+                                AppRoute.DiagnosticChat.create(
+                                    sessionId = result.data.id,
+                                    startingDetail = startingDetail,
+                                ),
+                            ),
+                        )
                     }
                     is ApiResult.Error -> {
                         _uiState.value = _uiState.value.copy(isStartingRepair = false, error = result.message)
@@ -122,6 +151,7 @@ class HomeViewModel
                         HomeUiState(
                             displayName = displayName,
                             bikes = result.data,
+                            selectedBikeId = result.data.firstOrNull()?.id,
                             isLoading = false,
                         )
                 is ApiResult.Error ->

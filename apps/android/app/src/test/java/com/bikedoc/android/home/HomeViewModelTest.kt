@@ -83,6 +83,43 @@ class HomeViewModelTest {
             assertEquals("bike-1", repository.startedBikeId)
         }
 
+    @Test
+    fun `opens the selected bike profile editor`() =
+        runTest {
+            val repository =
+                FakeHomeRepository(
+                    result = ApiResult.Success(BikeDocUser(id = "user-1", displayName = "Alex")),
+                    bikesResult = ApiResult.Success(listOf(HomeBike(id = "bike-1", name = "Daily Rider"))),
+                )
+            val viewModel = HomeViewModel(FakeAuthProvider(signedIn = true), repository)
+
+            viewModel.events.test {
+                viewModel.openSelectedBikeProfile()
+
+                assertEquals(UiEvent.NavigateTo(AppRoute.BikeEdit.create("bike-1")), awaitItem())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `expands and closes the session setup`() =
+        runTest {
+            val viewModel =
+                HomeViewModel(
+                    authProvider = FakeAuthProvider(signedIn = true),
+                    homeRepository =
+                        FakeHomeRepository(
+                            result = ApiResult.Success(BikeDocUser(id = "user-1", displayName = "Alex")),
+                        ),
+                )
+
+            viewModel.startSetup()
+            assertTrue(viewModel.uiState.value.isSetupExpanded)
+
+            viewModel.closeSetup()
+            assertFalse(viewModel.uiState.value.isSetupExpanded)
+        }
+
     private class FakeHomeRepository(
         private val result: ApiResult<BikeDocUser>,
         private val bikesResult: ApiResult<List<HomeBike>> = ApiResult.Success(emptyList()),

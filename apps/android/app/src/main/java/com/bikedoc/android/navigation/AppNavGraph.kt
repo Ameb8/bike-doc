@@ -185,6 +185,11 @@ private fun NavGraphBuilder.diagnosticDestinations(navController: NavHostControl
                 navArgument("sessionId") {
                     type = NavType.StringType
                 },
+                navArgument("startingDetail") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
             ),
     ) {
         val diagnosticChatViewModel: DiagnosticChatViewModel = hiltViewModel()
