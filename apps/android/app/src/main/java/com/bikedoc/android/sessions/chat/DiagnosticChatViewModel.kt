@@ -104,8 +104,10 @@ class DiagnosticChatViewModel
         savedStateHandle: SavedStateHandle,
     ) : ViewModel() {
         private val sessionId: String = checkNotNull(savedStateHandle["sessionId"])
+        private val startingDetail: String? = savedStateHandle["startingDetail"]
         private var eventJob: Job? = null
         private var lastEventId: String? = null
+        private var hasSubmittedStartingDetail = false
 
         private val _uiState = MutableStateFlow(DiagnosticChatUiState())
         val uiState: StateFlow<DiagnosticChatUiState> = _uiState.asStateFlow()
@@ -232,6 +234,7 @@ class DiagnosticChatViewModel
                 when (val result = sessionRepository.getRepairSession(sessionId)) {
                     is ApiResult.Success -> {
                         applyLoadedSession(result.data)
+                        submitStartingDetailIfPossible()
                         startEventReplay(after = REPLAY_FROM_BEGINNING)
                     }
 
@@ -268,6 +271,18 @@ class DiagnosticChatViewModel
                     isLoadingSession = false,
                     error = null,
                 )
+        }
+
+        private fun submitStartingDetailIfPossible() {
+            val detail = startingDetail?.trim().orEmpty()
+            if (hasSubmittedStartingDetail || detail.isBlank()) return
+
+            hasSubmittedStartingDetail = true
+            submitTurn(
+                text = detail,
+                artifactIds = emptyList(),
+                respondsToInputRequestId = _uiState.value.activeInputRequestId(),
+            )
         }
 
         private fun startEventReplay(after: String?) {

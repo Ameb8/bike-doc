@@ -1,16 +1,18 @@
+@file:Suppress("MaxLineLength")
+
 package com.bikedoc.android.api
 
 import com.bikedoc.android.api.models.AlternateHypothesisPayload
 import com.bikedoc.android.api.models.AlternateHypothesisV2Payload
-import com.bikedoc.android.api.models.CostEstimatePayload
 import com.bikedoc.android.api.models.ContributingFactorPayload
+import com.bikedoc.android.api.models.CostEstimatePayload
 import com.bikedoc.android.api.models.DiagnosisPayload
 import com.bikedoc.android.api.models.DiagnosisV2Payload
 import com.bikedoc.android.api.models.DiagnosticConfidencePayload
 import com.bikedoc.android.api.models.DiagnosticOutcomePayload
+import com.bikedoc.android.api.models.DiagnosticRelevancePayload
 import com.bikedoc.android.api.models.DiagnosticReportPayload
 import com.bikedoc.android.api.models.DiagnosticReportV2Payload
-import com.bikedoc.android.api.models.DiagnosticRelevancePayload
 import com.bikedoc.android.api.models.DiySuitabilityPayload
 import com.bikedoc.android.api.models.EvidenceSourcePayload
 import com.bikedoc.android.api.models.ObservedFindingPayload
@@ -182,16 +184,13 @@ class DefaultReportRepository
             )
         }
 
-        private fun DiagnosticOutcomePayload.toDiagnosticOutcome(): DiagnosticOutcome =
-            DiagnosticOutcome.valueOf(name)
+        private fun DiagnosticOutcomePayload.toDiagnosticOutcome(): DiagnosticOutcome = DiagnosticOutcome.valueOf(name)
 
         private fun EvidenceSourcePayload.toEvidenceSource(): EvidenceSource = EvidenceSource.valueOf(name)
 
-        private fun DiagnosticRelevancePayload.toDiagnosticRelevance(): DiagnosticRelevance =
-            DiagnosticRelevance.valueOf(name)
+        private fun DiagnosticRelevancePayload.toDiagnosticRelevance(): DiagnosticRelevance = DiagnosticRelevance.valueOf(name)
 
-        private fun DiagnosticConfidencePayload.toDiagnosticConfidence(): DiagnosticConfidence =
-            DiagnosticConfidence.valueOf(name)
+        private fun DiagnosticConfidencePayload.toDiagnosticConfidence(): DiagnosticConfidence = DiagnosticConfidence.valueOf(name)
 
         private fun DiySuitabilityPayload.toDiySuitability(): DiySuitability = DiySuitability.valueOf(name)
 

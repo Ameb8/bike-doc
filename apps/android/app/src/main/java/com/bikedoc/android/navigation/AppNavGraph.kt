@@ -96,6 +96,10 @@ private fun NavGraphBuilder.bikeDestinations(navController: NavHostController) {
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("resumeOnly") {
+                    type = NavType.BoolType
+                    defaultValue = false
+                },
             ),
     ) {
         val bikeListViewModel: BikeListViewModel = hiltViewModel()
@@ -180,6 +184,11 @@ private fun NavGraphBuilder.diagnosticDestinations(navController: NavHostControl
             listOf(
                 navArgument("sessionId") {
                     type = NavType.StringType
+                },
+                navArgument("startingDetail") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
                 },
             ),
     ) {

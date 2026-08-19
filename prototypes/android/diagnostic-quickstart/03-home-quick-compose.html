@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bike Doc prototype — Home quick compose</title>
+  <style>
+    :root {
+      --primary: #1b3a4b;
+      --secondary: #2d6a4f;
+      --tertiary: #7a4e2d;
+      --background: #f8faf9;
+      --surface: #fff;
+      --surface-2: #e9f0ed;
+      --ink: #172126;
+      --muted: #5c696f;
+      --outline: #c0c9c5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 28px;
+      color: var(--ink); background: #e8edeb;
+      font-family: Roboto, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .stage { width: min(980px, 100%); display: grid; grid-template-columns: minmax(320px, 412px) minmax(260px, 380px); gap: 48px; align-items: center; justify-content: center; }
+    .phone {
+      width: 412px; height: min(860px, calc(100vh - 56px)); min-height: 700px; overflow: hidden;
+      border: 8px solid #11191d; border-radius: 38px; background: var(--background);
+      box-shadow: 0 18px 50px rgba(19, 35, 42, .18);
+    }
+    #app { height: 100%; }
+    button, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .screen { height: 100%; display: flex; flex-direction: column; background: var(--background); animation: fade-in 170ms ease-out; }
+    @keyframes fade-in { from { opacity: .55; transform: translateY(4px); } }
+    .status-bar { min-height: 28px; padding: 7px 22px 0; display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; background: #fff; }
+    .app-bar { min-height: 64px; padding: 8px 18px; display: flex; gap: 12px; align-items: center; background: #fff; border-bottom: 1px solid #edf0ee; }
+    .app-bar h1 { margin: 0; font-size: 22px; line-height: 1.1; font-weight: 650; }
+    .sub { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .grow { flex: 1; }
+    .icon-button { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--primary); background: transparent; font-size: 24px; }
+    .content { flex: 1; overflow: auto; padding: 22px 20px 28px; }
+    .eyebrow { color: var(--secondary); font-size: 12px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
+    .greeting { margin: 7px 0 3px; font-size: 29px; line-height: 1.15; letter-spacing: -.5px; }
+    .lede { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+    .bike-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; padding: 15px; border-radius: 18px; background: #fff; border: 1px solid #e2e8e5; }
+    .field-label { display: block; margin-bottom: 7px; color: var(--muted); font-size: 11px; font-weight: 750; }
+    .select-wrap { position: relative; }
+    select { width: 100%; min-height: 50px; appearance: none; padding: 0 40px 0 13px; border: 1.5px solid #77858a; border-radius: 12px; color: var(--ink); background: #fff; font-weight: 650; font-size: 14px; }
+    .select-wrap::after { content: "⌄"; position: absolute; right: 14px; top: 12px; color: var(--primary); font-weight: 800; pointer-events: none; }
+    .manage { min-height: 48px; padding: 0 12px; border: 0; color: var(--primary); background: transparent; font-size: 12px; font-weight: 750; }
+    .primary { width: 100%; min-height: 54px; margin-top: 16px; padding: 12px 20px; border: 0; border-radius: 16px; color: #fff; background: var(--primary); font-weight: 750; box-shadow: 0 3px 8px rgba(27, 58, 75, .18); }
+    .primary:active { transform: scale(.99); background: #102b39; }
+    .secondary-action { width: 100%; min-height: 48px; margin-top: 9px; border: 1px solid var(--outline); border-radius: 16px; color: var(--primary); background: transparent; font-weight: 700; }
+
+    .setup {
+      margin-top: 16px; padding: 17px; border-radius: 22px; color: var(--ink); background: #fff;
+      border: 1px solid #d9e3de; box-shadow: 0 8px 24px rgba(26, 54, 63, .10);
+      animation: expand-in 220ms cubic-bezier(.2, .8, .2, 1);
+    }
+    @keyframes expand-in { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
+    .setup-top { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+    .setup h3 { margin: 0; font-size: 20px; }
+    .setup-copy { margin: 5px 0 14px; color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .close { width: 32px; height: 32px; border: 0; border-radius: 50%; color: var(--muted); background: #f0f3f2; font-size: 18px; }
+    .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 5px; border-radius: 16px; background: #eef2f0; }
+    .segment { min-height: 62px; padding: 7px 4px; border: 0; border-radius: 12px; color: #506066; background: transparent; font-size: 10px; font-weight: 750; line-height: 1.25; }
+    .segment-icon { display: block; margin-bottom: 3px; font-size: 20px; }
+    .segment.selected { color: var(--primary); background: #fff; box-shadow: 0 2px 7px rgba(24, 49, 58, .11); }
+    .prompt-label { display: block; margin: 15px 0 7px; color: var(--ink); font-size: 12px; font-weight: 750; }
+    textarea { width: 100%; min-height: 76px; resize: none; padding: 12px; border: 1.5px solid #88979c; border-radius: 13px; color: var(--ink); background: #fff; font-size: 13px; line-height: 1.4; }
+    textarea:focus { outline: 2px solid rgba(45, 106, 79, .18); border-color: var(--secondary); }
+    .helper { margin: 6px 2px 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+    .begin { width: 100%; min-height: 48px; margin-top: 13px; border: 0; border-radius: 14px; color: #fff; background: var(--secondary); font-weight: 760; }
+
+    .chat { flex: 1; overflow: auto; padding: 18px 16px; }
+    .summary-card { margin-bottom: 18px; padding: 13px 14px; border-radius: 15px; color: #294138; background: #e5f1eb; font-size: 12px; line-height: 1.45; }
+    .summary-card strong { display: block; margin-bottom: 3px; font-size: 13px; }
+    .message { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 12px; }
+    .message.user { justify-content: flex-end; }
+    .avatar { width: 28px; height: 28px; flex: 0 0 28px; display: grid; place-items: center; border-radius: 9px; color: #fff; background: var(--secondary); font-size: 13px; font-weight: 800; }
+    .bubble { max-width: 82%; padding: 13px 15px; border-radius: 6px 18px 18px 18px; background: var(--surface-2); font-size: 14px; line-height: 1.45; }
+    .user .bubble { color: #fff; background: var(--primary); border-radius: 18px 6px 18px 18px; }
+    .composer { padding: 12px 14px 18px; background: #fff; border-top: 1px solid #e5e9e7; }
+    .composer-box { display: flex; gap: 8px; align-items: center; padding: 7px 7px 7px 14px; border: 1px solid #aab5b1; border-radius: 18px; color: var(--muted); font-size: 13px; }
+    .send { margin-left: auto; width: 40px; height: 40px; border: 0; border-radius: 50%; color: #fff; background: var(--primary); font-size: 18px; }
+
+    .notes h2 { margin: 0 0 8px; color: var(--primary); font-size: 25px; }
+    .notes p { margin: 0 0 18px; color: #46545a; font-size: 14px; line-height: 1.55; }
+    .notes ol { margin: 0 0 24px; padding-left: 20px; color: #334247; font-size: 14px; line-height: 1.65; }
+    .tag { display: inline-block; margin-bottom: 12px; padding: 6px 10px; border-radius: 20px; color: #fff; background: var(--secondary); font-size: 11px; font-weight: 800; letter-spacing: .6px; }
+    .reset { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 12px; color: var(--primary); background: transparent; font-weight: 700; }
+    .seam { margin-top: 18px !important; color: #6d5b4c !important; font-size: 12px !important; }
+
+    @media (max-width: 800px) {
+      body { padding: 0; background: #11191d; }
+      .stage { display: block; width: 100%; }
+      .phone { width: 100%; height: 100vh; min-height: 620px; border: 0; border-radius: 0; }
+      .notes { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <section class="phone" aria-label="Android phone prototype"><div id="app"></div></section>
+    <aside class="notes">
+      <span class="tag">Idea 3 · Give the AI a useful head start</span>
+      <h2>Home quick compose</h2>
+      <p>The Home CTA expands into a compact launcher. The user chooses a mode and optionally gives one line of context before entering the session.</p>
+      <ol>
+        <li>Choose a bike and tap <strong>Start with Bike Doc</strong>.</li>
+        <li>Switch between the three modes.</li>
+        <li>Edit the optional starting detail.</li>
+        <li>Begin and inspect the pre-seeded chat.</li>
+      </ol>
+      <button class="reset" data-reset>Reset prototype</button>
+      <p class="seam">Prototype seam: the initial text is passed to a simulated session; photos, persistence, and AI replies are not connected.</p>
+    </aside>
+  </main>
+
+  <script>
+    const state = { screen: "home", expanded: false, bike: "Maya’s Trek FX 3", mode: "diagnose", detail: "The rear brake squeals and feels weak." };
+    const modes = {
+      diagnose: { icon: "⌕", short: "Diagnose", title: "Diagnose a problem", label: "What’s happening?", placeholder: "Example: The chain skips under load", helper: "A short symptom helps Bike Doc ask a better first question.", reply: "Thanks—I’ll help narrow down the cause. Did this start suddenly, and does it happen every time you brake?" },
+      checkup: { icon: "✓", short: "Checkup", title: "Full bike check", label: "Anything you’re concerned about? (optional)", placeholder: "Example: Getting ready for a long ride", helper: "Leave this blank to start the standard safety-first inspection.", reply: "We’ll start with the safety-critical parts, then work through the rest of the bike. Is it stable and safe to inspect?" },
+      repair: { icon: "⌁", short: "Repair", title: "Repair guidance", label: "What repair are you planning?", placeholder: "Example: Replace the rear tube", helper: "Bike Doc will confirm tools, parts, and safety before the first step.", reply: "I’ll help you prepare and then guide each step. Do you already have the replacement parts and tools?" }
+    };
+
+    function chrome(title, subtitle = "") {
+      return `<div class="status-bar"><span>9:41</span><span>● 5G ▰</span></div>
+        <header class="app-bar">
+          ${state.screen === "chat" ? '<button class="icon-button" data-back aria-label="Back">‹</button>' : ''}
+          <div class="grow"><h1>${title}</h1>${subtitle ? `<div class="sub">${subtitle}</div>` : ""}</div>
+          ${state.screen === "home" ? '<button class="icon-button" aria-label="Menu">⋮</button>' : ''}
+        </header>`;
+    }
+
+    function setupCard() {
+      const mode = modes[state.mode];
+      return `<section class="setup">
+        <div class="setup-top"><div><h3>Start a session</h3><p class="setup-copy">Give Bike Doc just enough context to begin.</p></div><button class="close" data-close aria-label="Close">×</button></div>
+        <div class="segmented" role="group" aria-label="Session type">
+          ${Object.entries(modes).map(([id, item]) => `<button class="segment ${state.mode === id ? "selected" : ""}" data-mode="${id}"><span class="segment-icon">${item.icon}</span>${item.short}</button>`).join("")}
+        </div>
+        <label class="prompt-label" for="detail">${mode.label}</label>
+        <textarea id="detail" data-detail placeholder="${mode.placeholder}">${state.detail}</textarea>
+        <div class="helper">${mode.helper}</div>
+        <button class="begin" data-begin>Begin ${mode.short.toLowerCase()} session</button>
+      </section>`;
+    }
+
+    function homeScreen() {
+      return `<div class="screen">
+        ${chrome("Bike Doc")}
+        <main class="content">
+          <div class="eyebrow">Ready when you are</div>
+          <h2 class="greeting">Hi, Maya</h2>
+          <p class="lede">Choose the bike you’re working on, then tell Bike Doc where to start.</p>
+          <section class="bike-row">
+            <div><label class="field-label" for="bike">Working on</label><div class="select-wrap"><select id="bike" data-bike>
+              <option ${state.bike === "Maya’s Trek FX 3" ? "selected" : ""}>Maya’s Trek FX 3</option>
+              <option ${state.bike === "Trail bike" ? "selected" : ""}>Trail bike</option>
+              <option ${state.bike === "New bike" ? "selected" : ""}>New bike</option>
+            </select></div></div>
+            <button class="manage">My bikes</button>
+          </section>
+          ${state.expanded ? setupCard() : `<button class="primary" data-expand>Start with Bike Doc</button><button class="secondary-action">Resume a session</button>`}
+        </main>
+      </div>`;
+    }
+
+    function chatScreen() {
+      const mode = modes[state.mode];
+      const detail = state.detail.trim();
+      return `<div class="screen">
+        ${chrome(mode.title, state.bike)}
+        <main class="chat">
+          <section class="summary-card"><strong>${mode.title}</strong>${state.bike}${detail ? ` · “${detail}”` : " · Standard guided start"}</section>
+          ${detail ? `<div class="message user"><div class="bubble">${detail}</div></div>` : ""}
+          <div class="message"><span class="avatar">BD</span><div class="bubble">${detail ? "Thanks for the context. " : "Ready when you are. "}${mode.reply}</div></div>
+        </main>
+        <footer class="composer"><div class="composer-box"><span>Reply or add a photo…</span><button class="send" aria-label="Send">➜</button></div></footer>
+      </div>`;
+    }
+
+    function render() {
+      document.getElementById("app").innerHTML = state.screen === "home" ? homeScreen() : chatScreen();
+      bind();
+    }
+    function reset() { state.screen = "home"; state.expanded = false; state.bike = "Maya’s Trek FX 3"; state.mode = "diagnose"; state.detail = "The rear brake squeals and feels weak."; render(); }
+    function bind() {
+      document.querySelector("[data-bike]")?.addEventListener("change", (event) => { state.bike = event.target.value; render(); });
+      document.querySelector("[data-expand]")?.addEventListener("click", () => { state.expanded = true; render(); });
+      document.querySelector("[data-close]")?.addEventListener("click", () => { state.expanded = false; render(); });
+      document.querySelector("[data-detail]")?.addEventListener("input", (event) => { state.detail = event.target.value; });
+      document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
+        state.mode = button.dataset.mode;
+        state.detail = "";
+        render();
+      }));
+      document.querySelector("[data-begin]")?.addEventListener("click", () => { state.screen = "chat"; render(); });
+      document.querySelector("[data-back]")?.addEventListener("click", reset);
+      document.querySelectorAll("[data-reset]").forEach((button) => { button.onclick = reset; });
+    }
+    render();
+  </script>
+</body>
+</html>

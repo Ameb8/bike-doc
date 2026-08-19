@@ -146,7 +146,7 @@ AuthScreen
     └─(on success)→ HomeScreen
                         ├── BikeListScreen (browse mode)
                         │       └── BikeEditScreen  (new or existing bike)
-                        ├── BikeListScreen (selection mode)  ← "Start New Repair"
+                        ├── BikeListScreen (resume selection mode)  ← "Resume Repair"
                         │       └── DiagnosticChatScreen
                         └── DiagnosticChatScreen            ← new or resumed session
 ```
@@ -517,7 +517,10 @@ supply one.
 ```kotlin
 data class HomeUiState(
     val displayName: String? = null,
+    val bikes: List<HomeBike> = emptyList(),
+    val selectedBikeId: String? = null,
     val isLoading: Boolean = false,
+    val isStartingRepair: Boolean = false,
     val error: String? = null,
 )
 ```
@@ -526,21 +529,23 @@ data class HomeUiState(
 - Top bar: "Bike Doc" title, overflow menu with "Sign Out"
 - Greeting: "Hi, [displayName]" or empty while loading
 - Card: "My Bikes" → navigates to `BikeListScreen` (browse mode)
-- FAB or prominent button: "Start New Repair" → navigates to `BikeListScreen`
-  in selection mode
+- Repair-bike selector: defaults to "New bike" and lists existing bikes
+- "Start New Repair" creates a diagnostic session for the selected bike. With
+  "New bike", it first creates a minimal profile named "New bike".
+- "Resume Repair" → navigates to `BikeListScreen` in resume selection mode
 
 **Behavior:**
 - On entry: `GET /v1/me`. On 401, force sign-out.
-- "Start New Repair" navigates to bike selection. Session creation happens
-  after a bike is chosen (see §5.3).
-- Session resume remains bike-centric in this MVP. Home does not expose a
-  cross-bike recent-sessions or repair-history entry point.
+- Changing the selector changes only the pending start target; no session is
+  created until "Start New Repair" is pressed.
+- Session resume remains bike-centric: the user selects a bike after pressing
+  "Resume Repair". Home does not expose a cross-bike session list.
 
 ---
 
 ### 5.3 Bike List Screen
 
-**Route:** `bikes?selectionMode={Boolean}` (default `false`)  
+**Route:** `bikes?selectionMode={Boolean}&resumeOnly={Boolean}` (both default `false`)
 **ViewModel:** `BikeListViewModel`
 
 **State:**
@@ -550,6 +555,7 @@ data class BikeListUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val selectionMode: Boolean = false,
+    val resumeOnly: Boolean = false,
     val selectedBikeId: String? = null,
     val bikeSessions: List<RepairSession> = emptyList(),
     val isLoadingBikeSessions: Boolean = false,
@@ -559,8 +565,8 @@ data class BikeListUiState(
 ```
 
 **UI:**
-- Top bar: "My Bikes"; subtitle "Select a bike to diagnose" when
-  `selectionMode`
+- Top bar: "My Bikes"; subtitle "Select a bike with a diagnostic session to
+  resume" when `resumeOnly`
 - List of `BikeCard` composables showing: bike name, make/model/year, brief
   drivetrain/brake summary
 - FAB: "Add Bike" → `BikeEditScreen` (hidden in selection mode)
@@ -568,15 +574,16 @@ data class BikeListUiState(
 
 **BikeCard interactions:**
 - Browse mode: tap → `BikeEditScreen`; long-press or swipe-to-reveal → delete
-- Selection mode: tap → fetch sessions for that bike via
+- Resume selection mode: only bikes with at least one diagnostic session are
+  shown. Tap → fetch that bike's diagnostic sessions via
   `GET /v1/repair-sessions?bike_id={bikeId}` and show a bike-specific session
   chooser sheet; no edit/delete actions shown
 
-Session discovery and resume entry are available only through selection mode
-(`Start New Repair`) in this MVP. Browse mode remains focused on bike
-management and does not expose repair-session chooser affordances.
+Session discovery and resume entry are available only through resume selection
+mode (`Resume Repair`). Browse mode remains focused on bike management and
+does not expose repair-session chooser affordances.
 
-**Session chooser sheet (selection mode):**
+**Session chooser sheet (resume selection mode):**
 1. User taps a bike card.
 2. Set `selectedBikeId` and `isLoadingBikeSessions = true`.
 3. `GET /v1/repair-sessions?bike_id={bikeId}`.
@@ -585,13 +592,9 @@ management and does not expose repair-session chooser affordances.
      resumable session exists
    - The primary action also shows identifying metadata for the target
      session using the same timestamp and status model as a session row
-   - Secondary action: "Start New Diagnostic Session", always available even
-     when resumable sessions exist
    - List of older sessions below, newest first, excluding the session
      already represented by the primary resume CTA
-5. If the request succeeds with an empty `items` list, skip the chooser and
-   immediately start a new diagnostic session for that bike.
-6. On error: clear `isLoadingBikeSessions`, dismiss any partial sheet state,
+5. On error: clear `isLoadingBikeSessions`, dismiss any partial sheet state,
    show Snackbar. Do not offer session creation until session discovery
    succeeds.
 
@@ -635,21 +638,6 @@ with status labels and no navigation action. In particular, sessions outside
 the diagnostic phase must never navigate into `DiagnosticChatScreen` in this
 MVP.
 
-**Start new session from chooser:**
-1. If a resumable session already exists for that bike, show a confirmation
-   dialog before creating a new session.
-2. Confirmation copy: "Start a new diagnostic session? You can still return
-   to your earlier session later."
-3. On confirm, set `isCreatingSession = true`.
-4. `POST /v1/repair-sessions` with the selected `bike_id`.
-5. Creating a new session does not close, cancel, or otherwise mutate older
-   sessions for that bike. Older resumable sessions remain resumable.
-6. On success: navigate to `DiagnosticChatScreen(sessionId = response.id)`,
-   clearing the bike selection screen from the back stack so back returns
-   to Home.
-7. On error: clear `isCreatingSession`, keep the chooser visible, show
-   Snackbar.
-
 **Resume session from chooser:**
 - Tapping the primary action or a resumable session row navigates to
   `DiagnosticChatScreen(sessionId)`.
@@ -673,8 +661,9 @@ MVP.
 - On success: remove card from list without a full refresh.
 - On error: show Snackbar.
 
-**Data loading:** `GET /v1/bikes` on entry. Ignore `nextCursor` for V1 and
-render the first page only.
+**Data loading:** `GET /v1/bikes` on entry. Resume selection additionally
+queries sessions for bikes with repair history and renders only bikes with a
+diagnostic-phase session. Ignore `nextCursor` for V1 and render the first page only.
 
 ---
 
