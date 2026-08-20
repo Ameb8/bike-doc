@@ -1,0 +1,45 @@
+docs/specs/inspection-sessions.md
+  s_1081833d4f8636::t_1199ed1ad007df 586-590,658-660,799,812-814,946-947
+  s_a5f64cc5b5f99a::t_dc793a8e7ddfb0 598-600,683-687,702-706
+  s_a5f64cc5b5f99a::t_21c4a0b8119cc2 277-288
+  s_1081833d4f8636::t_5655021c2c78c8 1-276,289-585,591-597,601-657,661-682,688-701,707-798,800-811,815-945,948-1219
+CONTEXT-MAP.md
+  s_1081833d4f8636::t_5655021c2c78c8 8-13
+apps/android/CONTEXT.md
+  s_1081833d4f8636::t_5655021c2c78c8 12-13,15-21
+AGENTS.md
+  s_1081833d4f8636::t_5655021c2c78c8 7
+apps/api/CONTEXT.md
+  s_1081833d4f8636::t_5655021c2c78c8 20-56
+docs/specs/bike-doc.md
+  s_1081833d4f8636::t_054805b9433065 435-436,443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8ada9c716da5dbbff94f68cd2832087fad0ff83d",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_1081833d4f8636": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01d7d-9898-7c72-9012-281d9c1883ca",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_a5f64cc5b5f99a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a01e01-6324-7513-9c08-9dd0982f7f8a",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
