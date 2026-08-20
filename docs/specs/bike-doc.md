@@ -432,6 +432,8 @@ and schema validation. They should not assert on exact LLM response wording.
 
 This document is intentionally high-level. Follow-up specs should define:
 
+- Guided inspection sessions are defined canonically in
+  `docs/specs/inspection-sessions.md`.
 - API contract and SSE event schema
 - Database schema
 - Android screen architecture

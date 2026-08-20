@@ -17,6 +17,43 @@ This context covers the FastAPI backend and its Google ADK-based agent backend.
 
 ## Language
 
+**Bike session**:
+The durable record for one guided workflow on one owned bike.
+_Avoid_: Chat session, ADK session
+
+**Repair session**:
+A bike session that addresses one complaint cluster through diagnosis,
+planning, and guided execution.
+_Avoid_: Inspection session, chat
+
+**Inspection session**:
+A bike session that surveys the general condition of a bike without requiring
+an initial complaint.
+_Avoid_: General diagnostic, safety certification
+
+**Inspection checklist**:
+The immutable, versioned definition of areas and checks applicable to an
+inspection session.
+_Avoid_: Agent plan, prompt checklist
+
+**Inspection check result**:
+The durable, evidence-backed outcome for one applicable inspection check.
+_Avoid_: Agent memory, checklist answer
+
+**Inspection coverage**:
+The complete account of which applicable inspection areas were assessed,
+skipped, unavailable, or not applicable.
+_Avoid_: Pass rate, safety score
+
+**Inspection finding**:
+An evidence-backed condition observation that may require monitoring,
+maintenance, diagnosis, or shop assessment.
+_Avoid_: Diagnosis, defect verdict
+
+**Finding handoff**:
+Structured provenance that seeds a repair session from an inspection finding.
+_Avoid_: Transcript replay, copied chat
+
 **Bike profile**:
 The current resolved, user-visible description of one bike and its installed
 configuration.

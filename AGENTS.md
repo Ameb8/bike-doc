@@ -4,6 +4,7 @@ BikeDoc is an AI-powered bike repair and diagnostic assistant.
 
 ## Notable Docs
 - **High-Level Spec**: `docs/specs/bike-doc.md`
+- **Guided Inspection Sessions**: `docs/specs/inspection-sessions.md`
 - **API Contract**: `docs/specs/openapi.yaml`
 - **Canonical Specs**: `docs/specs/`
 
