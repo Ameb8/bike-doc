@@ -1,6 +1,6 @@
 # BikeDoc Durable Background Job Queue Spec
 
-Status: Canonical v1.2
+Status: Canonical v1.3
 Last updated: 2026-08-24
 
 This document defines the canonical architecture and behavior for durable
@@ -68,7 +68,7 @@ This spec covers:
 - the generic job-runtime and typed-handler interfaces;
 - workload-class routing and independently scalable worker pools;
 - acknowledgement, duplicate delivery, retry, and termination behavior;
-- dependency ordering between diagnostic and profile-inference work;
+- atomic, independent acceptance of diagnostic and profile-inference work;
 - diagnostic effect boundaries and stale-execution protection;
 - narrow reconciliation after process or broker failure;
 - durable ADK state and cross-process diagnostic-event wake-ups;
@@ -151,6 +151,16 @@ The **job runtime** is the generic asynchronous module that consumes
 deliveries, claims and loads PostgreSQL jobs, selects handlers, maintains
 acknowledgement progress, applies outcomes, and settles messages.
 
+### Worker Process Role
+
+A **worker process role** is an independently deployable host of the shared job
+runtime for exactly one workload class. A role supplies that workload class's
+complete allowlisted handler registry and process-specific resource
+composition. Multiple roles may use thin, distinct program entry points or one
+parameterized entry point, but they must reuse the same runtime implementation
+rather than copy its consumption, claim, settlement, retry, telemetry, or
+shutdown logic.
+
 ### Execution Token
 
 An **execution token** is a bounded, opaque value recorded when an eligible job
@@ -181,6 +191,8 @@ parallel queue or normal retry scheduler.
 | Broker | NATS JetStream |
 | Client | Official async Python NATS client used directly |
 | Worker framework | BikeDoc-owned async runtime; no Celery or Taskiq |
+| Worker programs | Workload-specific process roles over one shared Python runtime |
+| Job dispatch | Workload subject selects a worker pool; PostgreSQL job kind and input version select an allowlisted handler |
 | Delivery guarantee | At least once |
 | Broker payload | Version, opaque job ID, and publication generation only |
 | Routing | Workload class, not job kind |
@@ -188,7 +200,8 @@ parallel queue or normal retry scheduler.
 | Retry | Application classifies; JetStream delayed NAK performs normal redelivery |
 | Duplicate handling | Atomic PostgreSQL claim and optional execution token |
 | Dead work | PostgreSQL terminal state; broker advisories are hints |
-| Diagnostic post-effect failure | Reconcile as interrupted; never replay automatically |
+| Diagnostic handled post-effect failure | Persist the required product error and completion outcome, then settle the job as succeeded |
+| Diagnostic abrupt post-effect loss | Reconcile as interrupted; never replay automatically |
 | ADK session state | Durable PostgreSQL-backed storage |
 | SSE wake-up | Lossy hint with PostgreSQL replay and polling fallback |
 
@@ -205,14 +218,19 @@ same runtime safely.
 3. NATS availability must not be required to commit valid accepted work.
 4. Messages identify PostgreSQL job generations and contain no authoritative
    inputs.
-5. PostgreSQL determines job kind, workload class, input, eligibility,
-   dependency state, and product outcome.
+5. PostgreSQL determines job kind, workload class, input, eligibility, and
+   product outcome.
 6. Every message may be delivered more than once.
 7. Delivery of a completed or terminal job must become a safely settled no-op.
 8. An atomic PostgreSQL transition must prevent concurrent duplicate
    execution.
 9. A replaced execution token must reject later protected writes by stale work.
+   A job's execution deadline is a hard, non-renewable validity boundary for
+   that token, even if the originating worker remains alive.
 10. A diagnostic turn must not replay automatically after its effect boundary.
+    A handled runner error that durably terminalizes the turn is a succeeded job
+    outcome; `interrupted` is reserved for post-boundary execution loss that did
+    not finish normal product terminalization.
 11. Positive acknowledgement must follow the durable outcome that makes
     removal of the delivery safe.
 12. A crash after broker confirmation but before PostgreSQL confirmation may
@@ -253,8 +271,8 @@ jobs and publication intent in the same PostgreSQL transaction as the product
 change. Correctness must not depend on direct publication from a route.
 
 The background-job module owns job creation, input validation, publication
-generation, execution eligibility, dependency release, effect-boundary policy,
-outcome transitions, and reconciliation.
+generation, execution eligibility, effect-boundary policy, outcome transitions,
+and reconciliation.
 
 FastAPI application processes host the V1 publication loop. The loop is one
 reusable asynchronous Python module, not route logic. It claims jobs with
@@ -277,15 +295,23 @@ The job runtime owns pull consumption, bounded concurrency, envelope
 validation, atomic claim-and-load, handler selection, progress acknowledgements,
 outcome persistence, and final settlement.
 
+BikeDoc must implement this runtime once as shared Python code. Independently
+deployed worker process roles host it with workload-specific configuration,
+resources, and handler registries. A role may have its own thin executable or
+module entry point, or several roles may invoke one parameterized entry point.
+That packaging choice must not duplicate runtime behavior or prevent separate
+deployment, credentials, scaling, concurrency, or supervision by workload
+class.
+
 Job handlers own job-kind-specific behavior and return a bounded outcome such
 as succeeded, retry after a delay, interrupted, dead, or cancelled. They must
 not know how JetStream settlement works.
 
 Reconciliation repairs abandoned publication claims, stranded job states,
-satisfied dependencies not yet released, exhausted deliveries, and broker
-reconstruction. It may initially run in the worker deployment. When recovery
-requires another notification, it advances durable publication intent; the
-FastAPI-owned publication loop remains the only JetStream job publisher.
+exhausted deliveries, and broker reconstruction. It may initially run in the
+worker deployment. When recovery requires another notification, it advances
+durable publication intent; the FastAPI-owned publication loop remains the only
+JetStream job publisher.
 
 ### 7.2 Interfaces and Adapters
 
@@ -310,7 +336,7 @@ they must not duplicate its implementation.
 Material implementation changes to module responsibilities and dependency
 directions must also update `apps/api/ARCHITECTURE.md`.
 
-## 8. Durable Acceptance and Dependencies
+## 8. Durable Acceptance
 
 ### 8.1 Turn Acceptance
 
@@ -321,9 +347,10 @@ For a newly accepted diagnostic turn, one PostgreSQL transaction must:
 3. update the repair session as required by diagnostic specs;
 4. create one executable `diagnostic_turn` job with versioned input;
 5. set its desired publication generation ahead of its confirmed generation;
-   and
-6. when applicable, create a blocked `profile_inference` job with no
-   publishable generation yet.
+6. when the turn contains eligible image evidence, create one independently
+   executable `profile_inference` job with versioned input; and
+7. set that job's desired publication generation ahead of its confirmed
+   generation.
 
 The transaction either commits all required records or none. HTTP idempotency
 must return an existing acceptance without creating another logical job, with
@@ -341,18 +368,17 @@ An opportunistic post-commit publish may reduce latency, but it must use the
 same publication adapter and must not replace the durable publication loop.
 Failure of that fast path must leave the committed job publishable.
 
-### 8.3 Dependent Work
+### 8.3 Independent Turn Work
 
-Profile inference triggered by a turn should be represented at original
-acceptance time and depend on the diagnostic job.
+Profile inference triggered by a turn must be represented at original
+acceptance time and must not depend on the diagnostic job. Both jobs are
+independently executable and both publication intents commit atomically with
+the accepted turn.
 
-When the dependency reaches an allowed terminal state, the same transaction
-that releases the profile job must advance its desired publication generation.
-Reconciliation must release a blocked job whose dependency already satisfies
-policy.
-
-The precise diagnostic states that release profile inference must be explicit
-and deterministic rather than inferred from message acknowledgement.
+Diagnostic failure, retry, interruption, cancellation, or delayed delivery must
+not prevent profile inference from running. Their separate workload classes
+provide capacity and failure isolation; neither job's acknowledgement or
+product outcome controls the other's eligibility.
 
 ## 9. Durable Job Record and Inputs
 
@@ -366,7 +392,6 @@ Each job must retain enough information to determine:
 - registered job kind and workload class;
 - input schema version;
 - small immutable JSON input and/or stable domain references;
-- any prerequisite job;
 - current product-relevant state and earliest eligible time;
 - bounded application attempt count and attempt limit;
 - desired and last confirmed publication generations;
@@ -377,7 +402,7 @@ Each job must retain enough information to determine:
 - first start and terminal completion times; and
 - latest bounded, redacted error category.
 
-The lifecycle must distinguish blocked, queued, running, retrying, succeeded,
+The lifecycle must distinguish queued, running, retrying, succeeded,
 interrupted, dead, and cancelled work.
 
 ### 9.2 Versioned Job Inputs
@@ -422,9 +447,11 @@ Publication fields on the job row are canonical while each job has at most one
 pending execution notification per generation and one destination.
 
 A separate outbox requires an explicit design update and is appropriate when
-one transaction must produce multiple independent messages, fan out to several
-destinations, publish non-job integration events, or preserve publication
-history independently of job retention.
+one job generation must produce multiple independent messages, fan out to
+several destinations, publish non-job integration events, or preserve
+publication history independently of job retention. One acceptance transaction
+may create multiple jobs without requiring a separate outbox because each job
+row owns only its own publication generation and destination.
 
 ## 10. Publication and JetStream Contract
 
@@ -513,6 +540,21 @@ worker replicas for that workload. Consumers must use explicit
 acknowledgement, finite maximum delivery, conservative maximum pending
 acknowledgements, and bounded fetch sizes.
 
+Subject routing is coarse-grained by workload class; it does not select a job
+handler. After receipt, the worker atomically claims and loads the authoritative
+PostgreSQL job row, verifies that its stored workload class and publication
+generation match the delivery, then dispatches by the stored job kind and input
+version through its allowlisted registry. The broker envelope must remain
+independent of Python function or handler names.
+
+Every replica sharing a workload consumer must register the complete supported
+handler set for all job kinds that producers may route to that workload. A
+deployment must not mix kind-specific replicas with incomplete registries on
+one durable consumer, because any replica may receive any delivery for that
+workload. If a job truly requires a separately deployable program, it also
+requires an operationally justified workload-class routing boundary rather
+than relying on consumer-side filtering.
+
 New job kinds should reuse a workload subject when latency, resource, privacy,
 retry, and scaling characteristics are compatible. A new subject, consumer,
 stream, or deployment is justified only by an operational isolation need.
@@ -540,11 +582,27 @@ recover lost application truth.
 
 The runtime must maintain an allowlisted registry from job kind to input
 schemas, supported versions, handler, retry and attempt policy, effect-boundary
-policy, and workload class.
+policy, hard maximum execution duration, cancellation grace, and workload
+class.
 
 Startup must fail closed for duplicate registration, incompatible workload
 assignment, or missing policy. An unregistered kind must never invoke arbitrary
 code.
+
+Dispatch must follow this sequence:
+
+1. the workload subject selects the eligible worker process role;
+2. the delivery envelope identifies only a job and publication generation;
+3. atomic PostgreSQL resolution returns the authoritative kind, workload class,
+   input version, input, attempt, and execution token when applicable;
+4. the runtime verifies the workload class and generation;
+5. the registry selects the exact definition by job kind and input version;
+6. the registered input schema validates the stored input; and
+7. only then may the registered handler execute.
+
+Database values must not be interpreted as import paths, module names,
+function names, shell commands, or another form of dynamic code selection.
+Unknown kinds or versions fail closed and become visible to reconciliation.
 
 ### 11.2 Handler Interface
 
@@ -566,16 +624,19 @@ executing domain behavior. Resolution must produce one of these outcomes:
 - an eligible job moves to running, increments its bounded attempt count, and
   receives an execution token when required;
 - an early retry delivery is delayed again without executing;
-- an already-running job prevents concurrent duplicate execution and is
-  settled without removing the only safe recovery path;
-- a blocked job consumes no attempt; a stale publication may be acknowledged
-  because later release publishes a new generation;
+- an already-running job with an unexpired execution deadline prevents
+  concurrent duplicate execution, consumes no application attempt, and sends a
+  delayed NAK for the remaining time until that deadline;
 - a mismatched workload class or generation fails closed; or
 - a missing, invalid, or inconsistent job is terminated and surfaced.
 
-Exact already-running duplicate settlement must be proven with the pinned NATS
-client and consumer configuration. It must not permit concurrent execution or
-unsafe post-effect replay.
+The delayed NAK closes only the duplicate delivery while retaining the message
+for recovery after the authoritative PostgreSQL deadline. It requires no
+worker-to-worker coordination or additional heartbeat. If the original
+execution commits a terminal outcome first, its acknowledgement or the later
+terminal no-op settles the message. The pinned NATS client and consumer
+configuration must prove this behavior and ensure duplicate handling cannot
+exhaust maximum delivery before deadline recovery.
 
 ### 11.4 Execution Tokens and Stale Work
 
@@ -583,13 +644,22 @@ Where delayed or duplicated execution could commit unsafe effects, the runtime
 must pass an immutable execution token into every effect-producing path.
 Protected writes verify the current token in the same transaction as the write.
 
-Recovery that replaces a running execution must replace the token first.
+Each claim records a hard execution deadline derived from the registered job
+kind's maximum execution duration and bounded cancellation grace. The runtime
+must enforce a handler timeout early enough to request cancellation and finish
+the grace period no later than that deadline. The deadline must not be renewed.
+After it passes, the execution token is no longer valid even if the originating
+worker remains alive.
+
+Recovery that replaces a running execution after its deadline must replace the
+token first. A late execution must fail all subsequent protected writes.
 External systems that cannot participate in fencing require an idempotency key
-or durable reservation before invocation.
+or durable reservation before invocation, and the runtime must not assume that
+task cancellation alone stops an in-flight external operation.
 
 JetStream `in_progress` extends the transport acknowledgement deadline only.
-BikeDoc must not add a generic PostgreSQL heartbeat system by default. A
-conservative job execution deadline exists for recovery, not queue reservation.
+It never extends the PostgreSQL execution deadline. BikeDoc must not add a
+generic PostgreSQL heartbeat system by default.
 
 ### 11.5 Settlement Rules
 
@@ -629,16 +699,34 @@ compare-and-set immediately before execution may invoke ADK, emit assistant
 events, call a mutating tool, incur a non-idempotent external effect, or
 otherwise make whole-turn replay unsafe.
 
-Pre-boundary failures may retry within policy. Post-boundary failures must not
-replay the whole turn. They become `interrupted`, update diagnostic product
-state, and append the required public recovery or terminal event exactly once.
+Pre-boundary failures may retry within policy. After the boundary, a handled
+runner error must persist the diagnostic contract's required `error` and
+`turn.completed` events, restore the required product state, and return a
+succeeded job outcome. In this context, job success means that processing
+reached a durable, safely settled product outcome; it does not mean the model
+produced a successful answer.
+
+An abrupt or uncaught post-boundary execution loss that did not complete normal
+product terminalization becomes `interrupted`. Reconciliation must restore the
+required product state and append the required public recovery or terminal
+event exactly once without rerunning ADK. A public event's `retryable: true`
+means the user may initiate the diagnostic contract's manual retry flow; it
+must not cause automatic replay of the same job.
 
 ### 12.2 Profile Inference
 
 The generic job is the durable execution envelope. The domain-specific
-inference run remains the authoritative inference result. Implementation must
-define one mapping between application and inference attempts; nested retry
-loops must not multiply provider calls beyond policy.
+inference run remains the authoritative inference result. Profile inference has
+no effect boundary that prohibits whole-job replay: its BikeDoc writes must be
+idempotent for the versioned inference-run identity and must not create
+duplicate claims or repeat profile mutations.
+
+An ambiguous crash may therefore repeat the structured model call and incur
+another provider charge. V1 accepts that tradeoff rather than adding a durable
+provider-result checkpoint or claiming exactly-once provider invocation. The
+job attempt policy is the single provider-call budget: provider adapters and
+the domain-specific inference module must not add nested retries that can
+multiply calls beyond that bounded budget.
 
 ### 12.3 Delivery Exhaustion
 
@@ -657,7 +745,6 @@ Reconciliation must cover:
 - unconfirmed desired publication generations and abandoned claims;
 - suspected duplicate deliveries;
 - jobs stranded after worker, broker, or process loss;
-- blocked jobs whose dependencies satisfy release policy;
 - delivery-exhaustion or termination advisories;
 - broker stream or consumer reconstruction; and
 - inconsistent application records.
@@ -675,6 +762,23 @@ V1 should use separate deployments for latency-sensitive diagnostic and
 lower-priority profile-inference workload classes. Each may start as one async
 process and scale by adding replicas sharing the durable consumer.
 
+These deployments are separate running process roles, but they should not be
+separate implementations of queue behavior. Both must import the shared job
+runtime and provide only their workload-specific composition: handler
+definitions, provider and ADK resources, credentials, concurrency, and timing
+configuration. Thin workload-specific entry points are preferred when they
+reduce configuration mistakes; one parameterized entry point is also
+conforming. Separate packages, container images, or implementation languages
+require an operational reason and must preserve the same runtime contracts.
+
+A growing number of job kinds must not imply the same growth in worker process
+roles. New kinds should join an existing role when their operational
+characteristics are compatible. For example, multiple latency-sensitive ADK
+turn kinds may share one interactive-agent workload and registry, while
+lower-priority ADK enrichment kinds may share another. Create a new role only
+when latency, resources, security, privacy, retry behavior, scaling, or failure
+isolation justify a new workload class.
+
 Fetch size, maximum pending acknowledgements, local concurrency, and database
 pool size must be configured together. CPU-bound job kinds need an isolated
 workload class or explicit process execution rather than blocking the shared
@@ -687,6 +791,10 @@ redelivery and reconciliation.
 Provider timeouts, execution deadlines, acknowledgement waits, `in_progress`
 cadence, shutdown periods, and concurrency form one timing policy. Worker
 supervision belongs to the deployment runtime, not PostgreSQL.
+
+For every job kind, provider timeouts and the handler timeout must fit inside
+the hard maximum execution duration, with enough remaining cancellation grace
+to reach a durable outcome or leave the execution for deadline recovery.
 
 ## 14. Cross-Process Prerequisites
 
@@ -730,8 +838,8 @@ advisory data are the transport view. NATS administration state must not decide
 whether work succeeded or is safe to replay.
 
 BikeDoc must expose inspection of kind, workload class, input version, state,
-attempt count, dependency, publication generation, effect boundary, execution
-timing, and bounded errors.
+attempt count, publication generation, effect boundary, execution timing, and
+bounded errors.
 
 Operations must measure:
 
@@ -765,8 +873,9 @@ PostgreSQL, providers, or models.
 Integration tests must use real PostgreSQL and JetStream with fake model and
 provider behavior. Before rollout, tests must prove:
 
-1. atomic creation and rollback of product state, jobs, inputs, dependencies,
-   and publication generation;
+1. atomic creation and rollback of product state, jobs, inputs, and publication
+   generations, including both independently executable jobs for an eligible
+   image turn;
 2. HTTP idempotency cannot create duplicate logical jobs;
 3. acknowledged publication survives the configured broker restart;
 4. a publisher crash in the acknowledgement window cannot duplicate effects;
@@ -774,23 +883,32 @@ provider behavior. Before rollout, tests must prove:
 6. completed jobs handle duplicate delivery as a no-op;
 7. atomic claim-and-load prevents concurrent duplicate execution;
 8. replaced execution tokens prevent stale protected writes;
-9. early redelivery cannot bypass `eligible_at`;
-10. pre-effect crashes recover within policy;
-11. post-effect diagnostic crashes become interrupted without another ADK run;
-12. delayed NAK implements only application-classified retries;
-13. duplicate delivery does not consume an application attempt;
-14. dependent work releases and publishes once;
-15. profile backlog cannot consume diagnostic capacity;
-16. unknown envelope, kind, input version, subject, and generation fail closed;
-17. long work sends progress acknowledgement in time;
-18. acknowledgement failure after commit redelivers safely;
-19. maximum-delivery advisories reach reconciliation;
-20. broker reconstruction cannot replay terminal or unsafe post-effect work;
-21. worker events wake another API process and polling recovers missed hints;
-22. graceful and forced shutdown produce safe outcomes;
-23. the same publication module passes embedded and standalone lifecycle
+9. a handler timeout and cancellation grace finish by the hard execution
+   deadline, progress acknowledgements do not extend it, and late protected
+   writes are rejected;
+10. early redelivery cannot bypass `eligible_at`;
+11. pre-effect crashes recover within policy;
+12. post-effect diagnostic crashes become interrupted without another ADK run;
+13. an ambiguous profile-inference crash may repeat the model call but cannot
+    duplicate claims or profile mutations, and all calls share one attempt
+    budget;
+14. delayed NAK implements only application-classified retries;
+15. duplicate delivery does not consume an application attempt;
+16. an unexpired running duplicate receives a delayed NAK until the execution
+    deadline and remains available for deadline recovery;
+17. diagnostic and profile-inference work publish independently and neither
+    outcome controls the other's eligibility;
+18. profile backlog cannot consume diagnostic capacity;
+19. unknown envelope, kind, input version, subject, and generation fail closed;
+20. long work sends progress acknowledgement in time;
+21. acknowledgement failure after commit redelivers safely;
+22. maximum-delivery advisories reach reconciliation;
+23. broker reconstruction cannot replay terminal or unsafe post-effect work;
+24. worker events wake another API process and polling recovers missed hints;
+25. graceful and forced shutdown produce safe outcomes;
+26. the same publication module passes embedded and standalone lifecycle
     tests; and
-24. messages, headers, logs, and metrics contain no prohibited content.
+27. messages, headers, logs, and metrics contain no prohibited content.
 
 Compatibility tests must validate pinned NATS server and Python client,
 PostgreSQL driver, async resources, and ADK sessions. Load tests must establish
@@ -835,7 +953,6 @@ The following remain for implementation planning or later ADRs:
 - retry limits and delay curves by job kind;
 - acknowledgement waits, progress cadence, deadlines, concurrency, and
   autoscaling;
-- profile-inference dependency release states;
 - the self-hosted backup and broker-reconstruction runbook;
 - when availability justifies JetStream replication;
 - operator commands and authorization;
@@ -858,6 +975,10 @@ The design is implemented when:
 - NATS downtime accumulates recoverable unpublished generations;
 - messages contain only the minimal delivery envelope;
 - workers atomically claim and load authoritative PostgreSQL input;
+- workload subjects route to process roles and the shared registry dispatches
+  authoritative PostgreSQL job kinds and input versions;
+- workload-specific worker entry points reuse one job-runtime implementation
+  without duplicating consumption, claim, retry, settlement, or lifecycle code;
 - new kinds require only input, handler, policy, and workload assignment unless
   real isolation is needed;
 - duplicate delivery cannot duplicate committed product effects;
