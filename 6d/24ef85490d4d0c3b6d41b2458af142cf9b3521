@@ -1,0 +1,45 @@
+docs/specs/apps/durable-job-queue.md
+  s_db147ef511cbee::t_f501942f81593f 627-629,633-639,898
+  s_db147ef511cbee::t_cf20bd86e4e011 228-229,585-586,647-655,657-658,661-662,795-797,886-891
+  s_db147ef511cbee::t_256ec83e7e789e 719-729,892-897,899,901-909,911
+  s_db147ef511cbee::t_1d78a24a83fbad 71,221-222,274-275,311-314,339,350-353,371,373-376,378-381,405,450-454,841-842,876-878,900
+  s_d1a341800b4c16::t_24a8ec9cc006be 203-204,231-233,702-714
+  s_9be288218d506b::t_92e21736a556a2 3,154-163,194-195,298-305,543-556,592-606,765-780,978-981
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "6d24ef85490d4d0c3b6d41b2458af142cf9b3521",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_9be288218d506b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03531-0f3b-7541-90d0-83cc7d97d049",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_d1a341800b4c16": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0352d-cba2-7263-86a1-e22775219c64",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_db147ef511cbee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a037a0-6534-70a2-9677-e409fdb13b95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
