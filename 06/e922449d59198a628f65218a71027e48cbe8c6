@@ -1,0 +1,53 @@
+docs/specs/apps/durable-job-queue.md
+  s_db147ef511cbee::t_c3a0a11fdad7dd 449-454,499-505,1107-1110
+  s_db147ef511cbee::t_c6055bcaa4faed 1080-1085,1088-1089
+  s_db147ef511cbee::t_b4789f28a311e7 1145-1146
+  s_8cb171f4299f5e::t_973ec2b8cd8d92 4,295-300,348-349,600-603,1141,1163-1164,1191-1192,1211-1212
+  s_db147ef511cbee::t_57b1ceda49a342 1169-1173
+  s_8cb171f4299f5e::t_0f052ccc3b6ef9 468-484,1113-1117,1120,1123,1126,1129-1131,1134,1136,1138-1140,1142,1144,1147,1188
+  s_db147ef511cbee::t_e0b2076faa08fa 878-889,1090-1093
+  s_db147ef511cbee::t_7934b458329b40 247-249,251,546-559,1143
+  s_db147ef511cbee::t_3c4ccb253bcfbd 722-726,769-772,1121-1122
+  s_db147ef511cbee::t_241fe3a36397c9 728-737
+  s_8cb171f4299f5e::t_819b1bb163cb97 3,410,485-498,1074-1076
+  s_db147ef511cbee::t_d491f84686125c 598,609,613-618,622,624-625
+  s_db147ef511cbee::t_0a08d4932b617d 286-292,328,345-347
+  s_db147ef511cbee::t_2c924ffeb747ac 129-130,245-246,534-537,567-581
+  s_db147ef511cbee::t_aca5d06c721135 319-320,397-400,425-429,703,746,793-798,814,980-981,1048
+  s_8cb171f4299f5e::t_1796d21132a8b5 363-364,849-860,992-996,1094-1097
+  s_db147ef511cbee::t_f4a69d6fdf33b9 869-875,1127-1128
+  s_8cb171f4299f5e::t_863d74de67f3a4 431-437,738-740,1124-1125
+  s_8cb171f4299f5e::t_630ae72a5d46c6 455-467,1111-1112
+  s_8cb171f4299f5e::t_c0d7a924fa344c 181-186,322-327,443,918-925,927-929,931-936,972-973,1132-1133,1135,1137
+  s_db147ef511cbee::t_7076c85b6fed12 644-648,764-768,774-776,1118-1119
+  s_db147ef511cbee::t_597277a444ce63 362,365-368,370,375-376,848,861,997-1001,1073,1098,1101-1103,1105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "06e922449d59198a628f65218a71027e48cbe8c6",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_8cb171f4299f5e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03a35-6aaf-71b2-917d-fce4bf5117c9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    },
+    "s_db147ef511cbee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a037a0-6534-70a2-9677-e409fdb13b95",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
