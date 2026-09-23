@@ -1,7 +1,7 @@
 # BikeDoc Durable Background Job Queue Spec
 
-Status: Canonical v1.3
-Last updated: 2026-08-24
+Status: Canonical v1.10
+Last updated: 2026-08-25
 
 This document defines the canonical architecture and behavior for durable
 background execution in the BikeDoc backend. Within this scope, it supersedes
@@ -126,6 +126,8 @@ A **publication intent** is the durable indication that a job generation must
 be notified to JetStream. V1 stores it on the job row by keeping the desired
 publication generation separate from the last confirmed generation. This
 provides transactional-outbox semantics without a separate outbox table.
+Generations are monotonic wake-up epochs, not an event history: unpublished
+intermediate generations may coalesce to the latest desired generation.
 
 ### Delivery
 
@@ -176,9 +178,12 @@ crossing it.
 
 ### Reconciliation
 
-**Reconciliation** repairs gaps left by process failure, broker loss, delivery
-exhaustion, or inconsistent application state. It is a safety net, not a
-parallel queue or normal retry scheduler.
+**Reconciliation** is the bounded automatic safety net that recovers expired
+executions, republishes eligible nonterminal jobs that show no execution
+progress beyond a conservative threshold, and idempotently terminalizes
+interrupted diagnostic turns. It is not a parallel queue, a normal retry
+scheduler, a broker-advisory processor, or a generic application-data repair
+system.
 
 ## 5. Decision Summary
 
@@ -237,9 +242,13 @@ same runtime safely.
     duplicate publication and must remain safe.
 13. Broker loss must be recoverable by republishing eligible nonterminal jobs
     from PostgreSQL.
-14. Messages, metrics, and routine logs must not contain user-authored content
+14. Confirming an older publication generation must not confirm or erase newer
+    publication intent recorded while that publish was in flight.
+15. A job row must not be deleted while JetStream can still deliver a message
+    for it or while publication or recovery remains incomplete.
+16. Messages, metrics, and routine logs must not contain user-authored content
     or secrets.
-15. Workloads with materially different operational characteristics must be
+17. Workloads with materially different operational characteristics must be
     independently deployable and scalable.
 
 ## 7. Architecture
@@ -274,18 +283,21 @@ The background-job module owns job creation, input validation, publication
 generation, execution eligibility, effect-boundary policy, outcome transitions,
 and reconciliation.
 
-FastAPI application processes host the V1 publication loop. The loop is one
-reusable asynchronous Python module, not route logic. It claims jobs with
-unconfirmed desired generations, publishes through the JetStream adapter,
-waits for a publish acknowledgement, and records confirmation. Multiple API
-replicas may run the module safely. V1 does not require a separate dispatcher
+FastAPI application processes host the V1 maintenance control plane containing
+publication and reconciliation loops. It is reusable asynchronous Python
+module code, not route logic. Publication claims jobs with unconfirmed desired
+generations, publishes through the JetStream adapter, waits for a publish
+acknowledgement, and records confirmation. Reconciliation scans and claims
+bounded repair work across all workload classes. Multiple API replicas may run
+both loops safely. V1 does not require a separate dispatcher or reconciler
 deployment.
 
-The publication module must also have a standalone process entry point that
-uses the same implementation, configuration, PostgreSQL repository, JetStream
-adapter, metrics, and shutdown behavior as the embedded lifecycle. Providing
-that entry point does not create another V1 deployment; it preserves a clean
-deployment seam if publication later needs independent scaling or availability.
+V1 does not implement a standalone maintenance process entry point. The
+maintenance module must instead expose a small lifecycle surface and keep
+FastAPI hosting concerns outside its publication and reconciliation logic. This
+preserves a clean extraction seam if measurements later justify independent
+maintenance scaling or availability without building and testing an unused
+deployment mode now.
 
 JetStream owns stream storage, durable consumer state, acknowledgement
 deadlines, redelivery, and delivery metadata. It does not decide product state
@@ -304,14 +316,16 @@ deployment, credentials, scaling, concurrency, or supervision by workload
 class.
 
 Job handlers own job-kind-specific behavior and return a bounded outcome such
-as succeeded, retry after a delay, interrupted, dead, or cancelled. They must
-not know how JetStream settlement works.
+as succeeded, retry after a delay, interrupted, or dead. They must not know how
+JetStream settlement works.
 
-Reconciliation repairs abandoned publication claims, stranded job states,
-exhausted deliveries, and broker reconstruction. It may initially run in the
-worker deployment. When recovery requires another notification, it advances
-durable publication intent; the FastAPI-owned publication loop remains the only
-JetStream job publisher.
+Reconciliation recovers expired running jobs, republishes eligible nonterminal
+jobs that have made no execution progress beyond a conservative threshold, and
+idempotently terminalizes interrupted diagnostic turns. It runs in the
+API-hosted V1 maintenance control plane, not in workload workers, and covers all
+workload classes. When recovery requires another notification, it advances
+durable publication intent; the publication loop remains the only JetStream job
+publisher.
 
 ### 7.2 Interfaces and Adapters
 
@@ -328,10 +342,11 @@ The JetStream implementation and test fake are adapters at the publication and
 delivery seams. Transport-specific types must not leak into routes, product
 behavior, unrelated repositories, or handlers.
 
-The publication module's interface must own batching, claims, backoff,
-acknowledgement, confirmation, and graceful shutdown behind a small lifecycle
-surface. FastAPI startup and the standalone command may host that interface;
-they must not duplicate its implementation.
+The maintenance module's interfaces must own publication batching, claims,
+backoff, acknowledgement and confirmation, bounded reconciliation scans and
+claims, and graceful shutdown behind a small lifecycle surface. FastAPI startup
+hosts those interfaces in V1. A future standalone command must host the same
+interfaces rather than duplicate their implementation.
 
 Material implementation changes to module responsibilities and dependency
 directions must also update `apps/api/ARCHITECTURE.md`.
@@ -344,17 +359,21 @@ For a newly accepted diagnostic turn, one PostgreSQL transaction must:
 
 1. validate the request and current product state;
 2. persist the accepted turn and its initial public event;
-3. update the repair session as required by diagnostic specs;
-4. create one executable `diagnostic_turn` job with versioned input;
-5. set its desired publication generation ahead of its confirmed generation;
-6. when the turn contains eligible image evidence, create one independently
+3. create or reuse the app-owned diagnostic phase-session reference without
+   calling the ADK session adapter; a newly created reference has a null
+   `adk_session_id` until worker initialization;
+4. update the repair session as required by diagnostic specs;
+5. create one executable `diagnostic_turn` job with versioned input;
+6. set its desired publication generation ahead of its confirmed generation;
+7. when the turn contains eligible image evidence, create one independently
    executable `profile_inference` job with versioned input; and
-7. set that job's desired publication generation ahead of its confirmed
+8. set that job's desired publication generation ahead of its confirmed
    generation.
 
 The transaction either commits all required records or none. HTTP idempotency
 must return an existing acceptance without creating another logical job, with
-a database uniqueness constraint providing the race-safe guarantee.
+a database uniqueness constraint providing the race-safe guarantee. Acceptance
+must not call ADK or depend on ADK session-store availability.
 
 ### 8.2 Producer Rule
 
@@ -375,10 +394,10 @@ acceptance time and must not depend on the diagnostic job. Both jobs are
 independently executable and both publication intents commit atomically with
 the accepted turn.
 
-Diagnostic failure, retry, interruption, cancellation, or delayed delivery must
-not prevent profile inference from running. Their separate workload classes
-provide capacity and failure isolation; neither job's acknowledgement or
-product outcome controls the other's eligibility.
+Diagnostic failure, retry, interruption, or delayed delivery must not prevent
+profile inference from running. Their separate workload classes provide
+capacity and failure isolation; neither job's acknowledgement or product
+outcome controls the other's eligibility.
 
 ## 9. Durable Job Record and Inputs
 
@@ -388,7 +407,7 @@ This section defines logical requirements, not final SQL DDL.
 
 Each job must retain enough information to determine:
 
-- stable job and idempotency identities;
+- stable job identity and immutable logical-job deduplication key;
 - registered job kind and workload class;
 - input schema version;
 - small immutable JSON input and/or stable domain references;
@@ -403,17 +422,86 @@ Each job must retain enough information to determine:
 - latest bounded, redacted error category.
 
 The lifecycle must distinguish queued, running, retrying, succeeded,
-interrupted, dead, and cancelled work.
+interrupted, and dead work. V1 has no business-level job cancellation state or
+handler outcome. A future user, operator, or domain cancellation feature must
+define its authorization, fencing, effect-boundary, and product-state rules
+before adding cancellation to this lifecycle. Process shutdown and runtime
+task cancellation are execution-loss mechanics, not job cancellation.
+
+`dead` is terminal in V1 and must not transition back to a nonterminal state.
+Reconciliation must not revive it. If later recovery requires execution, it
+must create a replacement job through job-kind-specific behavior defined before
+that recovery is used; the original dead job remains unchanged. A diagnostic
+job whose accepted public turn has been terminalized is retried only through a
+newly accepted user turn and new job, preserving the public event history and
+diagnostic no-replay rule.
 
 ### 9.2 Versioned Job Inputs
 
 Each job kind must register a strict, versioned input schema. Workers validate
 stored input before invoking a handler. Unknown kinds or input versions fail
-closed and become visible to reconciliation.
+closed and become visible to operational inspection.
 
 Inputs should use opaque identifiers when authoritative domain records already
 exist. They should include an expected revision or immutable snapshot when a
 later domain change must not alter the accepted instruction.
+
+For `diagnostic_turn`, the immutable accepted instruction consists of the
+accepted turn content and its submitted artifact references. Mutable supporting
+context—including the bike profile, resolved claims, and repair history—is not
+snapshotted into the job and is read from current authoritative state when the
+handler or a diagnostic tool needs it.
+
+The strict `diagnostic_turn.v1` job input is:
+
+```json
+{
+  "turn_id": "turn_..."
+}
+```
+
+It permits no additional fields. The immutable turn row is authoritative for
+the accepted message, submitted artifact references, repair-session identity,
+and phase-session identity. The job row separately supplies the job kind,
+workload class, and input schema version, so the input must not duplicate them.
+
+The strict `profile_inference.v1` job input is:
+
+```json
+{
+  "turn_id": "turn_...",
+  "inference_schema_version": "bike_profile_inference.v1",
+  "extractor_version": "..."
+}
+```
+
+It permits no additional fields. Both behavior versions are pinned when the job
+is accepted. The handler resolves immutable artifact references and related
+domain identities through the accepted turn, then idempotently creates or
+reuses the authoritative inference run identified by the existing unique tuple
+of turn ID, inference schema version, and extractor version. The job input must
+not duplicate artifact, bike, or repair-session IDs.
+
+Every job has an immutable `deduplication_key`, with a database uniqueness
+constraint over `(job_kind, deduplication_key)`. This key is internal logical-job
+identity and is distinct from the client's HTTP idempotency key. The initial
+job identities are:
+
+- `diagnostic_turn`: the accepted turn ID; and
+- `profile_inference`: the canonical tuple of accepted turn ID, inference schema
+  version, and extractor version.
+
+The background-job interface must derive or validate a stable, unambiguous
+encoding of that identity rather than inspect JSON during conflict handling.
+Concurrent attempts to record the same logical job must insert or resolve the
+same row through the database constraint.
+
+Because diagnostic and profile-inference jobs execute independently, facts
+inferred from the same turn may become visible to that diagnostic execution if
+profile inference commits first. This timing is intentionally not deterministic
+and does not invalidate the accepted instruction. Existing safety policy must
+continue to prevent image-inferred profile facts alone from authorizing risky
+guidance.
 
 Large media, prompts, assistant output, credentials, and other sensitive or
 unbounded values must not be copied into the generic job payload. They remain
@@ -443,8 +531,10 @@ attempt records when its audit or product requirements justify them.
 
 ### 9.5 When a Separate Outbox Is Required
 
-Publication fields on the job row are canonical while each job has at most one
-pending execution notification per generation and one destination.
+Publication fields on the job row are canonical while each job has one
+destination and needs only its latest desired execution notification published.
+They do not preserve an independently publishable history of every intermediate
+generation.
 
 A separate outbox requires an explicit design update and is appropriate when
 one job generation must produce multiple independent messages, fan out to
@@ -453,6 +543,20 @@ publication history independently of job retention. One acceptance transaction
 may create multiple jobs without requiring a separate outbox because each job
 row owns only its own publication generation and destination.
 
+### 9.6 Job Retention and Deletion
+
+Nonterminal jobs and jobs whose confirmed publication generation trails their
+desired generation must never be deleted. A terminal job may be deleted only
+after a retention period long enough that JetStream can no longer deliver any
+message for it and no application recovery or required operational audit can
+still refer to it.
+
+V1 retains the complete job row for that period rather than introducing a
+separate tombstone mechanism or requiring cleanup to inspect live broker state.
+The concrete retention duration is deployment configuration, but it must
+exceed the configured JetStream message lifetime and every longer retry,
+recovery, or audit horizon.
+
 ## 10. Publication and JetStream Contract
 
 ### 10.1 Publication Loop
@@ -460,12 +564,21 @@ row owns only its own publication generation and destination.
 PostgreSQL and JetStream do not share a transaction. The publication loop must:
 
 1. claim due jobs whose desired generation exceeds their confirmed generation;
-2. derive an allowlisted subject from the stored workload class;
-3. publish a minimal JSON envelope with a deterministic `Nats-Msg-Id` based on
-   job ID and generation;
-4. require a JetStream publish acknowledgement;
-5. record the confirmed generation in PostgreSQL; and
-6. retry unconfirmed publication with bounded backoff and jitter.
+2. bind each claim to the exact latest desired generation observed by that
+   claim;
+3. derive an allowlisted subject from the stored workload class;
+4. publish a minimal JSON envelope with a deterministic `Nats-Msg-Id` based on
+   job ID and the claimed generation;
+5. require a JetStream publish acknowledgement;
+6. confirm only the claimed generation in PostgreSQL; and
+7. retry unconfirmed publication with bounded backoff and jitter.
+
+An acknowledgement for generation `g` may advance the confirmed generation to
+at most `g`. If the desired generation advanced beyond `g` while publication
+was in flight, that newer intent must remain publishable. Unpublished
+intermediate generations may coalesce: a new claim may publish only the latest
+desired generation because generations are wake-up epochs rather than an
+ordered event history.
 
 A crash after JetStream confirmation but before PostgreSQL confirmation may
 republish the generation. The deterministic ID provides bounded broker
@@ -482,32 +595,34 @@ a bounded interval because wake-ups can be missed, publishers can start after
 the commit, and notification delivery cannot be part of the PostgreSQL and
 JetStream transaction.
 
-### 10.2 Publisher Deployment Seam
+### 10.2 Maintenance Deployment Seam
 
-The publisher is a daemon-style runtime and does not require an inbound HTTP
-server. V1 runs the Python publication module inside FastAPI processes. A later
-deployment may run that same module as a small standalone process when
-measurement or operations show a need, including:
+The maintenance control plane is daemon-style module code even though V1 hosts
+it inside FastAPI processes. V1 does not provide or test a standalone process
+entry point. A later deployment may add a thin standalone host around those
+same modules when measurement or operations show a need, including:
 
 - material publication lag or publisher resource contention in API processes;
 - excessive polling or PostgreSQL connection use across API replicas;
 - a requirement to drain committed publication intent during API deployments
   or API unavailability;
-- independent publisher scaling, supervision, credentials, or observability;
+- independent maintenance scaling, supervision, credentials, or observability;
   or
 - worker-created follow-up publication that should not wait for an API process.
 
-Moving the same module to a standalone deployment does not change the job-row
-outbox, message protocol, or correctness model. The deployment must designate
-which processes host publishers. Embedded and standalone publishers may
-overlap only during a controlled cutover; short PostgreSQL claims and
-deterministic message IDs must keep that overlap safe.
+Moving the same modules to a standalone deployment does not change the job-row
+outbox, message protocol, recovery policy, or correctness model. The deployment
+must designate which processes host maintenance. Embedded and standalone hosts
+may overlap only during a controlled cutover; short PostgreSQL claims,
+conditional recovery transitions, and deterministic message IDs must keep that
+overlap safe.
 
 The publication path is primarily PostgreSQL and JetStream I/O. A separate
 implementation language must not be introduced merely as a presumed
-performance optimization. Replacing the Python module requires measured
+performance optimization. Replacing the Python modules requires measured
 evidence, an explicit ADR, and compatibility tests proving identical claim,
-deduplication, acknowledgement, retry, telemetry, and shutdown semantics.
+deduplication, acknowledgement, retry, reconciliation, telemetry, and shutdown
+semantics.
 
 ### 10.3 Message Envelope
 
@@ -526,8 +641,11 @@ arguments, authoritative input, prompts, assistant output, artifact paths,
 access tokens, email addresses, or raw user IDs. Workers derive and validate
 that information from PostgreSQL.
 
-Unknown envelope versions, malformed identifiers, mismatched generations, or
-unexpected subjects must fail closed and produce bounded operational evidence.
+Unknown envelope versions, malformed identifiers, impossible future
+generations, or unexpected subjects must fail closed and produce bounded
+operational evidence. A lower generation than the job's current desired
+generation is an expected stale notification under generation coalescing and
+follows the stale no-op rule in Section 11.3.
 
 ### 10.4 Streams, Subjects, and Consumers
 
@@ -582,8 +700,7 @@ recover lost application truth.
 
 The runtime must maintain an allowlisted registry from job kind to input
 schemas, supported versions, handler, retry and attempt policy, effect-boundary
-policy, hard maximum execution duration, cancellation grace, and workload
-class.
+policy, hard maximum execution duration, timeout grace, and workload class.
 
 Startup must fail closed for duplicate registration, incompatible workload
 assignment, or missing policy. An unregistered kind must never invoke arbitrary
@@ -602,14 +719,31 @@ Dispatch must follow this sequence:
 
 Database values must not be interpreted as import paths, module names,
 function names, shell commands, or another form of dynamic code selection.
-Unknown kinds or versions fail closed and become visible to reconciliation.
+For a trusted existing job, an unknown kind, unsupported version, or
+schema-invalid stored input is a permanent definition/input failure. Before
+terminating the delivery, the runtime must atomically mark the job `dead` with a
+bounded error category. No application attempt is consumed because no handler
+started.
+
+Kind and input-version rollout must be expand-first. Every worker replica for a
+workload must support every kind and version that its producers may create or
+that may still exist in a nonterminal job. Worker support for a new kind or
+version must be fully deployed before producers may create it. During a
+migration, workers retain both old and new definitions.
+
+Support for an old kind or version may be removed only after PostgreSQL has no
+nonterminal jobs using it and the retention invariant guarantees JetStream can
+no longer redeliver one of its messages. Encountering an unknown kind or
+version remains a fail-closed deployment or configuration error; it must not be
+classified as an ordinary retryable job failure. After compatibility is
+restored, any recovery that requires execution must create a replacement job;
+the dead job is not revived.
 
 ### 11.2 Handler Interface
 
 A handler receives a claimed job containing validated input, stable identity,
 attempt number, and execution token when applicable. It returns a bounded
-outcome equivalent to succeeded, retry after a delay, interrupted, dead, or
-cancelled.
+outcome equivalent to succeeded, retry after a delay, interrupted, or dead.
 
 Handlers may call application behavior and provider interfaces. They must not
 receive a JetStream message, choose a subject, publish a retry, or settle a
@@ -627,8 +761,19 @@ executing domain behavior. Resolution must produce one of these outcomes:
 - an already-running job with an unexpired execution deadline prevents
   concurrent duplicate execution, consumes no application attempt, and sends a
   delayed NAK for the remaining time until that deadline;
-- a mismatched workload class or generation fails closed; or
-- a missing, invalid, or inconsistent job is terminated and surfaced.
+- a delivery generation lower than the current desired generation is a
+  positively acknowledged stale no-op and consumes no application attempt;
+- a delivery generation higher than the current desired generation, or a
+  mismatched workload class or subject, is terminated and surfaced without
+  changing job state; or
+- a trusted existing job with a permanent definition/input failure becomes
+  `dead` before the delivery is terminated; or
+- a malformed envelope, missing job, or identity that cannot be trusted is
+  terminated and surfaced without a job-state mutation.
+
+A generation equal to the current desired generation proceeds through normal
+eligibility resolution. A stale lower generation must not clear, confirm, or
+otherwise alter the newer publication intent.
 
 The delayed NAK closes only the duplicate delivery while retaining the message
 for recovery after the authoritative PostgreSQL deadline. It requires no
@@ -645,11 +790,12 @@ must pass an immutable execution token into every effect-producing path.
 Protected writes verify the current token in the same transaction as the write.
 
 Each claim records a hard execution deadline derived from the registered job
-kind's maximum execution duration and bounded cancellation grace. The runtime
-must enforce a handler timeout early enough to request cancellation and finish
-the grace period no later than that deadline. The deadline must not be renewed.
-After it passes, the execution token is no longer valid even if the originating
-worker remains alive.
+kind's maximum execution duration and bounded timeout grace. The runtime must
+enforce a handler timeout early enough to cancel the runtime task and finish the
+grace period no later than that deadline. This runtime cancellation does not
+create a `cancelled` job outcome. The deadline must not be renewed. After it
+passes, the execution token is no longer valid even if the originating worker
+remains alive.
 
 Recovery that replaces a running execution after its deadline must replace the
 token first. A late execution must fail all subsequent protected writes.
@@ -665,7 +811,7 @@ generic PostgreSQL heartbeat system by default.
 
 The runtime must settle only after applying the corresponding durable outcome:
 
-- after success, terminal no-op, interrupted, dead, or cancelled commits, send
+- after success, terminal no-op, interrupted, or dead commits, send
   positive acknowledgement and await confirmation when supported;
 - after a retryable classification and `eligible_at` commit, send delayed NAK;
 - while legitimate long-running work continues, send `in_progress` before the
@@ -699,6 +845,20 @@ compare-and-set immediately before execution may invoke ADK, emit assistant
 events, call a mutating tool, incur a non-idempotent external effect, or
 otherwise make whole-turn replay unsafe.
 
+Before crossing that boundary, the handler must idempotently ensure that the
+app-owned diagnostic phase session has its durable ADK session. A null
+`adk_session_id` means the phase session has not yet been initialized. The
+handler derives a deterministic ADK identity from the app-owned phase-session
+ID, ensures that session exists, and atomically stores the identity only while
+the field remains null. A crash after ADK creation but before binding is safe
+because the next attempt derives and ensures the same identity.
+
+Once `adk_session_id` is non-null, the handler must resume that exact durable
+session. A confirmed missing session after binding represents lost state and
+must not be silently recreated or replaced. Failure to initialize or resume the
+session before the effect boundary follows the diagnostic pre-boundary failure
+policy.
+
 Pre-boundary failures may retry within policy. After the boundary, a handled
 runner error must persist the diagnostic contract's required `error` and
 `turn.completed` events, restore the required product state, and return a
@@ -706,12 +866,27 @@ succeeded job outcome. In this context, job success means that processing
 reached a durable, safely settled product outcome; it does not mean the model
 produced a successful answer.
 
+If pre-boundary retries are exhausted or another permanent pre-boundary failure
+prevents diagnostic execution, the same transaction that marks the job `dead`
+must restore the repair session to `awaiting_user`, append exactly one `error`
+event with `code: diagnostic_processing_error` and `retryable: true`, and append
+exactly one `turn.completed` event. This terminalization is app-owned and
+idempotent even when failure occurs before handler dispatch. It prevents an
+accepted turn from leaving its repair session permanently `running`.
+
 An abrupt or uncaught post-boundary execution loss that did not complete normal
-product terminalization becomes `interrupted`. Reconciliation must restore the
-required product state and append the required public recovery or terminal
-event exactly once without rerunning ADK. A public event's `retryable: true`
-means the user may initiate the diagnostic contract's manual retry flow; it
-must not cause automatic replay of the same job.
+product terminalization becomes `interrupted`. Reconciliation must atomically
+restore the repair session to `awaiting_user`, append an `error` event with
+`code: diagnostic_processing_error` and `retryable: true`, append the required
+`turn.completed` event immediately afterward, and terminalize the job without
+rerunning ADK. The recovery transaction must be idempotent so repeated
+reconciliation cannot append either event twice or produce an inconsistent
+session snapshot.
+
+The eventual delivery for that interrupted job becomes a positively
+acknowledged terminal no-op. The public `retryable: true` value means the user
+may initiate the diagnostic contract's manual retry flow; it must not cause
+automatic replay of the same job.
 
 ### 12.2 Profile Inference
 
@@ -740,17 +915,25 @@ state. V1 does not require a traditional broker DLQ for valid jobs.
 
 ### 12.4 Reconciliation
 
-Reconciliation must cover:
+Automatic V1 reconciliation is limited to:
 
-- unconfirmed desired publication generations and abandoned claims;
-- suspected duplicate deliveries;
-- jobs stranded after worker, broker, or process loss;
-- delivery-exhaustion or termination advisories;
-- broker stream or consumer reconstruction; and
-- inconsistent application records.
+1. recovering a `running` job after its hard execution deadline according to
+   its attempt and effect-boundary policy;
+2. advancing publication intent for an eligible nonterminal job that has shown
+   no execution progress beyond a conservative configured threshold; and
+3. idempotently terminalizing a diagnostic turn whose post-boundary execution
+   was lost, including its required public events and product-state repair.
 
-Recovery must use normal eligibility, attempt, and effect-boundary policies. It
-must not blindly republish diagnostic work or become a database scheduler.
+The no-progress repair is notification recovery, not an application attempt or
+semantic retry. It must not republish a diagnostic job after its effect boundary
+or bypass `eligible_at`, attempt limits, or another active execution.
+
+The publication loop recovers unconfirmed generations and abandoned publication
+claims. Atomic delivery resolution handles duplicates. Maximum-delivery and
+termination advisories feed metrics and alerts only and must not directly mutate
+job or product state. Stream and consumer reconstruction is an explicit
+operator-run recovery procedure. V1 reconciliation must not perform generic
+repair of unspecified inconsistent application records.
 
 ## 13. Worker Runtime and Resource Ownership
 
@@ -786,15 +969,16 @@ event loop.
 
 Graceful shutdown stops fetching, gives bounded in-flight work time to settle,
 and drains NATS resources. Forced termination leaves unacknowledged work for
-redelivery and reconciliation.
+redelivery and, after the authoritative execution deadline, bounded
+reconciliation.
 
 Provider timeouts, execution deadlines, acknowledgement waits, `in_progress`
 cadence, shutdown periods, and concurrency form one timing policy. Worker
 supervision belongs to the deployment runtime, not PostgreSQL.
 
 For every job kind, provider timeouts and the handler timeout must fit inside
-the hard maximum execution duration, with enough remaining cancellation grace
-to reach a durable outcome or leave the execution for deadline recovery.
+the hard maximum execution duration, with enough remaining timeout grace to
+reach a durable outcome or leave the execution for deadline recovery.
 
 ## 14. Cross-Process Prerequisites
 
@@ -804,6 +988,17 @@ Diagnostic workers must use PostgreSQL-backed ADK sessions. Process-local
 sessions must not be enabled with external workers. The adapter must support
 multiple processes and explicit schema migration, versioning, retention, and
 resource lifecycle.
+
+The app-owned `repair_phase_sessions.adk_session_id` must be nullable. Null is
+the sole V1 representation of an ADK session that has not yet been initialized;
+non-null means the phase session has been bound to that exact durable ADK
+identity. Uniqueness applies to non-null IDs.
+
+The ADK session adapter owns its own persistence lifecycle and does not
+participate in the turn-acceptance transaction. The diagnostic worker invokes
+its idempotent ensure-or-resume operation as a pre-effect execution
+precondition. This avoids a cross-module transaction while keeping committed
+turn acceptance independent of ADK availability.
 
 ### 14.2 Diagnostic Event Wake-Ups
 
@@ -850,7 +1045,7 @@ Operations must measure:
 - enqueue-to-start latency, execution duration, and outcomes by allowlisted
   kind or workload class;
 - active executions, deadline recovery, and stale-token rejections;
-- retry, interruption, no-op, dead, and cancellation counts;
+- retry, interruption, no-op, and dead counts;
 - maximum-delivery and termination advisories;
 - worker availability and forced termination;
 - SSE wake-up latency and polling recovery; and
@@ -875,40 +1070,81 @@ provider behavior. Before rollout, tests must prove:
 
 1. atomic creation and rollback of product state, jobs, inputs, and publication
    generations, including both independently executable jobs for an eligible
-   image turn;
-2. HTTP idempotency cannot create duplicate logical jobs;
+   image turn, without calling the ADK session adapter;
+2. HTTP idempotency and concurrent job recording cannot create duplicate
+   logical jobs, with `(job_kind, deduplication_key)` enforcing the race-safe
+   identity independently of the client key;
 3. acknowledged publication survives the configured broker restart;
 4. a publisher crash in the acknowledgement window cannot duplicate effects;
 5. deterministic job-generation message IDs provide broker deduplication;
-6. completed jobs handle duplicate delivery as a no-op;
-7. atomic claim-and-load prevents concurrent duplicate execution;
-8. replaced execution tokens prevent stale protected writes;
-9. a handler timeout and cancellation grace finish by the hard execution
+6. an older in-flight publication confirmation cannot confirm a newer desired
+   generation, while unpublished intermediate generations coalesce safely;
+7. completed jobs handle duplicate delivery as a no-op;
+8. atomic claim-and-load prevents concurrent duplicate execution;
+9. replaced execution tokens prevent stale protected writes;
+10. a handler timeout and timeout grace finish by the hard execution
    deadline, progress acknowledgements do not extend it, and late protected
    writes are rejected;
-10. early redelivery cannot bypass `eligible_at`;
-11. pre-effect crashes recover within policy;
-12. post-effect diagnostic crashes become interrupted without another ADK run;
-13. an ambiguous profile-inference crash may repeat the model call but cannot
+11. early redelivery cannot bypass `eligible_at`;
+12. pre-effect crashes recover within policy;
+13. post-effect diagnostic crashes atomically become interrupted, restore the
+    session to `awaiting_user`, and append exactly one
+    `diagnostic_processing_error` and `turn.completed` pair without another ADK
+    run;
+14. a phase session is accepted with a null ADK ID, deterministic ADK session
+    ensure-and-bind is idempotent across a crash between creation and binding,
+    occurs before the effect boundary, and never recreates or replaces a
+    confirmed missing session after binding;
+15. an ambiguous profile-inference crash may repeat the model call but cannot
     duplicate claims or profile mutations, and all calls share one attempt
     budget;
-14. delayed NAK implements only application-classified retries;
-15. duplicate delivery does not consume an application attempt;
-16. an unexpired running duplicate receives a delayed NAK until the execution
+16. delayed NAK implements only application-classified retries;
+17. duplicate delivery does not consume an application attempt;
+18. an unexpired running duplicate receives a delayed NAK until the execution
     deadline and remains available for deadline recovery;
-17. diagnostic and profile-inference work publish independently and neither
+19. diagnostic and profile-inference work publish independently and neither
     outcome controls the other's eligibility;
-18. profile backlog cannot consume diagnostic capacity;
-19. unknown envelope, kind, input version, subject, and generation fail closed;
-20. long work sends progress acknowledgement in time;
-21. acknowledgement failure after commit redelivers safely;
-22. maximum-delivery advisories reach reconciliation;
-23. broker reconstruction cannot replay terminal or unsafe post-effect work;
-24. worker events wake another API process and polling recovers missed hints;
-25. graceful and forced shutdown produce safe outcomes;
-26. the same publication module passes embedded and standalone lifecycle
-    tests; and
-27. messages, headers, logs, and metrics contain no prohibited content.
+20. diagnostic execution preserves immutable accepted turn content and
+    artifact references while reading mutable supporting context from current
+    authoritative state, including same-turn inferred profile facts when
+    already committed;
+21. `diagnostic_turn.v1` accepts only a `turn_id` and resolves all accepted
+    instruction data through the immutable authoritative turn;
+22. `profile_inference.v1` pins the turn, inference schema, and extractor
+    versions, rejects additional fields, and idempotently resolves one
+    authoritative inference run;
+23. profile backlog cannot consume diagnostic capacity;
+24. lower stale generations become attempt-free acknowledged no-ops while
+    impossible future generations and subject mismatches terminate without
+    changing job state;
+25. malformed or missing identities terminate without mutation, while a trusted
+    job with an unknown kind, unsupported version, or invalid stored input
+    becomes `dead` without consuming an application attempt;
+26. a `dead` job cannot return to a nonterminal state, and any later
+    job-kind-specific recovery creates a replacement without editing the
+    original;
+27. pre-boundary diagnostic exhaustion atomically marks the job `dead`, restores
+    the session to `awaiting_user`, and appends exactly one
+    `diagnostic_processing_error` and `turn.completed` pair;
+28. long work sends progress acknowledgement in time;
+29. acknowledgement failure after commit redelivers safely;
+30. an eligible nonterminal job with no execution progress beyond the configured
+    threshold advances publication intent without consuming an application
+    attempt, bypassing `eligible_at`, or replaying unsafe post-effect work;
+31. maximum-delivery and termination advisories reach metrics and alerts without
+    directly mutating job or product state;
+32. the explicit broker-reconstruction procedure cannot replay terminal or
+    unsafe post-effect work;
+33. worker events wake another API process and polling recovers missed hints;
+34. graceful and forced shutdown produce safe outcomes;
+35. publication and reconciliation modules pass their FastAPI-hosted lifecycle
+    tests without depending on route logic;
+36. cleanup cannot delete a nonterminal or publication-pending job, and a
+    terminal job remains resolvable for longer than JetStream can deliver it;
+37. a rolling kind or input-version migration cannot route new work to an
+    incompatible worker, and old support is retained through its final possible
+    redelivery; and
+38. messages, headers, logs, and metrics contain no prohibited content.
 
 Compatibility tests must validate pinned NATS server and Python client,
 PostgreSQL driver, async resources, and ADK sessions. Load tests must establish
@@ -924,12 +1160,16 @@ Implementation should proceed in reviewable stages:
 2. prove durable ADK sessions and cross-process event wake-ups;
 3. add generic jobs, versioned inputs, publication generations, handler
    registry, policy module, and test adapters;
-4. add the standalone-capable publication entry point, host the publication
-   module in FastAPI, and deploy reconciliation, initial consumers, and async
-   workers;
+4. host the reusable publication and reconciliation modules in FastAPI, and
+   deploy initial consumers and async workers;
 5. canary profile inference;
 6. add diagnostic effect fencing and canary diagnostic execution; and
 7. remove production `BackgroundTasks` after verification passes.
+
+For every later job-kind or input-version change, rollout must deploy compatible
+workers before enabling producers. Old and new definitions overlap until no
+nonterminal old-version job remains and no retained broker delivery can refer
+to one.
 
 Exactly one executor must be selected for each logical job. In-process and
 JetStream paths must never execute the same job concurrently.
@@ -945,17 +1185,16 @@ The following remain for implementation planning or later ADRs:
 - pinned NATS server and Python client versions;
 - concrete stream, subject, durable consumer, and account names;
 - exact database columns, constraints, indexes, and retention;
-- JSON-versus-domain-reference input choices by job kind;
+- JSON-versus-domain-reference input choices for future job kinds;
 - concrete package and command names;
 - publication batch size, interval, claim duration, and replica count;
-- whether and when measurements justify activating the standalone publisher
-  deployment;
+- whether and when measurements justify implementing and deploying a
+  standalone maintenance host;
 - retry limits and delay curves by job kind;
 - acknowledgement waits, progress cadence, deadlines, concurrency, and
   autoscaling;
 - the self-hosted backup and broker-reconstruction runbook;
 - when availability justifies JetStream replication;
-- operator commands and authorization;
 - when fan-out or integration events justify a separate outbox; and
 - deployment-specific secrets and monitoring.
 
@@ -969,8 +1208,8 @@ The design is implemented when:
 - every accepted operation has durable PostgreSQL job state and versioned
   input;
 - acceptance and publication intent are atomic;
-- the publication implementation is shared by its FastAPI and standalone
-  lifecycle hosts;
+- publication and reconciliation are reusable modules hosted by FastAPI rather
+  than route logic or an unnecessary V1 standalone process;
 - API publication-loop, broker, and worker restarts cannot silently lose work;
 - NATS downtime accumulates recoverable unpublished generations;
 - messages contain only the minimal delivery envelope;
