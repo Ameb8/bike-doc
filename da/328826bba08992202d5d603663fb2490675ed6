@@ -1,0 +1,36 @@
+compose.yaml
+  s_ca6e268c39728d::t_b0d3d69d6c080a 1-60,62-64,66-71,73-74,81,88,90,95-96,101-103,105
+  s_ca6e268c39728d::t_3c0b5227128f41 65
+apps/api/Dockerfile.dev
+  s_ca6e268c39728d::t_3c0b5227128f41 20-22
+.gitignore
+  s_ca6e268c39728d::t_448ecd7e3b35a5 97
+  s_ca6e268c39728d::t_1ad2fffba01fe2 56
+.dockerignore
+  s_ca6e268c39728d::t_1ad2fffba01fe2 16
+compose.google-credentials.yaml
+  s_ca6e268c39728d::t_28c9f566ea60d5 3-4,8-14
+  s_ca6e268c39728d::t_0823bcc53bfe17 1-2
+  s_ca6e268c39728d::t_b0d3d69d6c080a 5-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "da328826bba08992202d5d603663fb2490675ed6",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_ca6e268c39728d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d201-cee9-75e0-8352-bdf8264bc840",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
