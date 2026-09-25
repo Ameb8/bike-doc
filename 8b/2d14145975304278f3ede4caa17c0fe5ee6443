@@ -1,0 +1,29 @@
+.env.example
+  s_ca6e268c39728d::t_b0d3d69d6c080a 16-20
+  s_ca6e268c39728d::t_448ecd7e3b35a5 76-77
+  s_ca6e268c39728d::t_c5c59fa876d0ec 75,78
+README.md
+  s_ca6e268c39728d::t_da9d07fdc62729 50-53,74-79,110-114,150,159-167,194-195
+  s_ca6e268c39728d::t_448ecd7e3b35a5 168-169,172-173,176-181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "8b2d14145975304278f3ede4caa17c0fe5ee6443",
+  "prompts": {},
+  "humans": {
+    "h_11a994996f9bb9": {
+      "author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  },
+  "sessions": {
+    "s_ca6e268c39728d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0d201-cee9-75e0-8352-bdf8264bc840",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
