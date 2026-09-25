@@ -53,6 +53,7 @@ Thumbs.db
 **/ENV/
 **/env.bak/
 **/venv.bak/
+apps/api/uv.lock
 
 # Distribution / Packaging
 **/dist/
@@ -93,5 +94,6 @@ Thumbs.db
 # Containerization & Logging
 # ====================================================================
 .docker/
+compose.override.yaml
 logs/
 *.log
