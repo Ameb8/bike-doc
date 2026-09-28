@@ -27,6 +27,7 @@ Install these tools before running the full app:
 - Python 3.12 and `uv`, if running the API directly with the root `Taskfile.yml`.
 - `go-task` (`task`) for the API helper commands.
 - PostgreSQL 16, if running the API directly without Compose.
+- NATS JetStream is supplied by Compose for the opt-in transport compatibility test.
 - Android Studio with JDK 17 and the Android SDK, for the Android app.
 - A Firebase project with Authentication enabled, for the Android app and
   production-like backend auth.
@@ -77,6 +78,29 @@ The host-side URL uses `localhost`; the Compose URL uses `db` and container
 port `5432`. When adding a new API setting, document it in `.env.example` and
 decide which Compose services need it. The shared API environment mapping in
 `compose.yaml` is the runtime contract for the API and future API workers.
+
+### Local JetStream compatibility
+
+Compose runs NATS server `2.12.1-alpine` with file-backed JetStream in the
+`nats_data` volume. Its client port binds only to host loopback; its monitoring
+port stays inside the Compose network. `BIKE_DOC_API_NATS_URL` is the host-side
+URL, while Compose passes `nats://nats:4222` to API containers. The current HTTP
+diagnostic executor does not use NATS.
+
+V1 uses stream `BIKEDOC_WORK_V1`, diagnostic subject
+`bikedoc.work.v1.diagnostic` and durable `bikedoc_diagnostic_v1`, and profile
+subject `bikedoc.work.v1.profile` and durable `bikedoc_profile_v1`. The client
+is pinned to `nats-py==2.12.0`. The compatibility topology uses work-queue
+retention, explicit acknowledgement, 30-second acknowledgement wait, 32 maximum
+deliveries, and 128 maximum pending acknowledgements per durable. These are
+transport defaults for later queue work, not application retry policy.
+
+After copying `.env.example` to `.env`, run `task test:nats`. This starts the
+pinned Compose service, then tests a disposable broker container with its own
+temporary file store. The test restarts that container and removes only its own
+resources; it never deletes the developer's `nats_data` volume. Ordinary
+`task check` tests exclude this opt-in suite. The test inspects stream and
+consumer state through JetStream after each important transition.
 
 ### Diagnostic Telemetry
 

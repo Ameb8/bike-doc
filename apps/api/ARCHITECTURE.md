@@ -30,6 +30,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | Area | Owns | Main entry points |
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
+| `core/nats.py` | Reusable asynchronous NATS connection lifecycle and idempotent V1 JetStream topology verification; no route or job dispatch behavior | `nats_connection`, `jetstream`, `ensure_work_topology` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |

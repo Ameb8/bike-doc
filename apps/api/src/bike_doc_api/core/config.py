@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from collections.abc import Mapping
 from functools import lru_cache
 from math import isfinite
@@ -11,7 +12,14 @@ from urllib.parse import urlparse
 
 import google.auth
 import structlog
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = structlog.get_logger(__name__)
@@ -79,6 +87,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="BIKE_DOC_API_",
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     app_name: str = Field(default="Bike Doc API", min_length=1)
@@ -89,6 +98,12 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
         min_length=1,
     )
+    nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
+    nats_work_stream: str = "BIKEDOC_WORK_V1"
+    nats_diagnostic_subject: str = "bikedoc.work.v1.diagnostic"
+    nats_profile_subject: str = "bikedoc.work.v1.profile"
+    nats_diagnostic_consumer: str = "bikedoc_diagnostic_v1"
+    nats_profile_consumer: str = "bikedoc_profile_v1"
     auth_mode: Literal["firebase", "dev", "local_unsigned_jwt"] = "dev"
     dev_auth_token: str = "dev-token"
     dev_auth_subject: str = "dev-user"
@@ -177,6 +192,48 @@ class Settings(BaseSettings):
         if not database_url:
             raise ValueError("database_url must not be empty")
         return database_url
+
+    @field_validator("nats_url")
+    @classmethod
+    def validate_nats_url(cls, value: SecretStr) -> SecretStr:
+        """Validate broker endpoint without exposing credentials in errors."""
+        parsed = urlparse(value.get_secret_value())
+        if (
+            parsed.scheme not in {"nats", "tls"}
+            or not parsed.hostname
+            or not 1 <= (parsed.port or 0) <= 65535
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("nats_url must be an absolute NATS endpoint with a port")
+        return value
+
+    @field_validator(
+        "nats_work_stream", "nats_diagnostic_consumer", "nats_profile_consumer"
+    )
+    @classmethod
+    def validate_nats_name(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+            raise ValueError(
+                "NATS stream and durable names must be nonblank identifiers"
+            )
+        return value
+
+    @field_validator("nats_diagnostic_subject", "nats_profile_subject")
+    @classmethod
+    def validate_nats_subject(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", value):
+            raise ValueError("NATS workload subjects must contain literal tokens")
+        return value
+
+    @model_validator(mode="after")
+    def validate_nats_topology(self) -> "Settings":
+        if self.nats_diagnostic_subject == self.nats_profile_subject:
+            raise ValueError("NATS workload subjects must differ")
+        if self.nats_diagnostic_consumer == self.nats_profile_consumer:
+            raise ValueError("NATS durable consumers must differ")
+        return self
 
     @field_validator("auth_mode", mode="before")
     @classmethod

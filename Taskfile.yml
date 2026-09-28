@@ -24,6 +24,12 @@ tasks:
     cmds:
       - uv run pytest
 
+  test:nats:
+    desc: Run pinned real-NATS compatibility tests in a disposable broker container.
+    cmds:
+      - docker compose --env-file .env up -d --wait nats
+      - cd apps/api && uv run pytest -m nats tests/integration/test_nats_compatibility.py
+
   lint:
     desc: Run API lint checks.
     dir: apps/api

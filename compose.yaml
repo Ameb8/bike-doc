@@ -10,6 +10,12 @@ x-api-environment: &api-environment
   BIKE_DOC_API_DEBUG: ${BIKE_DOC_API_DEBUG:?Set BIKE_DOC_API_DEBUG in .env}
   BIKE_DOC_API_CORS_ORIGINS: ${BIKE_DOC_API_CORS_ORIGINS:?Set BIKE_DOC_API_CORS_ORIGINS in .env}
   BIKE_DOC_API_DATABASE_URL: ${BIKE_DOC_API_DATABASE_URL_COMPOSE:?Set BIKE_DOC_API_DATABASE_URL_COMPOSE in .env}
+  BIKE_DOC_API_NATS_URL: nats://nats:4222
+  BIKE_DOC_API_NATS_WORK_STREAM: ${BIKE_DOC_API_NATS_WORK_STREAM:-BIKEDOC_WORK_V1}
+  BIKE_DOC_API_NATS_DIAGNOSTIC_SUBJECT: ${BIKE_DOC_API_NATS_DIAGNOSTIC_SUBJECT:-bikedoc.work.v1.diagnostic}
+  BIKE_DOC_API_NATS_PROFILE_SUBJECT: ${BIKE_DOC_API_NATS_PROFILE_SUBJECT:-bikedoc.work.v1.profile}
+  BIKE_DOC_API_NATS_DIAGNOSTIC_CONSUMER: ${BIKE_DOC_API_NATS_DIAGNOSTIC_CONSUMER:-bikedoc_diagnostic_v1}
+  BIKE_DOC_API_NATS_PROFILE_CONSUMER: ${BIKE_DOC_API_NATS_PROFILE_CONSUMER:-bikedoc_profile_v1}
   BIKE_DOC_API_AUTH_MODE: ${BIKE_DOC_API_AUTH_MODE:?Set BIKE_DOC_API_AUTH_MODE in .env}
   BIKE_DOC_API_DEV_AUTH_TOKEN: ${BIKE_DOC_API_DEV_AUTH_TOKEN:-dev-token}
   BIKE_DOC_API_DEV_AUTH_SUBJECT: ${BIKE_DOC_API_DEV_AUTH_SUBJECT:-dev-user}
@@ -111,5 +117,19 @@ services:
       timeout: 5s
       retries: 10
 
+  nats:
+    image: nats:2.12.1-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    ports:
+      - "127.0.0.1:${NATS_PORT:-4222}:4222"
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   postgres_data:
+  nats_data:
