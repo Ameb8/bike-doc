@@ -1,0 +1,19 @@
+apps/android/app/src/debug/res/xml/debug_network_security_config.xml
+  s_63efda647e7e49::t_ce4f13ef5279ae 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "development:1.4.12",
+  "base_commit_sha": "3959a6a703fae3d828fd9bed212f647cbbaf5260",
+  "prompts": {},
+  "sessions": {
+    "s_63efda647e7e49": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0e59e-edc3-7883-bf58-a44940628586",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "Alex Buckley <alexmeb81@outlook.com>"
+    }
+  }
+}
