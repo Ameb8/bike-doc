@@ -30,10 +30,10 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | Area | Owns | Main entry points |
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
-| `core/nats.py` | Reusable asynchronous NATS connection lifecycle and idempotent V1 JetStream topology verification; no route or job dispatch behavior | `nats_connection`, `jetstream`, `ensure_work_topology` |
+| `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
-| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
+| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService` |
 | `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records (including session-scoped image-observation extraction runs and ordered provider attempts), metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
 | `providers/` | Replaceable storage, price-lookup, and isolated diagnostic-observation extraction integrations | `StorageProvider`, `PriceLookupProvider`, `DiagnosticObservationExtractor` |
 | `adk/` | Internal agent construction, ADK session/runner adaptation, tool adapters, and turn orchestration | `orchestration.py`, `background.py` |
@@ -98,6 +98,17 @@ rolls back on errors. Services that need an atomic multi-record transition use
 the supplied commit/rollback callbacks and, where required, a locked
 repair-session lookup. Do not hand ORM models or `AsyncSession` objects to a
 provider or expose them from an API schema.
+
+Every event repository write registers its session-scoped highest sequence for
+the repair session. A SQLAlchemy commit hook releases one hint after a successful
+commit; rollback discards it. The hint contains only version, opaque repair
+session ID, and sequence. The API lifespan owns one reconnecting Core NATS
+subscription and local fanout for all SSE readers. Readers query PostgreSQL
+after every hint and every bounded polling interval, including immediately
+after subscribing to close the replay race. Hints never become SSE frames.
+Heartbeats remain persisted events but do not publish hints, so multiple open
+readers cannot trigger a heartbeat notification loop. NATS unavailability
+does not gate API startup or event commits.
 
 ### Diagnostic turn
 

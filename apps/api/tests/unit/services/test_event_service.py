@@ -7,6 +7,9 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
+
+from bike_doc_api.core.event_wakeups import EventWakeups
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.schemas.event import RepairSessionEventType
@@ -185,3 +188,58 @@ async def test_open_sse_stream_yields_event_appended_through_event_service() -> 
         "created_at": "2026-06-21T17:00:01Z",
         "data": {"text": "Check the derailleur hanger alignment."},
     }
+
+
+async def test_poll_recovers_event_without_hint_and_ignores_duplicate_hints() -> None:
+    store = _EventStore()
+    wakeups = EventWakeups()
+    service = EventService(store, store, wakeups=wakeups, poll_interval_seconds=0.02)
+    frames = service.stream_sse_frames(
+        EventStream(
+            repair_session_id=store.session.id, after_sequence=0, timeout_seconds=6
+        )
+    )
+    pending = asyncio.create_task(anext(frames))
+    await asyncio.sleep(0)
+    await store.append_for_session(
+        repair_session_id=store.session.id,
+        event_type="assistant.delta",
+        data={"text": "Persisted without a hint"},
+    )
+    frame = await asyncio.wait_for(pending, timeout=1)
+    assert "id: 1\n" in frame
+    wakeups.receive(store.session.id)
+    wakeups.receive(store.session.id)
+    pending = asyncio.create_task(anext(frames))
+    await store.append_for_session(
+        repair_session_id=store.session.id,
+        event_type="assistant.delta",
+        data={"text": "Second row"},
+    )
+    assert "id: 2\n" in await asyncio.wait_for(pending, timeout=1)
+    await frames.aclose()
+
+
+async def test_stream_deadline_uses_injected_clock() -> None:
+    store = _EventStore()
+    wakeups = EventWakeups()
+
+    class FakeClock:
+        now = 0.0
+
+        def time(self) -> float:
+            return self.now
+
+    clock = FakeClock()
+    service = EventService(store, store, wakeups=wakeups, clock=clock.time)
+    frames = service.stream_sse_frames(
+        EventStream(
+            repair_session_id=store.session.id, after_sequence=0, timeout_seconds=6
+        )
+    )
+    pending = asyncio.create_task(anext(frames))
+    await asyncio.sleep(0)
+    clock.now = 6.0
+    wakeups.receive(store.session.id)
+    with pytest.raises(StopAsyncIteration):
+        await asyncio.wait_for(pending, timeout=1)

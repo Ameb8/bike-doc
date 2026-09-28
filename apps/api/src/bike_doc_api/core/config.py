@@ -99,6 +99,7 @@ class Settings(BaseSettings):
         min_length=1,
     )
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
+    event_poll_interval_seconds: float = Field(default=2.0, ge=1.0, le=10.0)
     nats_work_stream: str = "BIKEDOC_WORK_V1"
     nats_diagnostic_subject: str = "bikedoc.work.v1.diagnostic"
     nats_profile_subject: str = "bikedoc.work.v1.profile"

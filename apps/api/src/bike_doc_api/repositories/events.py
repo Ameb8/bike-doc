@@ -2,11 +2,50 @@
 
 from typing import Any
 
+import structlog
+from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
+from bike_doc_api.core.event_wakeups import get_event_wakeups
 from bike_doc_api.models.event import RepairSessionEvent
 from bike_doc_api.models.repair_session import RepairSession
+
+_PENDING = "bike_doc_event_wakeups"
+_INSTALLED = "bike_doc_event_wakeup_hooks_installed"
+logger = structlog.get_logger(__name__)
+
+
+def _after_commit(session: Session) -> None:
+    """Only the successful product commit releases hints."""
+    if session.in_nested_transaction():
+        return
+    pending: dict[str, int] = session.info.pop(_PENDING, {})
+    wakeups = get_event_wakeups()
+    for repair_session_id, sequence in pending.items():
+        try:
+            wakeups.publish_soon(repair_session_id, sequence)
+        except Exception:
+            # This callback runs after the database commit. Notification
+            # failures must never change the committed product result.
+            logger.warning("event_wakeup_dispatch_failed")
+
+
+def _after_rollback(session: Session) -> None:
+    session.info.pop(_PENDING, None)
+
+
+def _register_event(session: AsyncSession, row: RepairSessionEvent) -> None:
+    sync = session.sync_session
+    if not sync.info.get(_INSTALLED):
+        sqlalchemy_event.listen(sync, "after_commit", _after_commit)
+        sqlalchemy_event.listen(sync, "after_rollback", _after_rollback)
+        sync.info[_INSTALLED] = True
+    pending: dict[str, int] = sync.info.setdefault(_PENDING, {})
+    pending[row.repair_session_id] = max(
+        row.sequence, pending.get(row.repair_session_id, 0)
+    )
 
 
 class RepairSessionEventRepository:
@@ -20,6 +59,8 @@ class RepairSessionEventRepository:
         self._session.add(event)
         await self._session.flush()
         await self._session.refresh(event)
+        if event.type != "heartbeat":
+            _register_event(self._session, event)
         return event
 
     async def append_for_session(
@@ -49,6 +90,8 @@ class RepairSessionEventRepository:
         repair_session.latest_event_sequence = sequence
         await self._session.flush()
         await self._session.refresh(event)
+        if event.type != "heartbeat":
+            _register_event(self._session, event)
         return event
 
     async def get(self, event_id: str) -> RepairSessionEvent | None:
