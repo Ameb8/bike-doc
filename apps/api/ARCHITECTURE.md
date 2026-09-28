@@ -66,8 +66,8 @@ for ADK code to depend on FastAPI transport concerns.
 - [`api/router.py`](src/bike_doc_api/api/router.py) assembles versioned public
   route modules. `api/v1/` is the place to add a public endpoint group.
 - [`api/deps.py`](src/bike_doc_api/api/deps.py) supplies request-scoped database
-  sessions and authenticated users, configured providers, and the process-wide
-  in-memory ADK session service.
+  sessions and authenticated users, configured providers, and the lifespan-owned
+  PostgreSQL ADK session service.
 - [`adk/background.py`](src/bike_doc_api/adk/background.py) is the diagnostic
   background composition root invoked after a new turn is accepted.
 - [`db/migrations/`](src/bike_doc_api/db/migrations/) owns durable-schema
@@ -164,13 +164,11 @@ commits it, and only then publishes it to its local in-process broker.
 
 The durable `repair_session_events` log, not the local broker or ADK state, is
 the reconnect mechanism. The broker is intentionally same-process/same-worker
-fan-out today, and the ADK session service is also in memory. A restart can
-make a persisted ADK session mapping stale; the runner returns a recoverable
-error rather than silently replacing that session. Likewise, any event path
+fan-out today. ADK sessions are stored in PostgreSQL; the runner returns a
+recoverable error if a bound ADK session is confirmed missing. Any event path
 that writes a row directly as part of a larger state transaction must preserve
 replay correctness and should be assessed for immediate live notification.
-These limits matter before adding multiple workers or a durable job/session
-backend.
+The local event fan-out limit matters before adding multiple workers.
 
 ## Module reference
 

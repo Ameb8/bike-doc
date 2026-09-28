@@ -85,12 +85,25 @@ async def test_lifespan_starts_telemetry_and_shuts_it_down() -> None:
         events.append("start")
         return RecordingTelemetryRuntime(events)
 
+    class FakeADKService:
+        async def close(self) -> None:
+            events.append("adk_shutdown")
+
+    async def open_service(_settings: Settings) -> FakeADKService:
+        events.append("adk_start")
+        return FakeADKService()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(main, "open_adk_session_service", open_service)
     app = create_app(Settings(environment="test"), telemetry_initializer=initialize)
 
-    async with app.router.lifespan_context(app):
-        assert events == ["start"]
+    try:
+        async with app.router.lifespan_context(app):
+            assert events == ["start", "adk_start"]
+    finally:
+        monkeypatch.undo()
 
-    assert events == ["start", "shutdown"]
+    assert events == ["start", "adk_start", "adk_shutdown", "shutdown"]
 
 
 @pytest.mark.asyncio

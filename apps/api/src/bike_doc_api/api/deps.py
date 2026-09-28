@@ -1,11 +1,10 @@
 """FastAPI dependencies."""
 
 from collections.abc import AsyncIterator
-from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, Header
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import BaseSessionService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.adk.runner import DiagnosticRunner
@@ -99,16 +98,27 @@ def get_cost_estimate_service(
     return CostEstimateService(provider)
 
 
-@lru_cache
-def get_adk_session_service() -> InMemorySessionService:
-    """Return the process-lifetime ADK in-memory session service."""
+_adk_session_service: BaseSessionService | None = None
 
-    return InMemorySessionService()  # type: ignore[no-untyped-call]
+
+def install_adk_session_service(service: BaseSessionService | None) -> None:
+    """Bind or release the process-lifetime service at application lifespan."""
+
+    global _adk_session_service
+    _adk_session_service = service
+
+
+def get_adk_session_service() -> BaseSessionService:
+    """Return the lifespan-owned service; never create storage in a request."""
+
+    if _adk_session_service is None:
+        raise RuntimeError("ADK session service is not started")
+    return _adk_session_service
 
 
 def get_diagnostic_adk_session_client(
     session_service: Annotated[
-        InMemorySessionService,
+        BaseSessionService,
         Depends(get_adk_session_service),
     ],
     settings: Annotated[Settings, Depends(get_settings)],
@@ -121,7 +131,7 @@ def get_diagnostic_adk_session_client(
 
 def get_diagnostic_runner(
     session_service: Annotated[
-        InMemorySessionService,
+        BaseSessionService,
         Depends(get_adk_session_service),
     ],
     settings: Annotated[Settings, Depends(get_settings)],
