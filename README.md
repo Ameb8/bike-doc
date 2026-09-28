@@ -47,7 +47,10 @@ Important backend settings:
 
 - `BIKE_DOC_API_ENVIRONMENT`: use `local` for development and `production` for
   deployed production configuration.
-- `BIKE_DOC_API_DATABASE_URL`: SQLAlchemy async PostgreSQL URL.
+- `BIKE_DOC_API_DATABASE_URL`: host-side SQLAlchemy async PostgreSQL URL for
+  `task run` and host-side migrations.
+- `BIKE_DOC_API_DATABASE_URL_COMPOSE`: container-side URL for the Compose API,
+  migrations, and future workers. Its host must be `db` for the Compose database.
 - `BIKE_DOC_API_AUTH_MODE`: `dev`, `local_unsigned_jwt`, or `firebase`.
   Production rejects anything except `firebase`.
 - `BIKE_DOC_API_FIREBASE_PROJECT_ID`: required when auth mode is `firebase`.
@@ -68,13 +71,12 @@ Important backend settings:
 - `BIKE_DOC_API_LOG_LEVEL` and `BIKE_DOC_API_LOG_FORMAT`: optional logging
   controls. Use `BIKE_DOC_API_LOG_FORMAT=json` for production-style logs.
 
-The default `.env.example` is compose-oriented: its database URL points at
-`db`, the Compose service name. If you run the API directly on the host with
-`task run`, change `BIKE_DOC_API_DATABASE_URL` to use `localhost`, for example:
-
-```text
-BIKE_DOC_API_DATABASE_URL=postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc
-```
+The template supplies both database URLs. Keep their credentials and database
+name aligned with `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
+The host-side URL uses `localhost`; the Compose URL uses `db` and container
+port `5432`. When adding a new API setting, document it in `.env.example` and
+decide which Compose services need it. The shared API environment mapping in
+`compose.yaml` is the runtime contract for the API and future API workers.
 
 ### Diagnostic Telemetry
 
@@ -105,10 +107,11 @@ required only when `BIKE_DOC_API_TELEMETRY_EXPORTER=otlp`; leave it blank when
 the exporter is `none`. The service name defaults to `bike-doc-api` and should
 identify this deployment in a shared backend.
 
-Run the API with `task run` after starting an OTLP/HTTP-compatible receiver or
-backend. The current Compose API service does not pass telemetry settings into
-the container, so use `task run` for local telemetry or add the three
-`BIKE_DOC_API_TELEMETRY_*` variables to that service's `environment` section.
+Run the API after starting an OTLP/HTTP-compatible receiver or backend. Compose
+passes the telemetry settings to the API. If the receiver runs on the host and
+`.env` uses `localhost`, set `BIKE_DOC_API_TELEMETRY_OTLP_ENDPOINT` to a host
+address reachable from the container, such as `http://host.docker.internal:4318`
+on Docker Desktop.
 BikeDoc has no configuration for custom exporter headers, sampling, batch
 sizes, or separate trace and metric endpoints. If your backend requires
 authentication or another protocol, put a compatible OpenTelemetry Collector
@@ -144,7 +147,7 @@ privacy requirements.
 
 ### Run The API With Compose
 
-Compose starts the API container and a PostgreSQL container:
+Compose starts PostgreSQL, applies migrations, then starts the API:
 
 ```bash
 docker compose up --build
@@ -153,22 +156,29 @@ docker compose up --build
 The API listens on `http://localhost:${BIKE_DOC_API_PORT}`, usually
 `http://localhost:8000`.
 
-Run database migrations after the database is healthy:
+The `migrate` service must complete successfully before the API starts.
+Compose passes the API's model, storage, telemetry, and auth settings explicitly.
+The root `.env` supplies interpolation values; Compose does not pass it wholesale
+into containers. Required Compose values fail configuration with a clear error
+when missing. API keys remain environment variables because the current Google
+client integration reads them that way; keep `.env` untracked and restrict its
+access.
+
+For GCS or Vertex AI with a local credential JSON file, set
+`GOOGLE_APPLICATION_CREDENTIALS` in `.env` to the host file path. Copy the
+credential override once:
 
 ```bash
-docker compose exec api uv run alembic upgrade head
+cp compose.google-credentials.yaml compose.override.yaml
+docker compose up --build
 ```
 
-The current `compose.yaml` passes core API settings into the container and is
-best suited for local API plus Postgres development. If you want compose to run
-the live diagnostic agent or GCS storage path, extend the API service
-environment to pass the relevant provider variables as well, such as
-`BIKE_DOC_API_ARTIFACT_STORAGE_PROVIDER`, `BIKE_DOC_API_ARTIFACT_GCS_BUCKET`,
-`GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`,
-`BIKE_DOC_API_DIAGNOSTIC_LLM_PROVIDER`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
-`GOOGLE_GENAI_USE_VERTEXAI`, and `GOOGLE_CLOUD_LOCATION`. If credentials are
-file-based, mount the credential file into the container and point
-`GOOGLE_APPLICATION_CREDENTIALS` at the in-container path.
+Compose loads the local `compose.override.yaml` automatically. It is ignored by
+Git and mounts the credential file as a read-only Compose secret, then points
+Google ADC at its container path. For Google AI API-key use without GCS, the
+base Compose file is sufficient; do not create the override. You can also use
+`docker compose -f compose.yaml -f compose.google-credentials.yaml up --build`
+without making a local copy.
 
 ### Run The API Locally With Task
 
@@ -181,8 +191,8 @@ Start PostgreSQL first. You can use only the compose database:
 docker compose up -d db
 ```
 
-Set `BIKE_DOC_API_DATABASE_URL` in `.env` to use `localhost`, then install
-dependencies and run migrations:
+The template already sets `BIKE_DOC_API_DATABASE_URL` to use `localhost`. Install
+dependencies and run host-side migrations:
 
 ```bash
 task sync

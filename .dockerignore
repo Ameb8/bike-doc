@@ -13,6 +13,7 @@
 **/.venv/
 **/venv/
 **/env/
+apps/api/uv.lock
 **/dist/
 **/build/
 **/*.egg-info/
