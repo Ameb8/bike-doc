@@ -11,6 +11,8 @@ from contextlib import contextmanager
 import pytest
 
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.event_notifications import NatsEventNotifications
+from bike_doc_api.core.event_wakeups import EventWakeups
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 
 IMAGE = "nats:2.12.1-alpine"
@@ -167,3 +169,37 @@ async def test_pinned_jetstream_transport_contract() -> None:
                 await sub.fetch(1, timeout=0.4)
             await js.delete_stream(settings.nats_work_stream)
         assert nc.is_closed
+
+
+@pytest.mark.nats
+@pytest.mark.asyncio
+async def test_event_subscription_reconnects_after_unavailable_startup() -> None:
+    with broker() as (container, url):
+        await asyncio.to_thread(docker, "stop", container)
+        wakeups = EventWakeups()
+        queue = wakeups.subscribe("rs_reconnect")
+        notifications = NatsEventNotifications(
+            Settings(environment="test", nats_url=url), wakeups
+        )
+        started = time.monotonic()
+        notifications.start()
+        assert time.monotonic() - started < 0.2
+        try:
+            await asyncio.to_thread(docker, "start", container)
+            await wait_connected(url)
+            for _ in range(30):
+                async with nats_connection(Settings(nats_url=url)) as client:
+                    await client.publish(
+                        "bikedoc.events.wakeup.v1",
+                        b'{"v":1,"repair_session_id":"rs_reconnect","sequence":1}',
+                    )
+                    await client.flush()
+                if not queue.empty():
+                    break
+                await asyncio.sleep(0.2)
+            assert queue.get_nowait() is None
+        finally:
+            await notifications.close()
+            assert notifications._task is not None
+            assert notifications._task.done()
+            wakeups.unsubscribe("rs_reconnect", queue)

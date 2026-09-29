@@ -220,6 +220,42 @@ async def test_poll_recovers_event_without_hint_and_ignores_duplicate_hints() ->
     await frames.aclose()
 
 
+async def test_replay_order_survives_duplicate_stale_and_out_of_order_hints() -> None:
+    store = _EventStore()
+    wakeups = EventWakeups()
+    service = EventService(store, store, wakeups=wakeups, poll_interval_seconds=0.02)
+    frames = service.stream_sse_frames(
+        EventStream(
+            repair_session_id=store.session.id, after_sequence=0, timeout_seconds=6
+        )
+    )
+    for sequence in (1, 2):
+        await store.append_for_session(
+            repair_session_id=store.session.id,
+            event_type="assistant.delta",
+            data={"text": f"row {sequence}"},
+        )
+    assert (await anext(frames)).startswith("id: 1\n")
+    assert (await anext(frames)).startswith("id: 2\n")
+
+    # The fanout carries no sequence. Duplicate, stale, and out-of-order
+    # broker hints all cause database queries after the authoritative cursor.
+    pending = asyncio.create_task(anext(frames))
+    await asyncio.sleep(0)
+    for _ in (2, 1, 2, 3):
+        wakeups.receive(store.session.id)
+    done, _ = await asyncio.wait({pending}, timeout=0.1)
+    assert not done
+    await store.append_for_session(
+        repair_session_id=store.session.id,
+        event_type="assistant.delta",
+        data={"text": "row 3"},
+    )
+    wakeups.receive(store.session.id)
+    assert (await asyncio.wait_for(pending, timeout=1)).startswith("id: 3\n")
+    await frames.aclose()
+
+
 async def test_stream_deadline_uses_injected_clock() -> None:
     store = _EventStore()
     wakeups = EventWakeups()
