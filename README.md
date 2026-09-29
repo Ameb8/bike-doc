@@ -78,7 +78,17 @@ port `5432`. When adding a new API setting, document it in `.env.example` and
 decide which Compose services need it. The shared API environment mapping in
 `compose.yaml` is the runtime contract for the API and future API workers.
 
-### Local JetStream compatibility
+### Backend compatibility verification
+
+Run `task verify:backend-compatibility` to check the backend's real-infrastructure
+compatibility boundaries. The command starts disposable PostgreSQL and Core
+NATS containers, waits for readiness, applies Alembic migrations, then runs the
+ADK/PostgreSQL session tests, pinned JetStream tests, and cross-process SSE
+tests. It also tests NATS notification startup and reconnect behavior. The
+containers and their volumes are removed after the run, including when a check
+fails. Set `SSE_REPEATS=5 task verify:backend-compatibility` to run the
+cross-process SSE module five times. This command requires Docker and uses no
+paid providers or production credentials.
 
 Compose runs NATS server `2.12.1-alpine` with file-backed JetStream in the
 `nats_data` volume. Its client port binds only to host loopback; its monitoring
