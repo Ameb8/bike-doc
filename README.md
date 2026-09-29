@@ -34,7 +34,6 @@ Install these tools before running the full app:
 - A Google Cloud project, if using GCS artifact storage or Vertex AI.
 - `gcloud`, if using Application Default Credentials locally for GCS or
   Vertex AI.
-- `agents-cli`, when validating or inspecting the ADK agent graph.
 
 ### Backend Environment
 
@@ -432,15 +431,12 @@ exist:
 uv run alembic upgrade head
 ```
 
-When changing ADK agent structure or tools, validate the agent entrypoint:
+When changing ADK agent structure or tools, run the backend checks from the
+repository root:
 
 ```bash
-cd apps/api
-agents-cli lint --fix
+task check
 ```
-
-Use `agents-cli deploy --dry-run` when the graph is ready for a static
-deployment-style validation.
 
 ### Bike Profile Inference Configuration
 
@@ -992,9 +988,8 @@ development endpoints.
 
 The test `apps/api/tests/unit/adk/test_agents_cli_entrypoint.py` verifies that
 the Agents CLI entrypoint exposes the same diagnostic agent name and prompt as
-the backend diagnostic agent. Backend agent notes also call out
-`agents-cli lint` and dry-run validation as part of the expected ADK workflow
-when the agent graph is in use.
+the backend diagnostic agent. Run `task check` to execute this and the other
+backend checks when changing ADK code.
 
 The learning demonstrated here is that ADK agent code can be made visible to
 agent development tooling without forcing the whole product to adopt ADK's
