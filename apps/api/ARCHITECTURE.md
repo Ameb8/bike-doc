@@ -122,7 +122,7 @@ turn route
   -> adk/background builds a fresh service/repository graph
   -> DiagnosticTurnOrchestrator prepares current-turn visual context, seeds durable context, and streams DiagnosticRunner
   -> ADK tools call services; runner events become public events
-  -> EventService persists/commits events, then local SSE fan-out
+  -> EventService persists/commits events, then local and Core NATS wake-ups
 ```
 
 `TurnService` validates session ownership and diagnostic state, validates
@@ -131,6 +131,13 @@ request hash. It creates or resumes one diagnostic phase session, persists the
 turn and its `turn.started` event together, changes the repair session to
 running, and commits before returning `202 Accepted`. An idempotent replay does
 not start a second background execution.
+
+Today turn acceptance can create or resume the durable ADK session binding;
+`repair_phase_sessions.adk_session_id` remains non-null. Chunk #137 will move
+initialization to the worker with a nullable, idempotent ensure-and-bind step
+and diagnostic effect fencing. The ADK session service is lifespan-owned and
+PostgreSQL-backed; see the [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
+for migration, startup validation, missing-session, and retention rules.
 
 The background task opens a new database session and reconstructs the
 orchestration graph, including `DiagnosticVisualContextService` with fresh
@@ -169,18 +176,13 @@ there is no automatic whole-turn retry.
 
 The event endpoint first validates session ownership and resolves the `after`
 query cursor or `Last-Event-ID`; `EventService` then emits persisted events in
-sequence order and waits for new local events. SSE formatting lives in the
-event service, not the route. `EventService.append_event` validates the public
-event data, atomically allocates the session sequence through the repository,
-commits it, and only then publishes it to its local in-process broker.
-
-The durable `repair_session_events` log, not the local broker or ADK state, is
-the reconnect mechanism. The broker is intentionally same-process/same-worker
-fan-out today. ADK sessions are stored in PostgreSQL; the runner returns a
-recoverable error if a bound ADK session is confirmed missing. Any event path
-that writes a row directly as part of a larger state transaction must preserve
-replay correctness and should be assessed for immediate live notification.
-The local event fan-out limit matters before adding multiple workers.
+sequence order. SSE formatting lives in the event service, not the route.
+Committed event writes trigger local fan-out and a best-effort Core NATS hint;
+other API processes receive the hint and query PostgreSQL for new events.
+Bounded polling recovers missed hints, and hint failure does not roll back an
+event. The durable `repair_session_events` log is the SSE source of truth and
+reconnect mechanism. ADK sessions are also stored in PostgreSQL; the runner
+returns a recoverable error if a bound ADK session is confirmed missing.
 
 ## Module reference
 

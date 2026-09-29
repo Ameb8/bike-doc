@@ -652,8 +652,9 @@ The current implemented HTTP surface is:
   id, event stream URL, and updated session snapshot.
 - `GET /v1/repair-sessions/{sessionId}/events`: streams server-sent events for a
   repair session. The stream first replays persisted events after the requested
-  cursor or `Last-Event-ID`, then subscribes to process-local live events and
-  emits heartbeats until timeout.
+  cursor or `Last-Event-ID`, then waits for local and cross-process event
+  wake-ups, with PostgreSQL polling as a fallback, and emits heartbeats until
+  timeout.
 - `POST /v1/artifacts`: accepts multipart uploads, stores the object through the
   configured storage provider, and persists provider-neutral artifact metadata.
 - `GET /v1/repair-sessions/{sessionId}/reports` and
@@ -761,16 +762,31 @@ planning or execution agent flow wired into the API. The live agent path is:
    assistant deltas, artifact references, input requests, safety escalations,
    report creation, phase transitions, errors, and turn completion.
 
-ADK session ownership is split between durable product state and process-local
-ADK state. `DiagnosticPhaseSessionManager` ensures one
-`repair_phase_sessions` row exists for the diagnostic phase and stores the
-opaque ADK session id there. The actual ADK session service is
-`google.adk.sessions.InMemorySessionService`, cached for the FastAPI process.
-That means the product database remembers which ADK session id belongs to a
-repair session, but the conversational ADK state itself is currently
-process-local. If a background run cannot find the in-memory ADK session,
-`DiagnosticRunner` emits a recoverable `diagnostic_session_unavailable` error
-instead of pretending the stale context is valid.
+Production uses `google.adk.sessions.DatabaseSessionService` for durable ADK
+state. FastAPI creates one service from the configured PostgreSQL URL at startup,
+shares it for the life of each API process, and closes the service and its engine
+at shutdown. Independently started processes use the same database and fixed
+internal ADK app/user namespace, so they can resume the same bound session.
+`DiagnosticPhaseSessionManager` stores the opaque binding in the app-owned
+`repair_phase_sessions.adk_session_id`; that ID, ADK state, prompts, raw events,
+and tool traces stay internal and never enter the public API.
+
+In the current diagnostic flow, turn acceptance can create or resume the phase
+session and its ADK binding. The nullable binding and worker-side idempotent
+ensure-and-bind before the effect boundary belong to the later Chunk #137
+cutover. A background run that confirms an already-bound ADK session is missing
+follows the recoverable, fail-closed `diagnostic_session_unavailable` path; it
+does not create replacement conversation state.
+
+BikeDoc Alembic revision `0008` installs the pinned Google ADK 2.3.0 JSON
+schema and version marker. Before ADK can lazily prepare its schema, API startup
+validates that marker and the required tables, columns, keys, index, foreign
+key, and retention trigger. A wrong or partial schema fails startup with an
+actionable migration error instead of silently changing stored state. The
+trigger prevents deletion of an ADK session while any active or retained closed
+phase-session row references it. No automatic ADK retention cleanup job runs
+today. See the [ADK architecture](apps/api/src/bike_doc_api/adk/ARCHITECTURE.md)
+for migration ownership, lifecycle, and retention details.
 
 The diagnostic agent is constructed by
 `bike_doc_api.adk.agents.diagnostic.create_diagnostic_agent`. It loads the

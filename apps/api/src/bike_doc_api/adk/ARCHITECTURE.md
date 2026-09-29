@@ -232,6 +232,9 @@ app-owned `diagnostic_session_id` that may appear in a report; its
 `adk_session_id` is internal and opaque. Creation races are handled by rolling
 back, best-effort deleting the orphaned ADK session, and returning the row
 that won the unique database race.
+The current turn-acceptance path can create this non-null binding. Nullable
+binding, worker-side idempotent ensure-and-bind, and effect fencing are deferred
+to Chunk #137.
 
 For diagnostic sessions, the same row also snapshots the app-owned selected
 diagnostic report schema version. Orchestration seeds that immutable value into
