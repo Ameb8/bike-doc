@@ -27,13 +27,13 @@ Install these tools before running the full app:
 - Python 3.12 and `uv`, if running the API directly with the root `Taskfile.yml`.
 - `go-task` (`task`) for the API helper commands.
 - PostgreSQL 16, if running the API directly without Compose.
+- NATS JetStream is supplied by Compose for the opt-in transport compatibility test.
 - Android Studio with JDK 17 and the Android SDK, for the Android app.
 - A Firebase project with Authentication enabled, for the Android app and
   production-like backend auth.
 - A Google Cloud project, if using GCS artifact storage or Vertex AI.
 - `gcloud`, if using Application Default Credentials locally for GCS or
   Vertex AI.
-- `agents-cli`, when validating or inspecting the ADK agent graph.
 
 ### Backend Environment
 
@@ -77,6 +77,39 @@ The host-side URL uses `localhost`; the Compose URL uses `db` and container
 port `5432`. When adding a new API setting, document it in `.env.example` and
 decide which Compose services need it. The shared API environment mapping in
 `compose.yaml` is the runtime contract for the API and future API workers.
+
+### Backend compatibility verification
+
+Run `task verify:backend-compatibility` to check the backend's real-infrastructure
+compatibility boundaries. The command starts disposable PostgreSQL and Core
+NATS containers, waits for readiness, applies Alembic migrations, then runs the
+ADK/PostgreSQL session tests, pinned JetStream tests, and cross-process SSE
+tests. It also tests NATS notification startup and reconnect behavior. The
+containers and their volumes are removed after the run, including when a check
+fails. Set `SSE_REPEATS=5 task verify:backend-compatibility` to run the
+cross-process SSE module five times. This command requires Docker and uses no
+paid providers or production credentials.
+
+Compose runs NATS server `2.12.1-alpine` with file-backed JetStream in the
+`nats_data` volume. Its client port binds only to host loopback; its monitoring
+port stays inside the Compose network. `BIKE_DOC_API_NATS_URL` is the host-side
+URL, while Compose passes `nats://nats:4222` to API containers. The current HTTP
+diagnostic executor does not use NATS.
+
+V1 uses stream `BIKEDOC_WORK_V1`, diagnostic subject
+`bikedoc.work.v1.diagnostic` and durable `bikedoc_diagnostic_v1`, and profile
+subject `bikedoc.work.v1.profile` and durable `bikedoc_profile_v1`. The client
+is pinned to `nats-py==2.12.0`. The compatibility topology uses work-queue
+retention, explicit acknowledgement, 30-second acknowledgement wait, 32 maximum
+deliveries, and 128 maximum pending acknowledgements per durable. These are
+transport defaults for later queue work, not application retry policy.
+
+After copying `.env.example` to `.env`, run `task test:nats`. This starts the
+pinned Compose service, then tests a disposable broker container with its own
+temporary file store. The test restarts that container and removes only its own
+resources; it never deletes the developer's `nats_data` volume. Ordinary
+`task check` tests exclude this opt-in suite. The test inspects stream and
+consumer state through JetStream after each important transition.
 
 ### Diagnostic Telemetry
 
@@ -408,15 +441,12 @@ exist:
 uv run alembic upgrade head
 ```
 
-When changing ADK agent structure or tools, validate the agent entrypoint:
+When changing ADK agent structure or tools, run the backend checks from the
+repository root:
 
 ```bash
-cd apps/api
-agents-cli lint --fix
+task check
 ```
-
-Use `agents-cli deploy --dry-run` when the graph is ready for a static
-deployment-style validation.
 
 ### Bike Profile Inference Configuration
 
@@ -622,8 +652,9 @@ The current implemented HTTP surface is:
   id, event stream URL, and updated session snapshot.
 - `GET /v1/repair-sessions/{sessionId}/events`: streams server-sent events for a
   repair session. The stream first replays persisted events after the requested
-  cursor or `Last-Event-ID`, then subscribes to process-local live events and
-  emits heartbeats until timeout.
+  cursor or `Last-Event-ID`, then waits for local and cross-process event
+  wake-ups, with PostgreSQL polling as a fallback, and emits heartbeats until
+  timeout.
 - `POST /v1/artifacts`: accepts multipart uploads, stores the object through the
   configured storage provider, and persists provider-neutral artifact metadata.
 - `GET /v1/repair-sessions/{sessionId}/reports` and
@@ -731,16 +762,31 @@ planning or execution agent flow wired into the API. The live agent path is:
    assistant deltas, artifact references, input requests, safety escalations,
    report creation, phase transitions, errors, and turn completion.
 
-ADK session ownership is split between durable product state and process-local
-ADK state. `DiagnosticPhaseSessionManager` ensures one
-`repair_phase_sessions` row exists for the diagnostic phase and stores the
-opaque ADK session id there. The actual ADK session service is
-`google.adk.sessions.InMemorySessionService`, cached for the FastAPI process.
-That means the product database remembers which ADK session id belongs to a
-repair session, but the conversational ADK state itself is currently
-process-local. If a background run cannot find the in-memory ADK session,
-`DiagnosticRunner` emits a recoverable `diagnostic_session_unavailable` error
-instead of pretending the stale context is valid.
+Production uses `google.adk.sessions.DatabaseSessionService` for durable ADK
+state. FastAPI creates one service from the configured PostgreSQL URL at startup,
+shares it for the life of each API process, and closes the service and its engine
+at shutdown. Independently started processes use the same database and fixed
+internal ADK app/user namespace, so they can resume the same bound session.
+`DiagnosticPhaseSessionManager` stores the opaque binding in the app-owned
+`repair_phase_sessions.adk_session_id`; that ID, ADK state, prompts, raw events,
+and tool traces stay internal and never enter the public API.
+
+In the current diagnostic flow, turn acceptance can create or resume the phase
+session and its ADK binding. The nullable binding and worker-side idempotent
+ensure-and-bind before the effect boundary belong to the later Chunk #137
+cutover. A background run that confirms an already-bound ADK session is missing
+follows the recoverable, fail-closed `diagnostic_session_unavailable` path; it
+does not create replacement conversation state.
+
+BikeDoc Alembic revision `0008` installs the pinned Google ADK 2.3.0 JSON
+schema and version marker. Before ADK can lazily prepare its schema, API startup
+validates that marker and the required tables, columns, keys, index, foreign
+key, and retention trigger. A wrong or partial schema fails startup with an
+actionable migration error instead of silently changing stored state. The
+trigger prevents deletion of an ADK session while any active or retained closed
+phase-session row references it. No automatic ADK retention cleanup job runs
+today. See the [ADK architecture](apps/api/src/bike_doc_api/adk/ARCHITECTURE.md)
+for migration ownership, lifecycle, and retention details.
 
 The diagnostic agent is constructed by
 `bike_doc_api.adk.agents.diagnostic.create_diagnostic_agent`. It loads the
@@ -968,9 +1014,8 @@ development endpoints.
 
 The test `apps/api/tests/unit/adk/test_agents_cli_entrypoint.py` verifies that
 the Agents CLI entrypoint exposes the same diagnostic agent name and prompt as
-the backend diagnostic agent. Backend agent notes also call out
-`agents-cli lint` and dry-run validation as part of the expected ADK workflow
-when the agent graph is in use.
+the backend diagnostic agent. Run `task check` to execute this and the other
+backend checks when changing ADK code.
 
 The learning demonstrated here is that ADK agent code can be made visible to
 agent development tooling without forcing the whole product to adopt ADK's

@@ -17,6 +17,32 @@ def test_diagnostic_report_defaults_to_v2() -> None:
     assert Settings().diagnostic_report_version == "diagnostic_report.v2"
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("nats_url", " "),
+        ("nats_url", "http://localhost:4222"),
+        ("nats_url", "nats://localhost"),
+        ("nats_work_stream", " "),
+        ("nats_diagnostic_subject", "bikedoc.>"),
+        ("nats_profile_subject", "bikedoc..profile"),
+        ("nats_diagnostic_consumer", "bad.name"),
+    ],
+)
+def test_invalid_nats_settings_are_rejected(field: str, value: str) -> None:
+    with pytest.raises(ValidationError) as exc:
+        Settings(**{field: value})
+    if field == "nats_url":
+        assert "nats://localhost" not in str(exc.value)
+
+
+def test_workload_subjects_and_durables_must_differ() -> None:
+    with pytest.raises(ValidationError):
+        Settings(nats_profile_subject="bikedoc.work.v1.diagnostic")
+    with pytest.raises(ValidationError):
+        Settings(nats_profile_consumer="bikedoc_diagnostic_v1")
+
+
 def test_diagnostic_report_rollout_accepts_v2() -> None:
     assert (
         Settings(

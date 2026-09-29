@@ -372,6 +372,7 @@ dependencies = [
     { name = "google-auth" },
     { name = "google-cloud-storage" },
     { name = "google-genai" },
+    { name = "nats-py" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
@@ -404,6 +405,7 @@ requires-dist = [
     { name = "google-auth", specifier = ">=2.40" },
     { name = "google-cloud-storage", specifier = ">=3.2" },
     { name = "google-genai", specifier = "==2.10.0" },
+    { name = "nats-py", specifier = "==2.12.0" },
     { name = "opentelemetry-api", specifier = ">=1.42" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.42" },
     { name = "opentelemetry-sdk", specifier = ">=1.42" },
@@ -1980,6 +1982,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/3c/c4ef2164a71c1a63d
 wheels = [
     { url = "https://files.pythonhosted.org/packages/48/ca/36339329c4604adbcc99c899b7eb1ce1a555c499b6a6860757dc9bfed36d/narwhals-2.22.1-py3-none-any.whl", hash = "sha256:60567d774edf77db53906f89d9fbd164e66e56d66d388e1e6990f17ac33cfb53", size = 454815, upload-time = "2026-06-05T12:34:32.289Z" },
 ]
+
+[[package]]
+name = "nats-py"
+version = "2.12.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/71/c5/2564d917503fe8d68fe630c74bf6b678fbc15c01b58f2565894761010f57/nats_py-2.12.0.tar.gz", hash = "sha256:2981ca4b63b8266c855573fa7871b1be741f1889fd429ee657e5ffc0971a38a1", size = 119821, upload-time = "2025-10-31T05:27:31.247Z" }
 
 [[package]]
 name = "nltk"

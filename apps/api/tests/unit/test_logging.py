@@ -16,7 +16,6 @@ from bike_doc_api.core.config import Settings
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.main import create_app
 
-
 ANSI_ESCAPE_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 

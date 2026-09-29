@@ -12,6 +12,7 @@ from bike_doc_api.api.deps import (
     get_diagnostic_runner,
     get_price_lookup_provider,
     get_storage_provider,
+    install_adk_session_service,
 )
 from bike_doc_api.core.config import Settings
 from bike_doc_api.providers.price import (
@@ -22,17 +23,24 @@ from bike_doc_api.services.cost_estimates import CostEstimateService
 
 
 def test_adk_session_service_provider_is_process_lifetime() -> None:
-    get_adk_session_service.cache_clear()
+    from google.adk.sessions import InMemorySessionService
 
-    first = get_adk_session_service()
-    second = get_adk_session_service()
+    service = InMemorySessionService()
+    install_adk_session_service(service)
+    try:
+        assert get_adk_session_service() is service
+        assert get_adk_session_service() is service
+    finally:
+        install_adk_session_service(None)
 
-    assert first is second
+    with pytest.raises(RuntimeError, match="not started"):
+        get_adk_session_service()
 
 
 def test_session_client_and_runner_receive_same_adk_session_service() -> None:
-    get_adk_session_service.cache_clear()
-    service = get_adk_session_service()
+    from google.adk.sessions import InMemorySessionService
+
+    service = InMemorySessionService()
     settings = Settings(environment="test")
 
     client = get_diagnostic_adk_session_client(service, settings)

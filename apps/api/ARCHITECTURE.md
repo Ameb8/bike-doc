@@ -30,9 +30,10 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | Area | Owns | Main entry points |
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
+| `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
-| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService`, `ReportService`, `DiagnosticSafetyService` |
+| `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService` |
 | `repositories/`, `models/`, `db/` | Async SQLAlchemy access, durable records (including session-scoped image-observation extraction runs and ordered provider attempts), metadata, sessions, and Alembic migrations | `db/session.py`, `db/migrations/`, repository classes |
 | `providers/` | Replaceable storage, price-lookup, and isolated diagnostic-observation extraction integrations | `StorageProvider`, `PriceLookupProvider`, `DiagnosticObservationExtractor` |
 | `adk/` | Internal agent construction, ADK session/runner adaptation, tool adapters, and turn orchestration | `orchestration.py`, `background.py` |
@@ -66,8 +67,8 @@ for ADK code to depend on FastAPI transport concerns.
 - [`api/router.py`](src/bike_doc_api/api/router.py) assembles versioned public
   route modules. `api/v1/` is the place to add a public endpoint group.
 - [`api/deps.py`](src/bike_doc_api/api/deps.py) supplies request-scoped database
-  sessions and authenticated users, configured providers, and the process-wide
-  in-memory ADK session service.
+  sessions and authenticated users, configured providers, and the lifespan-owned
+  PostgreSQL ADK session service.
 - [`adk/background.py`](src/bike_doc_api/adk/background.py) is the diagnostic
   background composition root invoked after a new turn is accepted.
 - [`db/migrations/`](src/bike_doc_api/db/migrations/) owns durable-schema
@@ -98,6 +99,17 @@ the supplied commit/rollback callbacks and, where required, a locked
 repair-session lookup. Do not hand ORM models or `AsyncSession` objects to a
 provider or expose them from an API schema.
 
+Every event repository write registers its session-scoped highest sequence for
+the repair session. A SQLAlchemy commit hook releases one hint after a successful
+commit; rollback discards it. The hint contains only version, opaque repair
+session ID, and sequence. The API lifespan owns one reconnecting Core NATS
+subscription and local fanout for all SSE readers. Readers query PostgreSQL
+after every hint and every bounded polling interval, including immediately
+after subscribing to close the replay race. Hints never become SSE frames.
+Heartbeats remain persisted events but do not publish hints, so multiple open
+readers cannot trigger a heartbeat notification loop. NATS unavailability
+does not gate API startup or event commits.
+
 ### Diagnostic turn
 
 `POST /v1/repair-sessions/{sessionId}/turns` deliberately separates fast,
@@ -110,7 +122,7 @@ turn route
   -> adk/background builds a fresh service/repository graph
   -> DiagnosticTurnOrchestrator prepares current-turn visual context, seeds durable context, and streams DiagnosticRunner
   -> ADK tools call services; runner events become public events
-  -> EventService persists/commits events, then local SSE fan-out
+  -> EventService persists/commits events, then local and Core NATS wake-ups
 ```
 
 `TurnService` validates session ownership and diagnostic state, validates
@@ -119,6 +131,13 @@ request hash. It creates or resumes one diagnostic phase session, persists the
 turn and its `turn.started` event together, changes the repair session to
 running, and commits before returning `202 Accepted`. An idempotent replay does
 not start a second background execution.
+
+Today turn acceptance can create or resume the durable ADK session binding;
+`repair_phase_sessions.adk_session_id` remains non-null. Chunk #137 will move
+initialization to the worker with a nullable, idempotent ensure-and-bind step
+and diagnostic effect fencing. The ADK session service is lifespan-owned and
+PostgreSQL-backed; see the [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
+for migration, startup validation, missing-session, and retention rules.
 
 The background task opens a new database session and reconstructs the
 orchestration graph, including `DiagnosticVisualContextService` with fresh
@@ -157,20 +176,13 @@ there is no automatic whole-turn retry.
 
 The event endpoint first validates session ownership and resolves the `after`
 query cursor or `Last-Event-ID`; `EventService` then emits persisted events in
-sequence order and waits for new local events. SSE formatting lives in the
-event service, not the route. `EventService.append_event` validates the public
-event data, atomically allocates the session sequence through the repository,
-commits it, and only then publishes it to its local in-process broker.
-
-The durable `repair_session_events` log, not the local broker or ADK state, is
-the reconnect mechanism. The broker is intentionally same-process/same-worker
-fan-out today, and the ADK session service is also in memory. A restart can
-make a persisted ADK session mapping stale; the runner returns a recoverable
-error rather than silently replacing that session. Likewise, any event path
-that writes a row directly as part of a larger state transaction must preserve
-replay correctness and should be assessed for immediate live notification.
-These limits matter before adding multiple workers or a durable job/session
-backend.
+sequence order. SSE formatting lives in the event service, not the route.
+Committed event writes trigger local fan-out and a best-effort Core NATS hint;
+other API processes receive the hint and query PostgreSQL for new events.
+Bounded polling recovers missed hints, and hint failure does not roll back an
+event. The durable `repair_session_events` log is the SSE source of truth and
+reconnect mechanism. ADK sessions are also stored in PostgreSQL; the runner
+returns a recoverable error if a bound ADK session is confirmed missing.
 
 ## Module reference
 

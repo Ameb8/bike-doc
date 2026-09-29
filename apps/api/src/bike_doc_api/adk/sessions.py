@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 import structlog
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import BaseSessionService
 from sqlalchemy.exc import IntegrityError
 
 from bike_doc_api.core.config import DiagnosticReportVersion
@@ -77,17 +77,17 @@ class LocalDiagnosticADKSessionClient:
 
 
 class StaleInMemoryADKSessionError(Exception):
-    """Recoverable missing process-local ADK session state."""
+    """Recoverable confirmed missing bound ADK session state."""
 
 
 class DiagnosticADKSessionClient:
-    """ADK session client backed by a shared process-local session service."""
+    """ADK session client backed by the shared process-lifetime service."""
 
-    def __init__(self, session_service: InMemorySessionService) -> None:
+    def __init__(self, session_service: BaseSessionService) -> None:
         self._session_service = session_service
 
     @property
-    def session_service(self) -> InMemorySessionService:
+    def session_service(self) -> BaseSessionService:
         """Return the shared ADK session service for dependency lifecycle tests."""
 
         return self._session_service
@@ -130,11 +130,11 @@ class DiagnosticADKSessionClient:
 
 
 async def ensure_adk_session_available(
-    session_service: InMemorySessionService,
+    session_service: BaseSessionService,
     *,
     adk_session_id: str,
 ) -> None:
-    """Raise a recoverable error if process-local ADK session state is missing."""
+    """Raise a recoverable error if an already-bound ADK session is missing."""
 
     session = await session_service.get_session(
         app_name=DIAGNOSTIC_ADK_APP_NAME,

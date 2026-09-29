@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+import structlog
 from pydantic import ValidationError as PydanticValidationError
 
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
+from bike_doc_api.core.event_wakeups import EventWakeupSubscriber, get_event_wakeups
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
@@ -25,6 +26,8 @@ DEFAULT_TIMEOUT_SECONDS = 30
 MIN_TIMEOUT_SECONDS = 5
 MAX_TIMEOUT_SECONDS = 120
 REPLAY_BATCH_SIZE = 100
+POLL_INTERVAL_SECONDS = 2.0
+logger = structlog.get_logger(__name__)
 
 
 class RepairSessionEventRepositoryProtocol(Protocol):
@@ -71,45 +74,6 @@ class EventStream:
     timeout_seconds: int
 
 
-class _LocalEventBroker:
-    """In-process event fanout for same-worker live stream listeners."""
-
-    def __init__(self) -> None:
-        self._listeners: dict[str, set[asyncio.Queue[RepairSessionEvent]]] = (
-            defaultdict(set)
-        )
-
-    def subscribe(self, repair_session_id: str) -> asyncio.Queue[RepairSessionEvent]:
-        """Register a listener queue for one repair session."""
-
-        queue: asyncio.Queue[RepairSessionEvent] = asyncio.Queue()
-        self._listeners[repair_session_id].add(queue)
-        return queue
-
-    def unsubscribe(
-        self,
-        repair_session_id: str,
-        queue: asyncio.Queue[RepairSessionEvent],
-    ) -> None:
-        """Remove a listener queue."""
-
-        listeners = self._listeners.get(repair_session_id)
-        if listeners is None:
-            return
-        listeners.discard(queue)
-        if not listeners:
-            self._listeners.pop(repair_session_id, None)
-
-    async def publish(self, event: RepairSessionEvent) -> None:
-        """Publish a committed public event to current local listeners."""
-
-        for queue in tuple(self._listeners.get(event.session_id, ())):
-            await queue.put(event)
-
-
-_LOCAL_EVENT_BROKER = _LocalEventBroker()
-
-
 class EventService:
     """Application-owned event log behavior."""
 
@@ -120,11 +84,17 @@ class EventService:
         *,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
+        wakeups: EventWakeupSubscriber | None = None,
+        poll_interval_seconds: float = POLL_INTERVAL_SECONDS,
+        clock: Callable[[], float] | None = None,
     ) -> None:
         self._events = events
         self._repair_sessions = repair_sessions
         self._commit = commit
         self._rollback = rollback
+        self._wakeups = wakeups or get_event_wakeups()
+        self._poll_interval_seconds = poll_interval_seconds
+        self._clock = clock
 
     async def prepare_stream(
         self,
@@ -194,7 +164,14 @@ class EventService:
             raise
 
         public_event = repair_session_event_from_model(event)
-        await _LOCAL_EVENT_BROKER.publish(public_event)
+        if (
+            self._commit is not None
+            and public_event.type != RepairSessionEventType.HEARTBEAT
+        ):
+            try:
+                self._wakeups.receive(public_event.session_id)
+            except Exception:
+                logger.warning("event_wakeup_dispatch_failed")
         return public_event
 
     async def stream_sse_frames(self, stream: EventStream) -> AsyncIterator[str]:
@@ -213,48 +190,78 @@ class EventService:
 
         if stream.timeout_seconds <= MIN_TIMEOUT_SECONDS:
             if not replayed_any:
-                heartbeat = await self.append_event(
+                await self.append_event(
                     repair_session_id=stream.repair_session_id,
                     event_type=RepairSessionEventType.HEARTBEAT,
                     data={"ok": True},
                 )
-                yield format_sse_frame(heartbeat)
+                async for event in self._iter_replay_events(
+                    repair_session_id=stream.repair_session_id,
+                    after_sequence=current_sequence,
+                ):
+                    current_sequence = event.sequence
+                    yield format_sse_frame(event)
             return
 
-        queue = _LOCAL_EVENT_BROKER.subscribe(stream.repair_session_id)
+        queue = self._wakeups.subscribe(stream.repair_session_id)
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + stream.timeout_seconds
+        now_time = self._clock or loop.time
+        deadline = now_time() + stream.timeout_seconds
         heartbeat_interval = max(1.0, min(15.0, stream.timeout_seconds / 2))
-        next_heartbeat_at = loop.time() + heartbeat_interval
+        next_heartbeat_at = now_time() + heartbeat_interval
+        next_poll_at = now_time() + self._poll_interval_seconds
 
         try:
             while True:
-                now = loop.time()
+                now = now_time()
                 if now >= deadline:
                     return
 
-                wait_seconds = max(0.0, min(deadline, next_heartbeat_at) - now)
+                # Subscribe after replay, then query again to close the race.
+                async for event in self._iter_replay_events(
+                    repair_session_id=stream.repair_session_id,
+                    after_sequence=current_sequence,
+                ):
+                    current_sequence = event.sequence
+                    next_heartbeat_at = now_time() + heartbeat_interval
+                    yield format_sse_frame(event)
+                now = now_time()
+                wait_seconds = max(
+                    0.0, min(deadline, next_heartbeat_at, next_poll_at) - now
+                )
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=wait_seconds)
+                    await asyncio.wait_for(queue.get(), timeout=wait_seconds)
                 except TimeoutError:
-                    if loop.time() >= next_heartbeat_at:
-                        heartbeat = await self.append_event(
+                    if now_time() >= next_poll_at:
+                        next_poll_at = now_time() + self._poll_interval_seconds
+                        continue
+                    if now_time() >= next_heartbeat_at:
+                        # Poll first so a newly committed event suppresses an
+                        # otherwise unnecessary persisted heartbeat.
+                        async for event in self._iter_replay_events(
+                            repair_session_id=stream.repair_session_id,
+                            after_sequence=current_sequence,
+                        ):
+                            current_sequence = event.sequence
+                            next_heartbeat_at = now_time() + heartbeat_interval
+                            yield format_sse_frame(event)
+                        if now_time() < next_heartbeat_at:
+                            continue
+                        await self.append_event(
                             repair_session_id=stream.repair_session_id,
                             event_type=RepairSessionEventType.HEARTBEAT,
                             data={"ok": True},
                         )
-                        current_sequence = heartbeat.sequence
-                        next_heartbeat_at = loop.time() + heartbeat_interval
-                        yield format_sse_frame(heartbeat)
+                        next_heartbeat_at = now_time() + heartbeat_interval
+                        async for event in self._iter_replay_events(
+                            repair_session_id=stream.repair_session_id,
+                            after_sequence=current_sequence,
+                        ):
+                            current_sequence = event.sequence
+                            yield format_sse_frame(event)
                     continue
-
-                if event.sequence <= current_sequence:
-                    continue
-                current_sequence = event.sequence
-                next_heartbeat_at = loop.time() + heartbeat_interval
-                yield format_sse_frame(event)
         finally:
-            _LOCAL_EVENT_BROKER.unsubscribe(stream.repair_session_id, queue)
+            self._wakeups.unsubscribe(stream.repair_session_id, queue)
 
     async def _iter_replay_events(
         self,

@@ -11,7 +11,7 @@ from typing import Any, Literal, Protocol, cast
 
 from google.adk.agents import Agent
 from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions import BaseSessionService
 from google.genai import types
 
 from bike_doc_api.adk.sessions import (
@@ -164,7 +164,7 @@ type DiagnosticAgentInvoker = Callable[
     [DiagnosticRunnerRequest],
     Awaitable[Iterable[DiagnosticRunnerEvent | Mapping[str, Any]]],
 ]
-type DiagnosticADKRunnerFactory = Callable[[Agent, InMemorySessionService], Any]
+type DiagnosticADKRunnerFactory = Callable[[Agent, BaseSessionService], Any]
 type MonotonicClock = Callable[[], float]
 type SleepFunction = Callable[[float], Awaitable[None]]
 
@@ -190,7 +190,7 @@ class DiagnosticRunner:
         invoker: DiagnosticAgentInvoker | None = None,
         *,
         agent: Agent | None = None,
-        session_service: InMemorySessionService | None = None,
+        session_service: BaseSessionService | None = None,
         runner_factory: DiagnosticADKRunnerFactory | None = None,
         clock: MonotonicClock | None = None,
         sleep: SleepFunction | None = None,
@@ -209,7 +209,7 @@ class DiagnosticRunner:
         self._delta_flush_interval_seconds = delta_flush_interval_seconds
 
     @property
-    def session_service(self) -> InMemorySessionService | None:
+    def session_service(self) -> BaseSessionService | None:
         """Return the shared ADK session service used for resume checks."""
 
         return self._session_service
@@ -253,7 +253,7 @@ class DiagnosticRunner:
                     code="diagnostic_session_unavailable",
                     message=(
                         "Diagnostic processing needs a fresh turn because "
-                        "the in-memory session is no longer available."
+                        "the bound session is no longer available."
                     ),
                     retryable=True,
                 )
@@ -384,7 +384,7 @@ class DiagnosticRunner:
 
 
 def _default_runner_factory(
-    agent: Agent, session_service: InMemorySessionService
+    agent: Agent, session_service: BaseSessionService
 ) -> Runner:
     """Construct the real Google ADK runner for diagnostic turns."""
 

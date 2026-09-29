@@ -232,6 +232,9 @@ app-owned `diagnostic_session_id` that may appear in a report; its
 `adk_session_id` is internal and opaque. Creation races are handled by rolling
 back, best-effort deleting the orphaned ADK session, and returning the row
 that won the unique database race.
+The current turn-acceptance path can create this non-null binding. Nullable
+binding, worker-side idempotent ensure-and-bind, and effect fencing are deferred
+to Chunk #137.
 
 For diagnostic sessions, the same row also snapshots the app-owned selected
 diagnostic report schema version. Orchestration seeds that immutable value into
@@ -254,15 +257,24 @@ report does not emit a second summary. No marker or retry state is persisted,
 so a crash after commit may omit—or recovery may duplicate—observational
 telemetry while durable reports and events remain authoritative.
 
-The current `DiagnosticADKSessionClient` uses one process-lifetime
-`InMemorySessionService`, with fixed internal ADK app/user names. The exact
-same instance must create sessions and run turns; creating one per request or
-runner would orphan persisted raw IDs. On process restart, an existing phase
-row can point to unavailable memory. `ensure_adk_session_available` turns that
-condition into the recoverable `diagnostic_session_unavailable` event; silently
-recreating the session is forbidden because it would lose conversation state.
-This is suitable for local, single-worker use only. Multi-worker deployment
-needs sticky routing or a durable ADK session backend.
+`DiagnosticADKSessionClient` and `DiagnosticRunner` share one lifespan-owned
+`DatabaseSessionService` per process. Independent processes use the same
+PostgreSQL database and fixed internal ADK app/user namespace. The app-owned
+phase row retains the opaque ID. `ensure_adk_session_available` maps only a
+confirmed missing bound session to recoverable `diagnostic_session_unavailable`;
+database errors propagate rather than replacing conversation state.
+
+BikeDoc Alembic revision `0008` owns the pinned ADK 2.3.0 JSON schema (version
+`1`), including its event index and metadata marker. Startup checks the marker
+and complete table shape before ADK's lazy preparation. ADK storage upgrades
+require a reviewed BikeDoc migration and compatibility-check update; deploy
+the migration before starting new processes. FastAPI lifespan closes the ADK
+service engine at shutdown. Retention must keep an ADK session and its events
+while any active or retained `repair_phase_sessions` row references its ID.
+A database trigger rejects deletion of a referenced ADK session, including one
+whose phase row is closed but retained. A future cleanup must first prove that
+no such reference exists; no automatic ADK retention job runs today. Downgrade
+refuses to drop ADK tables while phase rows remain.
 
 `tools/common.py` defines the internal, strict `DiagnosticToolContext`, common
 success/error envelope, input parsing, and mapping of known `AppError`
