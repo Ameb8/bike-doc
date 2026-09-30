@@ -15,7 +15,7 @@ from enum import StrEnum
 from typing import Literal, cast
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -391,6 +391,7 @@ class BackgroundJobRepository:
         purpose: Literal["expired", "no_progress", "retention"],
         before: datetime,
         limit: int,
+        definitions: frozenset[tuple[str, int]] | None = None,
     ) -> list[JobSnapshot]:
         """Bounded locked candidates; callers apply policy in the same transaction.
 
@@ -401,6 +402,12 @@ class BackgroundJobRepository:
         _batch_limit(limit)
         now = await self._now()
         query = select(BackgroundJob)
+        if definitions is not None:
+            query = query.where(
+                tuple_(BackgroundJob.job_kind, BackgroundJob.input_version).in_(
+                    definitions
+                )
+            )
         if purpose == "expired":
             query = query.where(
                 BackgroundJob.state == "running",
@@ -475,5 +482,10 @@ class BackgroundJobRepository:
         ):
             return False
         self._finish(row, outcome, now)
+        if row.state == "retrying":
+            # Recovery creates notification intent, never a new application
+            # attempt. Preserve the policy's future eligibility for publication.
+            row.desired_generation += 1
+            row.publication_eligible_at = row.eligible_at
         await self._session.flush()
         return True

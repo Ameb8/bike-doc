@@ -405,7 +405,11 @@ async def test_expired_deadline_rejects_current_and_replaced_tokens(
     )
     await db_session.commit()
     await asyncio.sleep(0.01)
-    recovered = await claim(db_session, job)
+    # Expired recovery advances the notification epoch; the old delivery is stale.
+    stale = await resolve(db_session, job)
+    assert stale.kind == ResolutionKind.STALE
+    assert stale.job.desired_generation == 2
+    recovered = await claim(db_session, stale.job)
     assert recovered.attempt_count == 2
     assert recovered.execution_token != lost.job.execution_token
     assert not await repo.apply_outcome(

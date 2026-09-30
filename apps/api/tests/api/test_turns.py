@@ -920,3 +920,61 @@ async def test_post_turn_with_missing_or_invalid_auth_returns_401(
             assert_error_response(response, status_code=401, error_code="unauthorized")
     finally:
         app.dependency_overrides[get_current_user] = original_current_user
+
+
+async def test_lifespan_maintenance_broker_failure_does_not_block_valid_acceptance(
+    app: FastAPI,
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    import bike_doc_api.main as main
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.repositories.background_jobs import PublicationClaim
+
+    attempted = asyncio.Event()
+    failed = asyncio.Event()
+    publisher = AsyncMock()
+
+    async def unavailable(*args: object) -> None:
+        attempted.set()
+        raise ConnectionError("private broker unavailable")
+
+    publisher.publish.side_effect = unavailable
+    repository = AsyncMock()
+    repository.claim_publications.return_value = [
+        PublicationClaim(
+            "job_01K00000000000000000000000",
+            "profile_inference",
+            1,
+            "token",
+            datetime.now(UTC),
+        )
+    ]
+    repository.fail_publication.side_effect = lambda *args, **kwargs: failed.set()
+
+    @asynccontextmanager
+    async def transaction() -> Any:
+        yield repository
+
+    host = JobMaintenance(app.state.settings, transaction, publisher, {})
+    monkeypatch.setattr(main, "create_job_maintenance", lambda _: host)
+    monkeypatch.setattr(
+        main, "open_adk_session_service", AsyncMock(return_value=AsyncMock())
+    )
+    monkeypatch.setattr(main.NatsEventNotifications, "start", lambda _: None)
+    async with app.router.lifespan_context(app):
+        await asyncio.wait_for(attempted.wait(), 1)
+        await asyncio.wait_for(failed.wait(), 1)
+        response = await _post_turn(
+            api_client, auth_headers, OWNED_SESSION_ID, _valid_turn_payload()
+        )
+        assert response.status_code == 202
+        assert turn_service_override.background_calls
+        repository.confirm_publication.assert_not_awaited()
+    publisher.close.assert_awaited_once()

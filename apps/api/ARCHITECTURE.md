@@ -31,6 +31,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
+| `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService` |
@@ -373,3 +374,48 @@ schema/OpenAPI alignment.
 - [Diagnostic API workflow](../../docs/specs/apps/api-diagnostic.md), [event/SSE semantics](../../docs/specs/apps/api-events-diagnostic.md), and [diagnostic persistence](../../docs/specs/apps/api-db-diagnostic.md)
 - [Artifact storage boundary](../../docs/specs/apps/api-artifacts-diagnostic.md), [report schema](../../docs/specs/apps/diagnostic-report-v1.md), and [safety rules](../../docs/specs/apps/safety-diagnostic.md)
 - [ADK tool contracts](../../docs/specs/apps/adk-diagnostic-tools.md), [ADK wiring](../../docs/specs/apps/adk-wiring-spec.md), and the package-local [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
+
+## Durable job maintenance
+
+`main.lifespan` starts `maintenance.hosting.create_job_maintenance` and cancels
+it before closing the other API resources. `JobMaintenance.start()` immediately
+schedules independent publication and reconciliation loops; `close()` bounds
+cancellation and publisher shutdown by `job_shutdown_timeout_seconds`. The
+module has no FastAPI, route, ADK, or profile-provider dependency and can be
+hosted through this lifecycle elsewhere after a deployment decision.
+
+The publisher polls committed state even during NATS outages. A short
+`BackgroundJobRepository.claim_publications` transaction commits an opaque token
+and exact desired generation, then releases its session before broker I/O. A
+bounded concurrent batch maps stored workloads through two fixed settings-backed
+subjects and publishes only `version`, `job_id`, and `publication_generation`.
+`Nats-Msg-Id` is `job_id:generation`. A JetStream acknowledgement precedes a
+separate conditional confirmation transaction. Cancellation, failed confirmation,
+and abandoned leases leave the generation republishable; an older confirmation
+preserves newer intent. Transport failures retain a bounded error enum and a
+future retry time with exponential equal jitter capped by settings. Backoff is
+host-local efficiency state; PostgreSQL claims remain the correctness boundary.
+
+The JetStream adapter connects and verifies the pinned topology lazily. NATS
+connection failure cannot block lifespan startup or valid HTTP acceptance.
+Routine failure logs contain fixed events/categories only. No route invokes
+maintenance or publishes work directly. The existing background execution path
+remains until its job-kind cutover tasks land.
+
+Reconciliation uses bounded `SKIP LOCKED` scans and conditional updates inside
+short transactions. Its policy registry is keyed by stored `(job_kind,
+input_version)`; absent definitions are omitted at the database scan. Policies
+make pure decisions about expired outcomes and safe no-progress notification
+recovery. The initial host registry is empty: the profile adapter registers its
+policy in its later task; diagnostic product terminalization belongs to its
+cutover task. Recovery of a retryable expired execution preserves attempts,
+clears the expired token, advances durable generation, and schedules publication
+at the policy's `eligible_at`. Exhaustion terminalizes as dead. No-progress
+recovery advances only eligible queued/retrying work with remaining attempts
+and no effect boundary. Publication remains the sole JetStream writer.
+
+Settings and their timing constraints are documented in the root `.env.example`
+and passed explicitly by Compose. `task test:maintenance` verifies real
+PostgreSQL/JetStream acknowledgement-window replay, deterministic deduplication,
+exact generation/coalescing, abandoned leases, two-host publication and recovery,
+and policy/eligibility/deadline/attempt omissions with independent sessions.

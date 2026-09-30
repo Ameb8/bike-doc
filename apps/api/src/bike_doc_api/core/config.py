@@ -105,6 +105,17 @@ class Settings(BaseSettings):
     nats_profile_subject: str = "bikedoc.work.v1.profile"
     nats_diagnostic_consumer: str = "bikedoc_diagnostic_v1"
     nats_profile_consumer: str = "bikedoc_profile_v1"
+    job_maintenance_enabled: bool = True
+    job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
+    job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
+    job_publication_poll_seconds: float = Field(default=1, ge=0.1, le=30)
+    job_publish_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
+    job_publication_claim_seconds: float = Field(default=30, ge=1, le=300)
+    job_backoff_initial_seconds: float = Field(default=2, ge=0.1, le=300)
+    job_backoff_max_seconds: float = Field(default=60, ge=1, le=3600)
+    job_no_progress_seconds: float = Field(default=300, ge=1, le=86400)
+    job_reconciliation_poll_seconds: float = Field(default=30, ge=0.1, le=300)
+    job_shutdown_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
     auth_mode: Literal["firebase", "dev", "local_unsigned_jwt"] = "dev"
     dev_auth_token: str = "dev-token"
     dev_auth_subject: str = "dev-user"
@@ -234,6 +245,20 @@ class Settings(BaseSettings):
             raise ValueError("NATS workload subjects must differ")
         if self.nats_diagnostic_consumer == self.nats_profile_consumer:
             raise ValueError("NATS durable consumers must differ")
+        return self
+
+    @model_validator(mode="after")
+    def validate_job_maintenance_timing(self) -> "Settings":
+        if self.job_publication_claim_seconds <= self.job_publish_timeout_seconds:
+            raise ValueError("publication claim must exceed publish timeout")
+        if self.job_backoff_max_seconds < self.job_backoff_initial_seconds:
+            raise ValueError("maximum backoff must cover initial backoff")
+        if self.job_no_progress_seconds <= max(
+            self.job_publication_claim_seconds + self.job_publication_poll_seconds,
+            self.job_backoff_max_seconds,
+            self.job_reconciliation_poll_seconds,
+        ):
+            raise ValueError("no-progress threshold must exceed maintenance timings")
         return self
 
     @field_validator("auth_mode", mode="before")
