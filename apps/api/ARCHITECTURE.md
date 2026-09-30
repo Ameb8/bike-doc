@@ -203,6 +203,10 @@ SQLAlchemy and ADK. It contains the client-visible IDs, status/phase enums,
 event payload validation, report envelope, and model-to-schema conversion
 helpers. Public API changes begin here and in
 [`docs/specs/openapi.yaml`](../../docs/specs/openapi.yaml), not in an ORM model.
+`schemas/background_jobs.py` is a separate internal contract: strict immutable
+profile-inference instructions pin only turn ID and behavior versions. These
+models are never exposed in the public API.
+
 Schemas may be used by API and services, but they must never require a FastAPI
 request or expose provider/ADK internals.
 
@@ -243,6 +247,32 @@ deletion endpoint. Alembic migrations are
 the authoritative record of table, constraint, and index changes. When adding
 or changing persisted behavior, update model, repository, migration, and the
 tests/spec that define its observable semantics as appropriate.
+
+### Durable background job persistence
+
+`services/background_jobs.py` validates the pinned `profile_inference.v1`
+instruction and derives its logical identity from a canonical tuple hash.
+`repositories/background_jobs.py` owns PostgreSQL job recording, exact-generation
+publication claims and confirmation, atomic delivery resolution, token/deadline
+fenced outcomes, and bounded locked maintenance scans. Its typed snapshots and
+resolution outcomes are the publisher/runtime seam. Definition validation is a
+pure synchronous callback under the delivery row lock; it must not perform I/O.
+
+All operations use a caller-owned async transaction and never commit or publish.
+Product services can record work with their existing writes; worker and
+maintenance callers commit short transactions before transport settlement or
+network calls. Scan results remain locked only for that transaction. Publication
+claim tokens persist across the publisher's network call and expire independently
+of execution tokens. `models/background_job.py` and Alembic revision `0009`
+provide bounded state, immutable inputs, monotonic counters, terminal-outcome
+protection, and scan indexes. Stored errors are fixed categories, never exception
+messages. Expired deliveries wait for reconciliation; only maintenance advances
+recovery publication intent. Retention scans exclude nonterminal and unconfirmed
+jobs, and their configured cutoff must exceed broker lifetime and all longer
+retry, recovery, and audit horizons.
+
+This foundation does not register diagnostic jobs, publish messages, run handlers,
+or change the current turn executor. Those integrations build on this seam.
 
 ### `providers/`
 
