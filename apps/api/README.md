@@ -115,3 +115,10 @@ cancellation after publish acknowledgement, lease expiry/replay, generation
 coalescing, independent replica sessions, and attempt-free reconciliation.
 Retention cleanup, broker reconstruction, worker settlement, and diagnostic
 effect recovery are owned by their respective follow-up tasks.
+
+Shared worker runtime verification: run `task test:worker` from the repository
+root. It creates disposable PostgreSQL and pinned JetStream containers, applies
+migrations, and verifies typed fake handlers against real durable job rows and
+the profile pull consumer. See `ARCHITECTURE.md` for worker composition, timing,
+settlement, and shutdown contracts. Workload handlers and executable role
+resource composition are supplied by their feature tasks.

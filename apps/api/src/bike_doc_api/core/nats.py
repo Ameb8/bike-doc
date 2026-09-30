@@ -47,7 +47,8 @@ async def nats_connection(settings: Settings) -> AsyncIterator[Client]:
         yield client
     finally:
         try:
-            await asyncio.wait_for(client.drain(), timeout=6)
+            if not client.is_closed:
+                await asyncio.wait_for(client.drain(), timeout=6)
         except (ConnectionReconnectingError, TimeoutError):
             pass
         finally:

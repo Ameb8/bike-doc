@@ -105,6 +105,14 @@ class Settings(BaseSettings):
     nats_profile_subject: str = "bikedoc.work.v1.profile"
     nats_diagnostic_consumer: str = "bikedoc_diagnostic_v1"
     nats_profile_consumer: str = "bikedoc_profile_v1"
+    worker_concurrency: int = Field(default=4, ge=1, le=128)
+    worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    worker_fetch_timeout_seconds: float = Field(
+        default=1, gt=0, le=30, allow_inf_nan=False
+    )
+    worker_progress_seconds: float = Field(default=10, gt=0, lt=15, allow_inf_nan=False)
+    worker_shutdown_seconds: float = Field(default=30, gt=0, le=60, allow_inf_nan=False)
+
     job_maintenance_enabled: bool = True
     job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
     job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)

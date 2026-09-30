@@ -369,6 +369,21 @@ class BackgroundJobRepository:
         await self._session.flush()
         return True
 
+    async def apply_outcome_and_load(
+        self, *, job_id: str, execution_token: str, outcome: JobOutcome
+    ) -> JobSnapshot | None:
+        """Return the actual persisted outcome (including exhaustion/eligibility).
+
+        The caller commits before using this result to settle a delivery.
+        """
+        if not await self.apply_outcome(
+            job_id=job_id, execution_token=execution_token, outcome=outcome
+        ):
+            return None
+        row = await self._lock(job_id)
+        assert row is not None
+        return JobSnapshot.from_row(row)
+
     @staticmethod
     def _finish(row: BackgroundJob, outcome: JobOutcome, now: datetime) -> None:
         if outcome.state == "retrying" and row.attempt_count >= row.attempt_limit:

@@ -30,6 +30,11 @@ tasks:
       - docker compose --env-file .env up -d --wait nats
       - cd apps/api && uv run pytest -m nats tests/integration/test_nats_compatibility.py
 
+  test:worker:
+    desc: Verify shared pull workers with disposable PostgreSQL and pinned JetStream.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh worker
+
   test:maintenance:
     desc: Verify maintenance with disposable PostgreSQL and pinned JetStream.
     cmds:

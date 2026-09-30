@@ -419,3 +419,87 @@ and passed explicitly by Compose. `task test:maintenance` verifies real
 PostgreSQL/JetStream acknowledgement-window replay, deterministic deduplication,
 exact generation/coalescing, abandoned leases, two-host publication and recovery,
 and policy/eligibility/deadline/attempt omissions with independent sessions.
+
+## Shared pull workers
+
+`workers/registry.py` defines the strict V1 delivery envelope, immutable typed
+`ClaimedJob[Input]`, and exact `(kind, input_version)` allowlist. Definitions
+supply the strict immutable input model, workload, async handler, application
+attempt limit, maximum retry delay, effect policy, hard duration, cancellation
+grace, settlement reserve, explicit timeout outcome, and reconciliation policy.
+Registry construction rejects duplicate or incompatible definitions. Every
+replica sharing a consumer must receive the complete supported registry;
+deploy new definitions before enabling producers, retaining old versions through
+all possible redeliveries. Database strings never become imports or commands.
+
+`workers/runtime.py` owns one workload's bounded pull lifecycle through
+`JobStore` and `PullTransport` protocols. PostgreSQL atomically validates and
+claims authoritative input before a handler runs. Only an executable resolution
+increments an application attempt. Terminal/stale deliveries acknowledge;
+early/running deliveries receive a delayed NAK from authoritative eligibility
+or deadline; expired running deliveries wait for API-hosted reconciliation.
+Untrusted deliveries terminate without mutation; trusted definition/input
+failures commit `dead` before termination. Exhaustion commits `dead` and
+acknowledges. Handlers return bounded outcomes and never receive broker types.
+
+`workers/adapters.py` supplies short, independent PostgreSQL transactions and
+the official NATS delivery adapter. `apply_outcome_and_load` returns actual
+committed eligibility/state, including attempt exhaustion, so the runtime
+settles from durable state rather than guessing from a handler result. An ack
+failure leaves safe redelivery. Progress affects only the broker AckWait;
+the execution deadline cannot renew. Timeout starts cancellation before the
+grace and settlement reserve. A cancellation-resistant handler or failed/stale
+outcome persistence leaves the message unsettled for deadline recovery;
+protected effects must still enforce the execution token and deadline. A handler
+that resists cancellation retains its local concurrency slot until it finishes.
+Maximum-delivery and termination advisory subscriptions log fixed categories
+only, with no access to job state or message content.
+
+`workers/role.py:create_workload_worker` is the thin workload-role seam. The
+process host constructs and owns the database pool, NATS connection and durable
+pull subscription, providers, and any ADK resources, then supplies its complete
+registry and adapters. Both profile and later diagnostic roles reuse this same
+runtime. Dependency direction is `worker role -> registry/runtime/adapters`,
+`runtime -> typed job store/transport protocols`, `database adapter -> job
+repository`, and `NATS adapter -> core/nats + official client`. Registry and
+handler interfaces import no NATS, FastAPI, providers, or ADK. A diagnostic
+store/handler must add atomic product terminalization and effect fencing in
+Chunk #137; this task supplies no diagnostic behavior or profile provider.
+
+The initial role defaults are concurrency/fetch batch 4 (bounded by the
+consumer's 128 pending acknowledgements), one-second fetches, ten-second
+progress within the fixed thirty-second production AckWait, and thirty seconds
+for in-flight shutdown. Timing is validated at worker construction. Provider
+calls must fit the handler duration and use the single registered attempt
+budget, without nested retries. Shutdown stops fetching, permits bounded
+completion, cancels remaining work, then unsubscribes and drains NATS; forced
+loss leaves running jobs and unacknowledged deliveries for recovery.
+
+Run `task test:worker` after `task format` and `task check`. The script creates
+disposable PostgreSQL 16 and pinned NATS 2.12.1 containers, migrates the database,
+and runs `tests/integration/test_worker_runtime.py` with fake typed handlers and
+real job rows on the profile workload consumer. It verifies pull, progress,
+duplicate exclusion, delayed NAK, early/stale/future/malformed deliveries,
+strict stored-input failures, confirmed acknowledgement, dropped acknowledgements,
+timeout, graceful drain, and forced-loss redelivery. Containers and volumes are
+removed on exit; no provider credentials are needed.
+
+Issue #145 acceptance evidence (unit tests are in
+`tests/unit/test_shared_worker.py`; real infrastructure tests are in
+`tests/integration/test_worker_runtime.py`):
+
+| Acceptance contract | Implementation and verification |
+| --- | --- |
+| Strict minimal envelope | `DeliveryEnvelope.decode`; strict-envelope and ambiguous/non-object JSON unit cases, real malformed termination |
+| Fail-closed exact registry and policies | `HandlerDefinition`, `HandlerPolicy`, `HandlerRegistry`; duplicate, missing-policy, workload, strict-input, and invalid-timing unit cases |
+| Subject role and authoritative dispatch | `PostgresJobStore.resolve` delegates locked validation to the registry; real wrong-subject/workload and stored-definition cases |
+| One attempt/handler and bounded duplicate NAK | Atomic repository claim; simultaneous independent PostgreSQL transactions invoke once, duplicate delivery waits through the hard deadline |
+| Terminal/stale no-op; future/workload rejection | Resolution settlement matrix unit cases and real attempt-free branch cases; newer intent is untouched |
+| Untrusted identity versus trusted permanent failure | Decode before store access; real missing identity and unknown-kind/version/invalid-input cases prove zero attempts and trusted `dead` state |
+| Retry commit and earliest eligibility | `finish` returns committed eligibility; real retry/early delivery verifies no premature second invocation |
+| Terminal commit before ack and safe lost ack | Typed outcome matrix and stale-token/commit-failure unit cases; real dropped ack redelivers as a terminal no-op |
+| Non-renewable deadline, timeout grace, and progress | Monotonic execution budget plus cancellation and settlement reserves; deterministic timing unit test and real progress/timeout tests |
+| Graceful and forced shutdown | Bounded close lifecycle; fake resistant-fetch/handler cases and real drain/forced-loss redelivery |
+| Typed handlers and bounded outcomes | `ClaimedJob[Input]`, registered outcome validation; typed-handler and invalid-result/retry unit tests |
+| Fakes and real transport evidence | Complete resolution matrix with fakes; real pull, delayed NAK, progress, confirmed ack, redelivery, advisory, and drain tests |
+| Required verification commands | `task format`, `task check`, then `task test:worker` |
