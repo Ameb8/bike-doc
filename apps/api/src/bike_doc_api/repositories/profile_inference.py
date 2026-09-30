@@ -29,7 +29,10 @@ class ProfileInferenceRunRepository:
         """Return a run by its normal-processing idempotency tuple."""
 
         result = await self._session.execute(
-            select(ProfileInferenceRun).where(
+            select(ProfileInferenceRun)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+            .where(
                 ProfileInferenceRun.turn_id == turn_id,
                 ProfileInferenceRun.inference_schema_version
                 == inference_schema_version,

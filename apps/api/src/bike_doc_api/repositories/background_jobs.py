@@ -328,7 +328,7 @@ class BackgroundJobRepository:
         definition = validate_definition(snapshot)
         if isinstance(definition, JobError):
             self._finish(row, JobOutcome("dead", definition), now)
-            await self._session.flush()
+            await self._persist_transition(row)
             return DeliveryResolution(
                 ResolutionKind.DEFINITION_FAILURE, JobSnapshot.from_row(row)
             )
@@ -336,7 +336,7 @@ class BackgroundJobRepository:
             return DeliveryResolution(ResolutionKind.EARLY, snapshot, row.eligible_at)
         if row.attempt_count >= row.attempt_limit:
             self._finish(row, JobOutcome("dead", JobError.ATTEMPTS_EXHAUSTED), now)
-            await self._session.flush()
+            await self._persist_transition(row)
             return DeliveryResolution(
                 ResolutionKind.EXHAUSTED, JobSnapshot.from_row(row)
             )
@@ -366,8 +366,25 @@ class BackgroundJobRepository:
         if outcome.state == "retrying" and row.effect_boundary_at is not None:
             return False
         self._finish(row, outcome, now)
-        await self._session.flush()
+        await self._persist_transition(row)
         return True
+
+    async def _persist_transition(self, row: BackgroundJob) -> None:
+        """Composition seam for atomic job/domain lifecycle updates."""
+        await self._session.flush()
+
+    async def require_execution(self, *, job_id: str, execution_token: str) -> None:
+        """Hold the job lock until commit and reject expired or replaced execution."""
+        row = await self._lock(job_id)
+        now = await self._now()
+        if (
+            row is None
+            or row.state != "running"
+            or row.execution_token != execution_token
+            or row.execution_deadline is None
+            or row.execution_deadline <= now
+        ):
+            raise RuntimeError("execution no longer current")
 
     async def apply_outcome_and_load(
         self, *, job_id: str, execution_token: str, outcome: JobOutcome
@@ -502,5 +519,5 @@ class BackgroundJobRepository:
             # attempt. Preserve the policy's future eligibility for publication.
             row.desired_generation += 1
             row.publication_eligible_at = row.eligible_at
-        await self._session.flush()
+        await self._persist_transition(row)
         return True

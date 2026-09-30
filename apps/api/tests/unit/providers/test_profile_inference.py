@@ -23,13 +23,14 @@ def test_google_ai_factory_keeps_genai_client_alive() -> None:
     with patch(
         "bike_doc_api.providers.profile_inference.gemini.genai.Client",
         return_value=client,
-    ):
+    ) as factory:
         extractor = GeminiProfileInferenceExtractor.from_google_ai(
             model="gemini-test",
             timeout_seconds=5,
         )
 
     assert extractor._client is client
+    assert factory.call_args.kwargs["http_options"].retry_options.attempts == 1
 
 
 async def test_extractor_sends_versioned_topology_registry_to_model() -> None:
@@ -386,3 +387,29 @@ async def test_extractor_instruction_separates_identity_appearance_and_privacy()
     assert "visual look-alike must never be presented as exact identity" in instruction
     assert "frame serial" in instruction
     assert "VINs" in instruction
+
+
+async def test_provider_close_releases_async_and_sync_sdk_transports() -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    client = Mock()
+    client.aio.aclose = AsyncMock()
+    extractor = GeminiProfileInferenceExtractor(
+        model="test", timeout_seconds=1, generate_content=AsyncMock(), client=client
+    )
+    await extractor.close()
+    client.aio.aclose.assert_awaited_once()
+    client.close.assert_called_once()
+
+
+def test_vertex_factory_disables_nested_sdk_retries() -> None:
+    client = SimpleNamespace(
+        aio=SimpleNamespace(models=SimpleNamespace(generate_content=object()))
+    )
+    with patch(
+        "bike_doc_api.providers.profile_inference.gemini.genai.Client",
+        return_value=client,
+    ) as factory:
+        GeminiProfileInferenceExtractor.from_vertex_ai(model="test", timeout_seconds=1)
+    assert factory.call_args.kwargs["vertexai"] is True
+    assert factory.call_args.kwargs["http_options"].retry_options.attempts == 1

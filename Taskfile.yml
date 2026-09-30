@@ -30,6 +30,16 @@ tasks:
       - docker compose --env-file .env up -d --wait nats
       - cd apps/api && uv run pytest -m nats tests/integration/test_nats_compatibility.py
 
+  run:profile:
+    desc: Run the independent profile worker with the repo-root .env.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.workers.profile_role
+
+  test:profile:
+    desc: Verify the profile role with disposable PostgreSQL/JetStream and fake extraction.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh profile
+
   test:worker:
     desc: Verify shared pull workers with disposable PostgreSQL and pinned JetStream.
     cmds:

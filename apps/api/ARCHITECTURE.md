@@ -31,6 +31,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
+| `workers/` | Shared pull execution and typed registry; independently runnable profile process resources and application composition | `PullWorker`, `profile_registry`, `profile_role` |
 | `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
@@ -406,9 +407,9 @@ Reconciliation uses bounded `SKIP LOCKED` scans and conditional updates inside
 short transactions. Its policy registry is keyed by stored `(job_kind,
 input_version)`; absent definitions are omitted at the database scan. Policies
 make pure decisions about expired outcomes and safe no-progress notification
-recovery. The initial host registry is empty: the profile adapter registers its
-policy in its later task; diagnostic product terminalization belongs to its
-cutover task. Recovery of a retryable expired execution preserves attempts,
+recovery. The API host registers the profile safe-replay policy; diagnostic product
+terminalization belongs to its cutover task. `ProfileJobRepository` couples
+job transitions to existing inference-run audit state in that same transaction. Recovery of a retryable expired execution preserves attempts,
 clears the expired token, advances durable generation, and schedules publication
 at the policy's `eligible_at`. Exhaustion terminalizes as dead. No-progress
 recovery advances only eligible queued/retrying work with remaining attempts
@@ -464,7 +465,7 @@ runtime. Dependency direction is `worker role -> registry/runtime/adapters`,
 repository`, and `NATS adapter -> core/nats + official client`. Registry and
 handler interfaces import no NATS, FastAPI, providers, or ADK. A diagnostic
 store/handler must add atomic product terminalization and effect fencing in
-Chunk #137; this task supplies no diagnostic behavior or profile provider.
+Chunk #137. The profile role supplies its own isolated extractor and storage.
 
 The initial role defaults are concurrency/fetch batch 4 (bounded by the
 consumer's 128 pending acknowledgements), one-second fetches, ten-second
@@ -503,3 +504,41 @@ Issue #145 acceptance evidence (unit tests are in
 | Typed handlers and bounded outcomes | `ClaimedJob[Input]`, registered outcome validation; typed-handler and invalid-result/retry unit tests |
 | Fakes and real transport evidence | Complete resolution matrix with fakes; real pull, delayed NAK, progress, confirmed ack, redelivery, advisory, and drain tests |
 | Required verification commands | `task format`, `task check`, then `task test:worker` |
+
+## External profile inference role
+
+`workers/profile_role.py` owns a native async process, bounded PostgreSQL pool
+(no overflow), NATS connection, profile durable subscription, structured provider,
+artifact storage, signal handling, and resource shutdown. It constructs the
+complete `profile_inference` workload registry in `workers/profile_inference.py`
+and runs the shared `PullWorker`. No handler publishes or settles messages.
+The API maintenance composition imports only the pure profile recovery policy;
+it does not construct worker/provider resources.
+
+`profile_inference.v1` resolves accepted turn/artifact references through the
+existing application service. Schema `bike_profile_inference.v1` and extractor
+`drivetrain-specifications.v1` are the supported pinned implementations; unknown
+pins fail definition validation before a claim. Deploy overlapping supported
+definitions before any future version producer change.
+
+Queue attempts bypass the domain run's legacy running lease and provider retry
+loop. Domain metadata records the generic application attempt, and SDK retries
+are disabled. Provider errors and timeouts retry at a fixed bounded delay;
+exhaustion commits a dead job and exhausted domain audit. Expired execution can
+replay safely within the same attempt budget; committed completed/abstained
+runs return their result without extracting or mutating again. There is no
+profile effect boundary that prohibits replay. `ProfileJobRepository` is the
+transactional audit adapter for runtime and reconciler transitions, including
+failures before dispatch. Domain write phases verify the current job token and
+deadline under a job-row lock before mutating and again before commit.
+
+After extraction, bounded resolution retries reload ORM state after rollback
+and retry only database resolution, including commit conflicts. Claims,
+dispositions, resolutions, profile projection/revision, and completion commit
+atomically. The run's unique identity remains the authoritative result.
+
+The process accepts SIGINT/SIGTERM, stops fetching and uses the shared bounded
+shutdown/drain lifecycle, then closes provider/storage transports and disposes
+the database pool. Forced termination leaves authoritative deadline recovery.
+This expands worker support without enabling any turn producer; selection and
+canary cutover remain #147. See root README for invocation and timing settings.

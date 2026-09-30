@@ -57,6 +57,10 @@ export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL
 
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == profile ]]; then
+  uv run pytest -vv -m nats tests/integration/test_profile_worker.py
+  exit 0
+fi
 if [[ "${1:-}" == worker ]]; then
   uv run pytest -vv -m nats tests/integration/test_worker_runtime.py
   exit 0

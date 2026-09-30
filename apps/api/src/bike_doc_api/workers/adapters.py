@@ -21,8 +21,16 @@ from bike_doc_api.workers.runtime import Delivery
 
 
 class PostgresJobStore:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        *,
+        repository_factory: Callable[
+            [AsyncSession], BackgroundJobRepository
+        ] = BackgroundJobRepository,
+    ) -> None:
         self.sessions = sessions
+        self.repository_factory = repository_factory
 
     async def resolve(
         self,
@@ -31,7 +39,7 @@ class PostgresJobStore:
         validate: Callable[[JobSnapshot], ExecutionPolicy | JobError],
     ) -> DeliveryResolution:
         async with self.sessions() as session, session.begin():
-            result = await BackgroundJobRepository(session).resolve_delivery(
+            result = await self.repository_factory(session).resolve_delivery(
                 job_id=envelope.job_id,
                 generation=envelope.publication_generation,
                 workload_class=workload,
@@ -42,7 +50,7 @@ class PostgresJobStore:
     async def finish(self, job: JobSnapshot, outcome: JobOutcome) -> JobSnapshot | None:
         assert job.execution_token
         async with self.sessions() as session, session.begin():
-            result = await BackgroundJobRepository(session).apply_outcome_and_load(
+            result = await self.repository_factory(session).apply_outcome_and_load(
                 job_id=job.id, execution_token=job.execution_token, outcome=outcome
             )
         return result

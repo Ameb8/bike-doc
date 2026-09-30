@@ -182,6 +182,7 @@ class ProfileInferenceService:
         telemetry: ProfileInferenceTelemetry | None = None,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
+        before_write: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._turns = turns
         self._repair_sessions = repair_sessions
@@ -194,6 +195,7 @@ class ProfileInferenceService:
         self._running_lease_seconds = running_lease_seconds
         self._resolution_retry_limit = max(1, resolution_retry_limit)
         self._max_attempts = max(1, max_attempts)
+        self._application_attempt: int | None = None
         self._telemetry = telemetry or default_profile_inference_telemetry()
         self._resolver_policy = resolver_policy or ProfileResolverPolicy.production()
         self._resolver = ProfileInferenceResolver(
@@ -202,13 +204,20 @@ class ProfileInferenceService:
         )
         self._commit = commit
         self._rollback = rollback
+        self._before_write = before_write
 
     async def process_submitted_profile_evidence(
         self,
         turn_id: str,
+        *,
+        application_attempt: int | None = None,
+        inference_schema_version: str = INFERENCE_SCHEMA_VERSION,
     ) -> ProfileInferenceOutcome:
         """Process one accepted image turn behind a bounded retry boundary."""
 
+        if inference_schema_version != INFERENCE_SCHEMA_VERSION:
+            raise ValueError("unsupported inference schema")
+        self._application_attempt = application_attempt
         context = await self._load_base_context(turn_id)
         if context is None:
             return ProfileInferenceOutcome(ProfileInferenceStatus.SKIPPED, None)
@@ -216,6 +225,7 @@ class ProfileInferenceService:
         if not artifact_ids:
             return ProfileInferenceOutcome(ProfileInferenceStatus.SKIPPED, None)
 
+        await self._begin_write_if_configured()
         existing = await self._runs.get_by_identity(
             turn_id=turn.id,
             inference_schema_version=INFERENCE_SCHEMA_VERSION,
@@ -233,7 +243,8 @@ class ProfileInferenceService:
                 policy_mode=self._resolver_policy.outcome_mode,
             )
         if (
-            existing is not None
+            application_attempt is None
+            and existing is not None
             and existing.status == ProfileInferenceStatus.STARTED
             and existing.started_at
             > now - timedelta(seconds=self._running_lease_seconds)
@@ -252,7 +263,7 @@ class ProfileInferenceService:
             input_artifact_ids=artifact_ids,
             status=ProfileInferenceStatus.STARTED,
             claim_count=0,
-            attempt_count=1,
+            attempt_count=application_attempt or 1,
             max_attempts=self._max_attempts,
             lifecycle_outcomes=["started"],
             started_at=now,
@@ -263,13 +274,16 @@ class ProfileInferenceService:
             run.status = ProfileInferenceStatus.STARTED
             run.failure_code = None
             run.failure_class = None
-            run.attempt_count += 1
+            run.attempt_count = application_attempt or (run.attempt_count + 1)
             run.retry_count = (run.retry_count or 0) + 1
             run.max_attempts = self._max_attempts
             run.started_at = now
             run.completed_at = None
             _record_lifecycle(run, "retried")
             await self._runs.save(run)
+        if application_attempt is not None:
+            run.attempt_count = application_attempt
+            run.retry_count = application_attempt - 1
         await self._commit_if_configured()
         self._telemetry.event(
             "profile_inference_run_started",
@@ -348,6 +362,23 @@ class ProfileInferenceService:
                     policy_mode=self._resolver_policy.outcome_mode,
                 )
             self._record_provider_latency(provider_started)
+            await self._begin_write_if_configured()
+            reloaded = await self._runs.get_by_identity(
+                turn_id=turn_id,
+                inference_schema_version=INFERENCE_SCHEMA_VERSION,
+                extractor_version=self._extractor_version,
+            )
+            assert reloaded is not None
+            run = reloaded
+            if run.status in {
+                ProfileInferenceStatus.COMPLETED,
+                ProfileInferenceStatus.ABSTAINED,
+                ProfileInferenceStatus.TERMINAL_FAILURE,
+                ProfileInferenceStatus.EXHAUSTED,
+            }:
+                return _outcome_for_run(
+                    run, policy_mode=self._resolver_policy.outcome_mode
+                )
 
             try:
                 output = ProfileInferenceOutput.model_validate(raw_output)
@@ -382,10 +413,32 @@ class ProfileInferenceService:
                 )
 
             resolution_result: Any | None = None
+            bike_id, user_id, observed_at = (
+                bike.id,
+                repair_session.user_id,
+                turn.created_at,
+            )
+            resolution_turn_id = turn.id
             for resolution_attempt in range(self._resolution_retry_limit):
+                await self._begin_write_if_configured()
+                if resolution_attempt:
+                    context = await self._load_base_context(resolution_turn_id)
+                    if context is None:
+                        raise RuntimeError("profile context unavailable")
+                    turn, repair_session, bike, artifact_ids = context
+                    artifacts = await self._load_ready_images(
+                        artifact_ids=artifact_ids, repair_session=repair_session
+                    )
+                    reloaded = await self._runs.get_by_identity(
+                        turn_id=resolution_turn_id,
+                        inference_schema_version=INFERENCE_SCHEMA_VERSION,
+                        extractor_version=self._extractor_version,
+                    )
+                    assert reloaded is not None
+                    run = reloaded
                 latest_bike = await self._bikes.get_owned_active_for_update(
-                    bike_id=bike.id,
-                    user_id=repair_session.user_id,
+                    bike_id=bike_id,
+                    user_id=user_id,
                 )
                 if latest_bike is None:
                     return await self._finish(
@@ -398,10 +451,10 @@ class ProfileInferenceService:
                 try:
                     persisted_claims = await self._persist_claims(
                         run=run,
-                        bike_id=bike.id,
+                        bike_id=bike_id,
                         claims=claims,
                         artifacts=artifacts,
-                        observed_at=turn.created_at,
+                        observed_at=observed_at,
                     )
                     resolver_started = monotonic()
                     resolution_result = await self._resolver.resolve(
@@ -409,16 +462,34 @@ class ProfileInferenceService:
                         claims=persisted_claims,
                     )
                     self._record_resolver_latency(resolver_started)
-                    break
+                    run.claim_count = len(claims)
+                    finished = await self._finish(
+                        run, status=ProfileInferenceStatus.COMPLETED
+                    )
+                    self._record_resolution_telemetry(resolution_result, claims)
+                    return finished
                 except ProfileResolutionConflictError:
                     if resolver_started is not None:
                         self._record_resolver_latency(resolver_started)
                     if self._rollback is not None:
                         await self._rollback()
+                        await self._begin_write_if_configured()
+                        reloaded = await self._runs.get_by_identity(
+                            turn_id=resolution_turn_id,
+                            inference_schema_version=INFERENCE_SCHEMA_VERSION,
+                            extractor_version=self._extractor_version,
+                        )
+                        assert reloaded is not None
+                        run = reloaded
                     if resolution_attempt + 1 == self._resolution_retry_limit:
                         return await self._finish(
                             run,
-                            status=ProfileInferenceStatus.EXHAUSTED,
+                            status=(
+                                ProfileInferenceStatus.RETRYABLE_FAILURE
+                                if self._application_attempt is not None
+                                and self._application_attempt < self._max_attempts
+                                else ProfileInferenceStatus.EXHAUSTED
+                            ),
                             failure_class="transaction",
                             failure_code="transaction_conflict",
                         )
@@ -435,10 +506,23 @@ class ProfileInferenceService:
                         self._record_resolver_latency(resolver_started)
                     if self._rollback is not None:
                         await self._rollback()
+                        await self._begin_write_if_configured()
+                        reloaded = await self._runs.get_by_identity(
+                            turn_id=resolution_turn_id,
+                            inference_schema_version=INFERENCE_SCHEMA_VERSION,
+                            extractor_version=self._extractor_version,
+                        )
+                        assert reloaded is not None
+                        run = reloaded
                     if resolution_attempt + 1 == self._resolution_retry_limit:
                         return await self._finish(
                             run,
-                            status=ProfileInferenceStatus.EXHAUSTED,
+                            status=(
+                                ProfileInferenceStatus.RETRYABLE_FAILURE
+                                if self._application_attempt is not None
+                                and self._application_attempt < self._max_attempts
+                                else ProfileInferenceStatus.EXHAUSTED
+                            ),
                             failure_class="transaction",
                             failure_code="transaction_failure",
                         )
@@ -450,12 +534,7 @@ class ProfileInferenceService:
                         attempt=resolution_attempt + 1,
                     )
 
-            run.claim_count = len(claims)
-            self._record_resolution_telemetry(resolution_result, claims)
-            return await self._finish(
-                run,
-                status=ProfileInferenceStatus.COMPLETED,
-            )
+            raise RuntimeError("resolution retry loop exited without outcome")
 
     async def _persist_claims(
         self,
@@ -530,6 +609,21 @@ class ProfileInferenceService:
     ) -> bool:
         """Persist a retry transition and return whether another attempt is safe."""
 
+        if self._application_attempt is not None:
+            # Resolution retries never consume a provider/application attempt.
+            if attempt is not None:
+                return True
+            await self._finish(
+                run,
+                status=(
+                    ProfileInferenceStatus.EXHAUSTED
+                    if self._application_attempt >= self._max_attempts
+                    else ProfileInferenceStatus.RETRYABLE_FAILURE
+                ),
+                failure_class=failure_class,
+                failure_code=failure_code,
+            )
+            return False
         retry_number = attempt or ((run.retry_count or 0) + 1)
         run.status = ProfileInferenceStatus.RETRYABLE_FAILURE
         run.failure_class = failure_class
@@ -786,6 +880,7 @@ class ProfileInferenceService:
     ) -> ProfileInferenceOutcome:
         """Persist a terminal run state without touching diagnostic state."""
 
+        await self._begin_write_if_configured()
         run.status = status
         run.failure_class = failure_class
         run.failure_code = failure_code
@@ -817,6 +912,10 @@ class ProfileInferenceService:
             run,
             policy_mode=self._resolver_policy.outcome_mode,
         )
+
+    async def _begin_write_if_configured(self) -> None:
+        if self._before_write is not None:
+            await self._before_write()
 
     async def _commit_if_configured(self) -> None:
         if self._commit is not None:

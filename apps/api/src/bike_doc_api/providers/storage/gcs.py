@@ -23,6 +23,10 @@ class GCSStorageProvider:
         self._client = client or storage.Client()
         self._bucket = self._client.bucket(bucket_name)
 
+    async def close(self) -> None:
+        """Release the process-owned Google storage transport."""
+        await asyncio.to_thread(self._client.close)
+
     async def put_object(
         self,
         *,

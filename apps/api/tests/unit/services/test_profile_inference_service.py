@@ -2393,3 +2393,58 @@ def _electric_claim(
         "observed_text": str(value) if marked else None,
         "evidence_cues": ["The installed electric-assist detail is clear."],
     }
+
+
+async def test_queue_attempt_bypasses_provider_loop_and_running_lease() -> None:
+    store = _Store()
+    extractor = _SequenceExtractor(
+        [RuntimeError("private content"), _Extractor().output or {}]
+    )
+    service = _service(store, extractor)
+    service._max_attempts = 3
+    outcome = await service.process_submitted_profile_evidence(
+        "turn_rear", application_attempt=1
+    )
+    assert outcome.status == ProfileInferenceStatus.RETRYABLE_FAILURE
+    assert len(extractor.requests) == 1
+    store.runs[0].status = "started"
+    store.runs[0].started_at = datetime.now(UTC)
+    successful = _Extractor()
+    service = _service(store, successful)
+    service._max_attempts = 3
+    assert (
+        await service.process_submitted_profile_evidence(
+            "turn_rear", application_attempt=2
+        )
+    ).status == ProfileInferenceStatus.COMPLETED
+    assert (store.runs[0].attempt_count, store.runs[0].retry_count) == (2, 1)
+    revision = store.bike.profile_revision
+    await service.process_submitted_profile_evidence("turn_rear", application_attempt=3)
+    assert len(successful.requests) == 1 and store.bike.profile_revision == revision
+
+
+async def test_queue_last_provider_failure_exhausts_one_call() -> None:
+    store = _Store()
+    extractor = _Extractor(error=RuntimeError())
+    service = _service(store, extractor)
+    service._max_attempts = 3
+    assert (
+        await service.process_submitted_profile_evidence(
+            "turn_rear", application_attempt=3
+        )
+    ).status == ProfileInferenceStatus.EXHAUSTED
+    assert len(extractor.requests) == 1
+    assert store.runs[0].attempt_count == 3
+
+
+async def test_resolution_retry_does_not_change_queue_attempt_or_recall_provider() -> (
+    None
+):
+    store = _Store()
+    store.fail_resolution_for = "brakes.rear.actuation"
+    extractor = _Extractor()
+    service = _service(store, extractor)
+    service._max_attempts = 3
+    await service.process_submitted_profile_evidence("turn_rear", application_attempt=2)
+    assert len(extractor.requests) == 1
+    assert store.runs[0].attempt_count == 2
