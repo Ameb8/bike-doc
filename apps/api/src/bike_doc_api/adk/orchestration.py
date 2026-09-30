@@ -193,7 +193,7 @@ class DiagnosticTurnOrchestrator:
             phase_session = await self.phase_sessions.get(
                 turn_snapshot.repair_phase_session_id,
             )
-            if phase_session is None:
+            if phase_session is None or phase_session.adk_session_id is None:
                 raise NotFoundError()
 
             visual_context = await self._prepare_visual_context(

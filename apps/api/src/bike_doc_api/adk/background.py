@@ -17,6 +17,7 @@ from bike_doc_api.adk.agents.diagnostic import (
 )
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
 from bike_doc_api.adk.runner import DiagnosticRunner
+from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
 from bike_doc_api.adk.tools.artifacts import ListDiagnosticArtifactsTool
 from bike_doc_api.adk.tools.bike_profile import (
     BikeProfileServiceProtocol,
@@ -261,6 +262,19 @@ async def _execute_diagnostic_turn_attempt(
                     outcome="terminal_error",
                 )
                 return
+            if phase_session.adk_session_id is None:
+                # Acceptance owns only the reference. Serialize binding using the
+                # same session lock as acceptance, outside the HTTP transaction.
+                await repair_sessions.get_for_update(repair_session_id)
+                await session.refresh(phase_session)
+                if phase_session.adk_session_id is None:
+                    phase_session.adk_session_id = await DiagnosticADKSessionClient(
+                        get_adk_session_service()
+                    ).ensure_unbound_session(
+                        phase_session_id=phase_session.id,
+                        repair_session_id=repair_session_id,
+                    )
+                    await session.commit()
             turn_index = (
                 await turns.count_for_phase_session_through_start_event_sequence(
                     repair_phase_session_id=phase_session.id,

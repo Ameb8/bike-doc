@@ -1085,10 +1085,11 @@ provide the explicit settings/secrets, and allow at least 120 seconds for proces
 shutdown. The role needs the profile workload consumer and advisory subjects;
 publication belongs to the API maintenance host.
 
-This command expands worker support only. Turn producers and executor selection
-are still deferred to #147; existing HTTP turns continue using their selected
-legacy executor. Do not manually enqueue a turn already selected for background
-inference. The profile role supports `profile_inference.v1`, schema
+Turn acceptance defaults to the legacy profile executor. Set
+`BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` only after the compatible
+worker and API maintenance host are running. The accepted job records this
+selection permanently; settings changes affect only future acceptances. Never
+manually enqueue legacy-selected work. The profile role supports `profile_inference.v1`, schema
 `bike_profile_inference.v1`, and extractor `drivetrain-specifications.v1`.
 Unsupported pins fail permanently before consuming an application attempt.
 Future behavior/version changes require deploying compatible workers first.
@@ -1119,4 +1120,49 @@ run audit metadata. Routine worker output uses only bounded categories.
 `task test:profile` creates disposable migrated PostgreSQL and pinned JetStream,
 uses fake storage/extraction behavior, and verifies role consumption, crash
 recovery, idempotent effects, database resolution retries, timeout and provider
-exhaustion. It never enables a turn producer or calls a real model.
+exhaustion. It accepts queue-selected turns with fake providers and never calls a real model.
+
+
+### Profile queue canary and rollback
+
+1. Apply migrations through `0010` before running the new API/worker image.
+   Keep `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=legacy` during expansion.
+2. Start PostgreSQL and pinned NATS, then the API with
+   `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` and the profile worker using the
+   invocation above. The worker logs `profile_worker_ready` after connecting,
+   verifying migrated job storage, validating topology and constructing its
+   supported registry. Inspect the
+   profile durable consumer separately from PostgreSQL job state. The worker
+   can start idle while producers remain disabled; no standalone maintenance
+   deployment is needed.
+3. Run `task format`, `task check`, then `task test:profile-canary`. This command
+   creates disposable PostgreSQL 16 and NATS 2.12.1 with file-backed volumes,
+   migrates them, and combines maintenance/runtime failure injection with the
+   accepted-turn profile role tests. No model credentials are required. It
+   verifies acceptance during broker outage, pinned inputs, rollback, concurrent
+   replay, publisher loss after broker acknowledgement, broker/worker restart,
+   duplicate/stale/future/wrong-subject/malformed/unsupported delivery, early and
+   running duplicates, timeout, dropped acknowledgements, graceful/forced loss,
+   no-progress reconciliation, and ambiguous provider loss within one attempt
+   budget. A separate Python worker process is killed with SIGKILL inside fake
+   extraction, recovered through the publisher, restarted, and drained with
+   SIGTERM; it verifies the shared budget and one committed profile effect. Each suite inspects database rows and consumer state independently.
+4. Enable `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` on API producers
+   (`task run` with root `.env`, or recreate the Compose API). Eligible image turns
+   now commit one profile job, input and generation intent with `turn.started`.
+   Text-only turns create no job. HTTP `202` needs no broker connection. Diagnostic
+   processing continues through its existing background executor and does not
+   wait for profile inference. The route never publishes a notification.
+
+For rollback, stop/drain the profile consumer (`docker compose stop profile-worker`
+with its 120-second grace period), inspect running jobs and deadlines, and retain
+all PostgreSQL intent and inference rows. Select `legacy` for future work only
+when it is proven safe; do not send accepted queue jobs to the legacy executor.
+Pending queue work waits for a compatible worker to resume, using maintenance
+recovery and the same bounded attempt budget. Replays create or schedule no work
+under either setting. Do not downgrade migration `0010` while unbound accepted
+phase references remain; its downgrade fails instead of deleting accepted work.
+
+The canary adds no diagnostic jobs and removes no diagnostic executor. Production
+monitoring/load certification, broker reconstruction and diagnostic queue cutover
+remain later Chunk work.

@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 import structlog
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bike_doc_api.core.config import (
@@ -15,6 +16,7 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
+from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.providers.storage import GCSStorageProvider, LocalStorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
@@ -128,6 +130,9 @@ async def profile_worker(
     )
     registry = profile_registry(settings, application.handle)
     try:
+        # Readiness requires migrated job storage, even while producers are disabled.
+        async with sessions() as session:
+            await session.execute(select(BackgroundJob.id).limit(0))
         async with nats_connection(settings) as client:
             js = jetstream(client)
             await ensure_work_topology(js, settings)
@@ -197,6 +202,11 @@ async def run_profile_role(settings: Settings) -> None:
                 settings, extractor=extractor, storage=storage
             ) as runtime:
                 runtime.start()
+                structlog.get_logger(__name__).info(
+                    "profile_worker_ready",
+                    workload="profile_inference",
+                    input_version=1,
+                )
                 await stop.wait()
         finally:
             for sig in (signal.SIGINT, signal.SIGTERM):

@@ -17,6 +17,7 @@ from bike_doc_api.api.v1 import turns as turns_route
 from bike_doc_api.api.v1.events import get_event_service
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.errors import AuthenticationError
+from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import (
@@ -199,7 +200,7 @@ class _InMemoryTurnStore:
             return model
         if isinstance(model, RepairTurnModel):
             if model.id is None:
-                model.id = f"turn_{len(self.turns) + 1}"
+                model.id = generate_prefixed_ulid("turn_")
             model.created_at = datetime(2026, 1, 1, len(self.turns) + 1, tzinfo=UTC)
             self.turns[(model.repair_session_id, model.client_turn_id)] = model
             return model
@@ -978,3 +979,81 @@ async def test_lifespan_maintenance_broker_failure_does_not_block_valid_acceptan
         assert turn_service_override.background_calls
         repository.confirm_publication.assert_not_awaited()
     publisher.close.assert_awaited_once()
+
+
+@pytest.mark.parametrize("has_image", [False, True])
+async def test_queue_selected_turn_uses_only_external_profile_executor(
+    app: FastAPI,
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+    has_image: bool,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from bike_doc_api.services.background_jobs import BackgroundJobService
+
+    store = turn_service_override
+    recorder = AsyncMock()
+    service = TurnService(
+        store,
+        store,
+        store,
+        store,
+        store,
+        background_jobs=BackgroundJobService(recorder),
+        profile_inference_execution="durable_queue",
+    )
+    app.dependency_overrides[get_turn_service] = lambda: service
+    payload = _valid_turn_payload(
+        message={
+            "text": "Inspect this",
+            "artifact_ids": [OWNED_ARTIFACT_ID] if has_image else [],
+        }
+    )
+    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert first.status_code == 202
+    assert len(store.background_calls) == 1
+    assert store.profile_inference_calls == []
+    assert recorder.record.await_count == int(has_image)
+    # A replay under the opposite rollout selection cannot schedule either executor.
+    legacy = TurnService(store, store, store, store, store)
+    app.dependency_overrides[get_turn_service] = lambda: legacy
+    second = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert second.json() == first.json()
+    assert len(store.background_calls) == 1 and store.profile_inference_calls == []
+    assert recorder.record.await_count == int(has_image)
+
+
+async def test_legacy_replay_after_queue_enablement_does_not_enqueue(
+    app: FastAPI,
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from bike_doc_api.services.background_jobs import BackgroundJobService
+
+    store = turn_service_override
+    payload = _valid_turn_payload(
+        message={"text": "Inspect", "artifact_ids": [OWNED_ARTIFACT_ID]}
+    )
+    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert first.status_code == 202
+    recorder = AsyncMock()
+    queue = TurnService(
+        store,
+        store,
+        store,
+        store,
+        store,
+        background_jobs=BackgroundJobService(recorder),
+        profile_inference_execution="durable_queue",
+    )
+    app.dependency_overrides[get_turn_service] = lambda: queue
+    replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert replay.json() == first.json()
+    recorder.record.assert_not_awaited()
+    assert len(store.background_calls) == 1
+    assert store.profile_inference_calls == [first.json()["turn_id"]]

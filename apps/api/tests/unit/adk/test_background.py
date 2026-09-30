@@ -132,6 +132,7 @@ class _PhaseSessionRepository:
                 "id": phase_session_id,
                 "repair_session_id": self._store.session.id,
                 "phase": "diagnostic",
+                "adk_session_id": "adk_existing",
                 "diagnostic_report_schema_version": "diagnostic_report.v2",
             },
         )()

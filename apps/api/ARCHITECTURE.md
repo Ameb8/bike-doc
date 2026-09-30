@@ -540,5 +540,61 @@ atomically. The run's unique identity remains the authoritative result.
 The process accepts SIGINT/SIGTERM, stops fetching and uses the shared bounded
 shutdown/drain lifecycle, then closes provider/storage transports and disposes
 the database pool. Forced termination leaves authoritative deadline recovery.
-This expands worker support without enabling any turn producer; selection and
-canary cutover remain #147. See root README for invocation and timing settings.
+See root README for invocation, timing settings and worker-first canary rollout.
+
+
+## Atomic profile canary acceptance
+
+`Settings.profile_inference_execution` is a deployment-only `legacy` (default) or
+`durable_queue` selection. The turn route composes `BackgroundJobService` over the
+same request session as turn/event/session repositories. In queue mode,
+`TurnService` validates all image evidence, locks the repair session, records an
+app-owned phase reference (null ADK binding until executor initialization), the
+turn and `turn.started`, state updates, and the strict `profile_inference.v1` job
+before committing once. Migration `0010` permits the unbound phase reference.
+The job pins `bike_profile_inference.v1` and the configured extractor; the existing
+canonical tuple hash and database unique key define its logical identity.
+
+A committed job is the durable selection. `last_profile_job_recorded` is the
+request-local scheduling result, set after recording intent. The route schedules
+the legacy profile function only for a new eligible acceptance without a job;
+it schedules the existing diagnostic function independently. Idempotent replay
+exits before selecting any executor, including after configuration changes.
+Neither acceptance nor route constructs broker messages or opens NATS.
+
+Queue-mode phase creation avoids ADK I/O and preliminary commits. The existing
+diagnostic background host binds an unbound reference under the repair-session
+lock after acceptance, using a deterministic ADK ID derived from the phase ID.
+An initialization crash before binding resumes that ID; bound sessions retain
+the existing missing-session policy. Legacy acceptance retains its existing ADK
+phase-manager behavior during this canary. Diagnostic effect fencing and queue
+execution remain Chunk #137 work.
+
+`task test:profile-canary` runs the integrated real PostgreSQL/JetStream matrix
+with fake extraction. Profile tests now create their jobs through turn acceptance,
+then exercise the real profile handler and shared runtime. Maintenance/runtime
+suites supply the remaining transport and lifecycle injections. README documents
+expand-first deployment, the worker readiness event, exactly-one-executor
+selection and rollback preserving accepted queue work.
+
+Issue #147 acceptance evidence:
+
+| Criterion | Implementation and verification |
+| --- | --- |
+| Atomic turn/event/job/pins/intent and rollback | `TurnService` with one request transaction; profile fixture checks the committed rows and null phase binding; rollback tests cover commit loss, invalid pin and invalid artifact with no phase/turn/event/job intent left behind |
+| Acceptance without NATS; later publication | Real HTTP outage canary stops NATS, receives `202`, then runs `JobMaintenance` and the profile worker after restart |
+| Idempotent and concurrent acceptance | API replay tests switch selection in both directions; real same-key concurrent acceptance yields one turn/job/event; distinct-key concurrency cannot bypass running-session validation |
+| Ineligible and legacy work | Unit/API image and text selection tests; existing invalid-artifact and legacy profile tests remain active |
+| Exactly one executor; no route publication | API scheduling spies and real outage route prove queue work skips the legacy profile function while diagnostic work is scheduled; route imports only the recorder, never NATS |
+| Worker-first compatibility/readiness | Idle real profile worker constructed with legacy producer selection; `profile_worker_ready` process event; README expansion sequence |
+| One authoritative run/effects through loss and restart | Accepted-turn crash/effect tests, acknowledgement-window/broker/worker restart canary, and independent SIGKILL/restart/SIGTERM worker test with real PostgreSQL/JetStream and fake provider |
+| Stale/future/subject/malformed/unknown definitions | Real shared-runtime fail-closed matrix plus profile unsupported-pin tests; no provider invocation or attempt for rejected definitions |
+| Duplicate/retry/timeout/ack/shutdown/reconciliation/budget | Real maintenance/runtime matrix and accepted-turn profile timeout, resistant provider, exhaustion, ambiguous loss and external-process tests |
+| Workload isolation | Profile pull-loop test inspects the untouched diagnostic durable consumer separately from job/run/profile rows |
+| Unchanged HTTP/events; runnable diagnostic path | Existing API/contract/event tests; real deferred-binding diagnostic executor test resumes initialization after simulated binding loss |
+| Required checks and integrated canary | `task format`, `task check`, then `task test:profile-canary`; the latter runs the real maintenance/runtime/profile suites and PostgreSQL job persistence tests |
+
+This canary creates no `diagnostic_turn` job, introduces no profile dependency
+for diagnostic eligibility, and retains the diagnostic background executor.
+Monitoring, broker reconstruction, cleanup and load certification remain outside
+this Task's scope.

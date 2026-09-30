@@ -173,6 +173,7 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy"
     profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)
     profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)

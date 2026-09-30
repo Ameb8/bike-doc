@@ -57,6 +57,12 @@ export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL
 
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == canary ]]; then
+  uv run pytest -vv -m nats tests/integration/test_job_maintenance.py tests/integration/test_worker_runtime.py tests/integration/test_profile_worker.py
+  BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \
+    uv run pytest tests/unit/repositories/test_background_job_persistence.py
+  exit 0
+fi
 if [[ "${1:-}" == profile ]]; then
   uv run pytest -vv -m nats tests/integration/test_profile_worker.py
   exit 0

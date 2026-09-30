@@ -669,3 +669,15 @@ def test_local_unsigned_jwt_mode_is_rejected_in_production() -> None:
 def test_firebase_auth_mode_requires_project_id() -> None:
     with pytest.raises(ValidationError):
         Settings(environment="local", auth_mode="firebase")
+
+
+def test_profile_executor_selection_defaults_to_legacy_and_rejects_unknown() -> None:
+    assert Settings().profile_inference_execution == "legacy"
+    assert (
+        Settings(
+            profile_inference_execution="durable_queue"
+        ).profile_inference_execution
+        == "durable_queue"
+    )
+    with pytest.raises(ValueError):
+        Settings(profile_inference_execution="both")

@@ -35,6 +35,11 @@ tasks:
     cmds:
       - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.workers.profile_role
 
+  test:profile-canary:
+    desc: Run atomic acceptance and the integrated profile PostgreSQL/JetStream failure matrix.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh canary
+
   test:profile:
     desc: Verify the profile role with disposable PostgreSQL/JetStream and fake extraction.
     cmds:
