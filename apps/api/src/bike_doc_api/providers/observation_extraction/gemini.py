@@ -87,7 +87,12 @@ class GeminiDiagnosticObservationExtractor:
     ) -> GeminiDiagnosticObservationExtractor:
         """Build an adapter using Google AI Studio credentials."""
 
-        client = genai.Client()
+        client = genai.Client(
+            http_options=types.HttpOptions(
+                timeout=int(timeout_seconds * 1000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            )
+        )
         return cls(
             model=model,
             timeout_seconds=timeout_seconds,
@@ -104,13 +109,27 @@ class GeminiDiagnosticObservationExtractor:
     ) -> GeminiDiagnosticObservationExtractor:
         """Build an adapter using configured Vertex AI credentials."""
 
-        client = genai.Client(vertexai=True)
+        client = genai.Client(
+            vertexai=True,
+            http_options=types.HttpOptions(
+                timeout=int(timeout_seconds * 1000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
         return cls(
             model=model,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
             client=client,
         )
+
+    async def close(self) -> None:
+        """Close both async and synchronous SDK transports owned by this adapter."""
+        if self._client is not None:
+            try:
+                await self._client.aio.aclose()
+            finally:
+                await asyncio.to_thread(self._client.close)
 
     async def extract(
         self,

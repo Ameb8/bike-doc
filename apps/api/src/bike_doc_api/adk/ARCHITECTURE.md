@@ -352,3 +352,29 @@ direction materially changes.
 - [ADK wiring specification](../../../../../docs/specs/apps/adk-wiring-spec.md)
 - [Diagnostic report schema](../../../../../docs/specs/apps/diagnostic-report-v1.md)
 - [Diagnostic safety rules](../../../../../docs/specs/apps/safety-diagnostic.md)
+
+## Shared external diagnostic execution
+
+`execution.py` composes one `DiagnosticTurnOrchestrator`, agent, normalized runner,
+visual context, input-request/report/safety tools and their product services.
+Its explicit `DiagnosticResources` argument carries process-owned transports;
+the fresh product session is local to an executor attempt. The transitional
+`background.py` and external `workers/diagnostic_application.py` call the same
+composition. The worker does not import HTTP routes or dependency factories.
+
+The queue application resolves only a typed `turn_id` from the claimed job and
+loads accepted text, artifacts and repair/phase identity from authoritative turn
+storage. It completes durable ADK ensure/resume and binding before orchestration.
+The orchestrator continues to load mutable profile/resolved claims and the
+existing history service at execution and preserves its normalized event and
+privacy-safe telemetry behavior. `execution_telemetry.py` holds the existing
+bounded completion summaries, spans and metrics shared by both hosts.
+
+`resources.py` supplies the external process's durable ADK pool and explicit
+model/provider/storage lifetimes. `diagnostic_model.py` bounds model calls and
+replaces provider exceptions with a fixed category before ADK records them.
+SDK retries are disabled; storage, observation and price calls are bounded.
+The thin diagnostic process host owns the NATS connection and imports the
+shared queue runtime. Cancellation remains cancellation; it does not create a
+business state. Producer enablement, execution-token effect protection and
+atomic failure repair remain the later #150–#152 contracts.

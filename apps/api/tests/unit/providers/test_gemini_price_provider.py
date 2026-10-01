@@ -497,6 +497,13 @@ async def test_gemini_provider_logs_search_lifecycle(
         for record in caplog.records
         if record.msg["event"] == "price_lookup_search_completed"
     )
-    assert completed.msg["requirement_name"] == "Chain checker"
+    assert "requirement_name" not in completed.msg
+    assert "Chain checker" not in repr([record.msg for record in caplog.records])
+    assert "Chain Wear Indicator Tool" not in repr(
+        [record.msg for record in caplog.records]
+    )
+    assert "bike chain checker tool" not in repr(
+        [record.msg for record in caplog.records]
+    )
     assert completed.msg["status"] == "priced_listing_found"
     assert completed.msg["primary_listing_price"] == 17.95

@@ -57,6 +57,10 @@ export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL
 
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == diagnostic ]]; then
+  uv run pytest -vv -m nats tests/integration/test_diagnostic_worker.py
+  exit 0
+fi
 if [[ "${1:-}" == sessions ]]; then
   uv run pytest -vv tests/integration/test_deferred_diagnostic_sessions.py tests/integration/test_adk_postgres.py
   BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \

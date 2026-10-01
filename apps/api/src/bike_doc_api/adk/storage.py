@@ -96,11 +96,20 @@ def _check_schema(connection: Connection) -> None:
         raise RuntimeError("ADK retention guard is missing; run migrations")
 
 
-async def open_adk_session_service(settings: Settings) -> DatabaseSessionService:
+async def open_adk_session_service(
+    settings: Settings, *, pool_size: int | None = None
+) -> DatabaseSessionService:
     """Validate deployed schema and create one closeable service for this process."""
 
     try:
-        service = DatabaseSessionService(db_url=settings.database_url)
+        service = DatabaseSessionService(
+            db_url=settings.database_url,
+            **(
+                {"pool_size": pool_size, "max_overflow": 0}
+                if pool_size is not None
+                else {}
+            ),
+        )
     except ValueError:
         raise RuntimeError(
             "Unable to initialize ADK PostgreSQL storage; check database configuration"

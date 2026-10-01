@@ -35,6 +35,16 @@ tasks:
       - docker compose --env-file .env up -d --wait nats
       - cd apps/api && uv run pytest -m nats tests/integration/test_nats_compatibility.py
 
+  run:diagnostic:
+    desc: Run the independent diagnostic worker with the repo-root .env.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.workers.diagnostic_role
+
+  test:diagnostic:
+    desc: Verify diagnostic role with disposable PostgreSQL/JetStream and fake model/providers.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh diagnostic
+
   run:profile:
     desc: Run the independent profile worker with the repo-root .env.
     cmds:

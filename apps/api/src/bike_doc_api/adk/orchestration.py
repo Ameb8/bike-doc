@@ -844,7 +844,9 @@ def _visual_error_message(code: str) -> str:
 def _start_span(name: str) -> AbstractContextManager[trace.Span]:
     """Resolve the process-global tracer at use time for ADK provider sharing."""
 
-    return trace.get_tracer(__name__).start_as_current_span(name)
+    return trace.get_tracer(__name__).start_as_current_span(
+        name, record_exception=False, set_status_on_exception=False
+    )
 
 
 def _visual_span_attributes(context: DiagnosticVisualContext) -> dict[str, bool | int]:

@@ -547,7 +547,7 @@ class ReportService:
                 requirements,
             )
         except Exception:
-            logger.exception(
+            logger.warning(
                 "diagnostic_report_cost_estimate_degraded",
                 diagnostic_session_id=report.diagnostic_session_id,
                 requirement_count=len(requirements),

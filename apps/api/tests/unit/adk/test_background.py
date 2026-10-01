@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from bike_doc_api.adk import background
+from bike_doc_api.adk import background, execution
 from bike_doc_api.core.config import Settings
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
 from bike_doc_api.models.user import User
@@ -341,50 +341,46 @@ def test_background_composition_builds_visual_context_with_fresh_dependencies(
             captured["save_report_kwargs"] = kwargs
 
     monkeypatch.setattr(background, "get_storage_provider", lambda _settings: storage)
-    monkeypatch.setattr(background, "TurnService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "TurnService", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background,
+        execution,
         "RepairSessionService",
         lambda *args, **kwargs: object(),
     )
     monkeypatch.setattr(
-        background,
+        execution,
         "ResolvedBikeProfileService",
         lambda *args, **kwargs: object(),
     )
-    monkeypatch.setattr(background, "ArtifactService", lambda *args, **kwargs: object())
-    monkeypatch.setattr(background, "ReportService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "ArtifactService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "ReportService", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background,
+        execution,
         "DiagnosticSafetyService",
         lambda *args, **kwargs: object(),
     )
+    monkeypatch.setattr(execution, "DiagnosticRunner", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background, "DiagnosticRunner", lambda *args, **kwargs: object()
-    )
-    monkeypatch.setattr(
-        background, "create_diagnostic_agent", lambda *args, **kwargs: object()
+        execution, "create_diagnostic_agent", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(background, "get_adk_session_service", lambda: object())
     monkeypatch.setattr(
         background, "_build_cost_estimate_service", lambda _settings: None
     )
-    monkeypatch.setattr(background, "GetBikeProfileTool", lambda *args: object())
-    monkeypatch.setattr(background, "LookupRepairHistoryTool", lambda *args: object())
+    monkeypatch.setattr(execution, "GetBikeProfileTool", lambda *args: object())
+    monkeypatch.setattr(execution, "LookupRepairHistoryTool", lambda *args: object())
     monkeypatch.setattr(
-        background, "ListDiagnosticArtifactsTool", lambda *args: object()
+        execution, "ListDiagnosticArtifactsTool", lambda *args: object()
+    )
+    monkeypatch.setattr(execution, "RequestDiagnosticInputTool", lambda *args: object())
+    monkeypatch.setattr(execution, "RaiseSafetyFlagTool", lambda *args: object())
+    monkeypatch.setattr(
+        execution, "SaveDiagnosticReportTool", _SaveDiagnosticReportTool
     )
     monkeypatch.setattr(
-        background, "RequestDiagnosticInputTool", lambda *args: object()
+        execution, "DiagnosticVisualContextService", _VisualContextService
     )
-    monkeypatch.setattr(background, "RaiseSafetyFlagTool", lambda *args: object())
-    monkeypatch.setattr(
-        background, "SaveDiagnosticReportTool", _SaveDiagnosticReportTool
-    )
-    monkeypatch.setattr(
-        background, "DiagnosticVisualContextService", _VisualContextService
-    )
-    monkeypatch.setattr(background, "DiagnosticTurnOrchestrator", _Orchestrator)
+    monkeypatch.setattr(execution, "DiagnosticTurnOrchestrator", _Orchestrator)
 
     background._build_background_orchestrator(session=fresh_session, settings=settings)
 

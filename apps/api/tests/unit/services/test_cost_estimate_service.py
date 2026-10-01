@@ -188,7 +188,10 @@ async def test_estimate_plan_cost_logs_lookup_flow(caplog: Any) -> None:
         for record in caplog.records
         if record.msg["event"] == "plan_cost_item_lookup_completed"
     )
-    assert completed.msg["requirement_name"] == "Shimano HG54 10-speed chain"
+    assert "requirement_name" not in completed.msg
+    assert "Shimano HG54 10-speed chain" not in repr(
+        [record.msg for record in caplog.records]
+    )
     assert completed.msg["status"] == "priced_listing_found"
 
 
@@ -209,8 +212,13 @@ async def test_estimate_plan_cost_logs_degraded_lookup(caplog: Any) -> None:
         for record in caplog.records
         if record.msg["event"] == "plan_cost_item_lookup_degraded"
     )
-    assert degraded.msg["requirement_name"] == "Cassette lockring tool"
-    assert degraded.msg["search_query"] == "Cassette lockring tool"
+    assert "requirement_name" not in degraded.msg
+    assert "Cassette lockring tool" not in repr(
+        [record.msg for record in caplog.records]
+    )
+    assert "provider unavailable" not in repr([record.msg for record in caplog.records])
+    assert degraded.exc_info is None
+    assert "search_query" not in degraded.msg
 
 
 def _requirement(item_type: str, name: str, **overrides: Any) -> PriceLookupRequirement:

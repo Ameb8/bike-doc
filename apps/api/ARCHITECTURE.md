@@ -31,7 +31,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
-| `workers/` | Shared pull execution and typed registry; independently runnable profile process resources and application composition | `PullWorker`, `profile_registry`, `profile_role` |
+| `workers/` | Shared pull execution and typed registry; independently runnable profile and diagnostic process resources and application composition | `PullWorker`, `profile_registry`, `diagnostic_registry`, workload roles |
 | `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
@@ -648,3 +648,65 @@ resume are real.
 
 This task does not record or register diagnostic jobs, change diagnostic executor
 selection, start a diagnostic worker, or implement effect fencing/retry policy.
+
+## Diagnostic worker composition (#149)
+
+`adk/execution.py:build_diagnostic_orchestrator` is the single diagnostic graph.
+The legacy `adk/background.py` host and `workers/diagnostic_application.py` both
+compose it with a fresh executor-owned product session. `DiagnosticResources`
+contains only process transports: durable ADK sessions, storage, observation
+extraction, optional cost estimation, and an optional model. Neither worker
+composition nor the graph imports route handlers or FastAPI dependency objects.
+The legacy host adapts its existing API-lifespan resources to this same graph.
+
+`workers/diagnostic.py` registers exactly `diagnostic_turn` / input version 1
+(`diagnostic_turn.v1`) in the complete `diagnostic` workload allowlist. Its typed
+handler receives `ClaimedJob[DiagnosticTurnInputV1]`, including identity, attempt,
+execution token and deadline; transport settlement stays in the shared runtime.
+The input contains only `turn_id`. At execution, the application loads the turn,
+its repair/phase references and owner from PostgreSQL, ensures/resumes the exact
+durable ADK binding, commits it, then calls the shared orchestrator. Accepted
+text/artifact references come from the turn row. The orchestrator snapshots them
+and reads current resolved bike profile and the existing repair-history service
+at execution, preserving independent profile-inference timing.
+
+Known transient preparation failures alone return bounded retry categories.
+Confirmed missing bound ADK state returns a permanent pre-effect failure without
+orchestration. Handled runner errors return job success after the existing
+orchestrator durably settles the public turn; cancellation and unknown failures
+propagate. Model errors are redacted before entering dependency telemetry. Optional pricing
+lifecycle summaries omit requirement/search/listing text and raw exception traces, and
+all completion logs/metrics reuse the bounded diagnostic telemetry contract.
+
+`workers/diagnostic_role.py` owns the product pool (no overflow), NATS connection,
+diagnostic durable subscription, advisory observation, complete registry and
+shared runtime. `adk/resources.py` owns a separately bounded PostgreSQL ADK pool,
+SDK model, storage and optional provider clients. It closes partial startup
+resources and uses bounded shutdown after runtime drain. Committed event hints
+reuse that same NATS connection via `NatsEventPublisher`; polling remains the
+fallback. Dependency direction is `diagnostic role -> resources/application ->
+shared diagnostic composition -> orchestration/services`, and `role -> shared
+registry/runtime/adapters`. No worker copies pull/claim/progress/retry/settlement
+or shutdown algorithms.
+
+This task does not enable a diagnostic producer. The policy declares a fenced
+workload and conservative interruption on timeout; expired-execution recovery
+returns no transition until #151 supplies atomic diagnostic product repair.
+Effect-token enforcement belongs to #150, and terminalization of pre-boundary
+failure/exhaustion and post-boundary loss belongs to #151. These are required
+before canary producers may run (#152). Do not add this provisional recovery
+policy to generic maintenance to simulate completed terminalization.
+
+| #149 acceptance | Evidence |
+| --- | --- |
+| Exact allowlist and complete policy | `diagnostic_registry`, `diagnostic_policy`; exact dispatch, duplicate/workload/missing-policy and invalid input/attempt tests |
+| Claimed typed input and immutable instruction | Handler tests inspect all claimed fields; real seeded role loads accepted text/artifacts through the turn |
+| Current supporting context | Shared orchestrator seed lookups; real test changes the bike after acceptance and verifies current ADK context |
+| Durable precondition before orchestration | Preparation-order tests; real deterministic binding and confirmed missing-binding rejection |
+| Shared legacy/queue graph | Existing background composition test now spies on `execution.py`; real role uses that graph and actual normalized ADK runner |
+| No handler transport authority | `diagnostic.py` imports only typed registry/application contracts and bounded outcomes |
+| Complete thin resource-owning role | Fake process/pool/NATS lifecycle tests and real PostgreSQL/JetStream diagnostic durable consumer |
+| Typed timing/concurrency/pool validation | Invalid provider/handler/hard/grace/shutdown/fetch/pool/progress/attempt configuration tests; `.env.example` and Compose invocation |
+| Cancellation propagation | Handler cancellation/unknown-error tests; shared runtime timeout/shutdown tests remain active |
+| Bounded content-safe outcomes and telemetry | Model error redaction and provider failure tests; real test checks accepted content, provider exception text and artifact paths are absent from logs |
+| Verification | `task format`, `task check`, `task test:diagnostic`; existing ADK orchestration/runner/service suites stay active |
