@@ -38,6 +38,7 @@ from bike_doc_api.adk.tools.reports import (
     SaveDiagnosticReportTool,
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
+from bike_doc_api.core.diagnostic_execution import DiagnosticExecution
 from bike_doc_api.schemas.common import ArtifactPurpose
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
@@ -64,6 +65,7 @@ class DiagnosticAgentToolDependencies:
     input_request_service: DiagnosticInputRequestServiceProtocol
     safety_service: SafetyServiceProtocol
     report_service: DiagnosticReportServiceProtocol
+    execution: DiagnosticExecution | None = field(default=None, repr=False)
     # Private composition dependency; it is never part of an ADK tool schema.
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry
@@ -74,6 +76,14 @@ def build_tool_catalog(
     dependencies: DiagnosticAgentToolDependencies,
 ) -> tuple[FunctionTool, ...]:
     """Build the V2-only diagnostic ADK FunctionTool catalog."""
+
+    def context_from_tool_context(
+        tool_context: ToolContext | None,
+    ) -> DiagnosticToolContext | dict[str, Any]:
+        context = _context_from_tool_context(tool_context)
+        if isinstance(context, DiagnosticToolContext):
+            context._execution = dependencies.execution
+        return context
 
     bike_profile_tool = GetBikeProfileTool(dependencies.bike_profile_service)
     repair_history_tool = LookupRepairHistoryTool(
@@ -92,7 +102,7 @@ def build_tool_catalog(
     async def get_bike_profile(tool_context: ToolContext) -> dict[str, Any]:
         """Return bike profile context for the active repair session."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await bike_profile_tool.run(
@@ -107,7 +117,7 @@ def build_tool_catalog(
     ) -> dict[str, Any]:
         """Return relevant prior repair records for the active bike."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await repair_history_tool.run(
@@ -125,7 +135,7 @@ def build_tool_catalog(
     ) -> dict[str, Any]:
         """Return diagnostic artifact metadata for the active repair session."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await artifacts_tool.run(
@@ -148,7 +158,7 @@ def build_tool_catalog(
     ) -> dict[str, Any]:
         """Persist a structured request for more diagnostic input."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await input_request_tool.run(
@@ -171,7 +181,7 @@ def build_tool_catalog(
     ) -> dict[str, Any]:
         """Persist a diagnostic safety flag through backend safety rules."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await safety_tool.run(
@@ -190,7 +200,7 @@ def build_tool_catalog(
     ) -> dict[str, Any]:
         """Persist the completed diagnostic report for the active phase session."""
 
-        context = _context_from_tool_context(tool_context)
+        context = context_from_tool_context(tool_context)
         if isinstance(context, dict):
             return context
         return await report_tool.run(

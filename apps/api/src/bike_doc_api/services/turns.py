@@ -17,6 +17,7 @@ from bike_doc_api.adk.sessions import (
     DiagnosticPhaseSessionManager,
 )
 from bike_doc_api.core.config import DiagnosticReportVersion, ImageAnalysisMode
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import (
     ArtifactNotReadyError,
     IdempotencyConflictError,
@@ -418,6 +419,9 @@ class TurnService:
         except (PydanticValidationError, ValueError) as exc:
             await self._rollback_if_configured()
             raise ValidationAppError() from exc
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc

@@ -11,6 +11,7 @@ import structlog
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import (
     AppError,
     NotFoundError,
@@ -180,6 +181,7 @@ class ReportService:
         *,
         safety: SafetyService | None = None,
         cost_estimate_service: CostEstimateServiceProtocol | None = None,
+        reserve_external: Callable[[], Awaitable[None]] | None = None,
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
@@ -190,6 +192,7 @@ class ReportService:
         self._artifacts = artifacts
         self._safety = safety or SafetyService()
         self._cost_estimate_service = cost_estimate_service
+        self._reserve_external = reserve_external
         self._commit = commit
         self._rollback = rollback
 
@@ -393,6 +396,9 @@ class ReportService:
         except IntegrityError as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc
@@ -543,9 +549,14 @@ class ReportService:
             return report
 
         try:
+            if self._reserve_external is not None:
+                await self._reserve_external()
             estimate = await self._cost_estimate_service.estimate_plan_cost(
                 requirements,
             )
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception:
             logger.warning(
                 "diagnostic_report_cost_estimate_degraded",

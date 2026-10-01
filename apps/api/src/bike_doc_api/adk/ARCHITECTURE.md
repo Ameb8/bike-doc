@@ -242,8 +242,8 @@ winner. Binding conflicts return the winner without replacement. Lost binding
 commits repeat the same deterministic ensure. Already-bound state resumes its
 exact identity, and a confirmed missing session raises a safe pre-orchestration
 failure without creation or rebinding. The legacy background host uses this
-operation before orchestration; diagnostic queue execution and effect fencing
-remain later Chunk #137 work.
+operation before orchestration. The external queue executor also completes it
+before crossing the diagnostic effect boundary described below.
 
 For diagnostic sessions, the same row also snapshots the app-owned selected
 diagnostic report schema version. Orchestration seeds that immutable value into
@@ -313,8 +313,8 @@ once and exposes six ADK `FunctionTool`s:
   phase-session ID, and envelope summary.
   `ReportService` stamps those fields and validates the public envelope.
 
-The last three mutate product state directly in the ADK tool loop, exactly
-once. Their function responses are notifications to the runner and
+The last three mutate product state directly in the ADK tool loop. Their
+function responses are notifications to the runner and
 orchestrator, not commands to repeat a write. `tools/price_lookup.py` is a
 planning-only adapter around the cost-estimate service; it is intentionally
 not a diagnostic tool.
@@ -376,5 +376,28 @@ replaces provider exceptions with a fixed category before ADK records them.
 SDK retries are disabled; storage, observation and price calls are bounded.
 The thin diagnostic process host owns the NATS connection and imports the
 shared queue runtime. Cancellation remains cancellation; it does not create a
-business state. Producer enablement, execution-token effect protection and
-atomic failure repair remain the later #150–#152 contracts.
+business state. Execution-token effect protection is described below. Producer enablement and
+atomic failure repair remain the later #151–#152 contracts.
+
+## Private diagnostic execution authority
+
+The queue host now persists a hard effect boundary after durable phase-session
+ensure/resume and before orchestration. The shared composition receives a
+`DiagnosticExecutionFence` over its fresh product session. All composed
+services/repositories use that session, whose SQL/flush/commit hooks compare the
+frozen job token and hard deadline under the job-row lock in the product
+transaction. The context also travels privately through orchestration, runner
+request and tool dependencies; `DiagnosticToolContext._execution` is a private
+attribute. `_content_from_request` and `_state_delta_from_request` explicitly
+omit execution authority, so neither model input nor ADK session state receives
+tokens. Public and broker schemas are unchanged.
+
+The irreversible boundary reserves the turn's external work. Runner/model
+entry and extraction invocation recheck authority and commit pending attempt or
+agent-start markers before external I/O; optional report pricing checks without
+releasing its existing validation locks. An in-flight call can outlive its
+worker/deadline, but its later product writes cannot commit. Stale authority
+propagates without model-facing tool feedback or public error/completion events;
+the shared runtime leaves the delivery for recovery. Database token validity is
+never extended by transport progress. See the service-wide architecture's
+[#150 evidence](../../../ARCHITECTURE.md#diagnostic-execution-fencing-150).

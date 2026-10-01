@@ -22,6 +22,10 @@ from bike_doc_api.adk.sessions import (
 )
 from bike_doc_api.adk.telemetry import diagnostic_run_config
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.diagnostic_execution import (
+    DiagnosticExecution,
+    StaleDiagnosticExecutionError,
+)
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
 from bike_doc_api.schemas.observation_extraction import (
@@ -47,6 +51,7 @@ class DiagnosticRunnerRequest:
     diagnostic_report_schema_version: Literal[
         "diagnostic_report.v1", "diagnostic_report.v2"
     ] = "diagnostic_report.v2"
+    execution: DiagnosticExecution | None = field(default=None, repr=False)
     repair_history: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     current_images: tuple[NormalizedModelImage, ...] = field(default_factory=tuple)
@@ -195,9 +200,11 @@ class DiagnosticRunner:
         clock: MonotonicClock | None = None,
         sleep: SleepFunction | None = None,
         settings: Settings | None = None,
+        reserve_external: Callable[[], Awaitable[None]] | None = None,
         delta_character_threshold: int = 25,
         delta_flush_interval_seconds: float = 0.150,
     ) -> None:
+        self._reserve_external = reserve_external
         self._invoker = invoker
         self._agent = agent
         self._session_service = session_service
@@ -241,6 +248,8 @@ class DiagnosticRunner:
         request: DiagnosticRunnerRequest,
     ) -> AsyncIterator[DiagnosticRunnerEvent]:
         emitted_any = False
+        if self._reserve_external is not None:
+            await self._reserve_external()
 
         if self._session_service is not None:
             try:
@@ -274,6 +283,8 @@ class DiagnosticRunner:
                 emitted_any = True
                 yield event
         except asyncio.CancelledError:
+            raise
+        except StaleDiagnosticExecutionError:
             raise
         except Exception:
             _ = emitted_any

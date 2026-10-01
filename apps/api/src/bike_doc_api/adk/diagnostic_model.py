@@ -1,12 +1,14 @@
 """Bound provider execution and redact failures before they enter ADK telemetry."""
 
 import asyncio
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from pydantic import PrivateAttr
+
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 
 
 class DiagnosticModelUnavailableError(Exception):
@@ -16,10 +18,18 @@ class DiagnosticModelUnavailableError(Exception):
 class BoundedDiagnosticModel(BaseLlm):
     _delegate: BaseLlm = PrivateAttr()
     _timeout: float = PrivateAttr()
+    _reserve_external: Callable[[], Awaitable[None]] | None = PrivateAttr()
 
-    def __init__(self, delegate: BaseLlm, timeout: float) -> None:
+    def __init__(
+        self,
+        delegate: BaseLlm,
+        timeout: float,
+        *,
+        reserve_external: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         super().__init__(model=delegate.model)
         self._delegate, self._timeout = delegate, timeout
+        self._reserve_external = reserve_external
 
     async def generate_content_async(
         self,
@@ -27,11 +37,15 @@ class BoundedDiagnosticModel(BaseLlm):
         stream: bool = False,
     ) -> AsyncGenerator[LlmResponse, None]:
         try:
+            if self._reserve_external is not None:
+                await self._reserve_external()
             async with asyncio.timeout(self._timeout):
                 async for response in self._delegate.generate_content_async(
                     llm_request, stream
                 ):
                     yield response
+        except StaleDiagnosticExecutionError:
+            raise
         except Exception:
             # Dependency telemetry runs before the app runner normalizes errors.
             # Do not allow provider text or paths to enter that boundary.

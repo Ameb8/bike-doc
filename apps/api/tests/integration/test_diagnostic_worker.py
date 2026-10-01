@@ -1,5 +1,6 @@
 """Seeded diagnostic role on real PostgreSQL/JetStream, durable ADK and fake model."""
 
+import asyncio
 import json
 import os
 import uuid
@@ -46,11 +47,16 @@ pytestmark = [
 class FakeModel(BaseLlm):
     _requests: list[str] = PrivateAttr(default_factory=list)
     _fail: bool = PrivateAttr(default=False)
+    _started: asyncio.Event | None = PrivateAttr(default=None)
+    _release: asyncio.Event | None = PrivateAttr(default=None)
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
         self._requests.append(llm_request.model_dump_json())
+        if self._started is not None and self._release is not None:
+            self._started.set()
+            await self._release.wait()
         if self._fail:
             raise RuntimeError("private provider response; must never reach job state")
         yield LlmResponse(
@@ -275,3 +281,495 @@ async def test_confirmed_missing_binding_is_pre_effect_failure(context: tuple) -
             ).one()
             assert phase.adk_session_id == "confirmed_missing_bound_session"
         assert model._requests == []
+
+
+# Real database fencing tests use independent sessions. No transport fake can
+# prove job-lock ordering, wall-clock expiry, or rollback of already-flushed SQL.
+async def _fencing_execution(context: tuple, duration: float = 120):
+    from datetime import timedelta
+
+    from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
+    from bike_doc_api.core.diagnostic_execution import DiagnosticExecution
+    from bike_doc_api.repositories.background_jobs import ExecutionPolicy
+    from bike_doc_api.repositories.repair_sessions import RepairPhaseSessionRepository
+
+    _, sessions, job, repair_id, _, resources, _ = context
+    async with sessions() as session:
+        phase = (
+            await session.scalars(
+                select(RepairPhaseSession).where(
+                    RepairPhaseSession.repair_session_id == repair_id
+                )
+            )
+        ).one()
+        await DiagnosticADKSessionClient(resources.session_service).ensure_or_resume(
+            phase_session=phase, phase_sessions=RepairPhaseSessionRepository(session)
+        )
+        await session.commit()
+        phase_id = phase.id
+        resolved = await BackgroundJobRepository(session).resolve_delivery(
+            job_id=job.id,
+            generation=1,
+            workload_class="diagnostic",
+            validate_definition=lambda _: ExecutionPolicy(timedelta(seconds=duration)),
+        )
+        await session.commit()
+        current = resolved.job
+        assert current and current.execution_token and current.execution_deadline
+        return DiagnosticExecution(
+            current.id, current.execution_token, current.execution_deadline
+        ), phase_id
+
+
+async def _product_snapshot(sessions, repair_id):
+    from bike_doc_api.models.observation_extraction import (
+        ObservationExtractionAttempt,
+        ObservationExtractionRun,
+    )
+    from bike_doc_api.models.phase_report import PhaseReport
+
+    async with sessions() as session:
+        repair = await session.get(RepairSession, repair_id)
+        result = [
+            tuple(getattr(repair, col.name) for col in RepairSession.__table__.columns)
+        ]
+        for model in (
+            RepairSessionEvent,
+            PhaseReport,
+            ObservationExtractionRun,
+            ObservationExtractionAttempt,
+        ):
+            rows = (await session.scalars(select(model).order_by(model.id))).all()
+            result.append(
+                [
+                    tuple(getattr(row, col.name) for col in model.__table__.columns)
+                    for row in rows
+                ]
+            )
+        return result
+
+
+@pytest.mark.parametrize(
+    "family",
+    [
+        "event",
+        "input",
+        "safety",
+        "report",
+        "completion",
+        "session_dml",
+        "visual_start",
+        "visual_manifest",
+        "visual_attempt",
+        "visual_complete",
+        "visual_failed",
+        "visual_finish_attempt",
+        "visual_agent_start",
+        "visual_redact",
+    ],
+)
+@pytest.mark.parametrize("loss", ["replacement", "expiry"])
+async def test_every_protected_write_family_rejects_late_execution(
+    context, family, loss
+):
+    import asyncio
+
+    from sqlalchemy import update
+
+    from bike_doc_api.adk.execution import build_diagnostic_orchestrator
+    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.models.observation_extraction import ObservationExtractionRun
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.observation_extraction import (
+        ObservationExtractionRunRepository,
+    )
+    from bike_doc_api.schemas.common import RepairSessionStatus
+    from bike_doc_api.schemas.repair_session import InputRequestType
+
+    settings, sessions, job, repair_id, _, resources, _ = context
+    execution, phase_id = await _fencing_execution(
+        context, duration=0.6 if loss == "expiry" else 120
+    )
+    async with sessions() as session:
+        fence = DiagnosticExecutionFence(session, execution)
+        await fence.cross_boundary()
+        run = ObservationExtractionRun(
+            turn_id=job.input["turn_id"],
+            repair_session_id=repair_id,
+            image_analysis_mode="enabled",
+            input_artifact_ids=[],
+            preprocessing_version="test",
+            extractor_version="test",
+            prompt_version="test",
+            output_schema_version="visual-observation.v1",
+            provider="fake",
+            model="fake",
+        )
+        runs = ObservationExtractionRunRepository(session)
+        if family == "visual_start":
+            run_id, attempt_id = None, None
+        else:
+            await runs.add(run)
+            attempt = await runs.append_attempt(
+                run_id=run.id, provider="fake", model="fake"
+            )
+            if family == "visual_attempt":
+                await runs.mark_failed(run, failure_metadata={"retryable": True})
+            run_id, attempt_id = run.id, attempt.id
+        await session.commit()
+    # Let the original hard deadline expire without replacing the token or
+    # changing validity. The database also prohibits changing this deadline.
+    if loss == "expiry":
+        from sqlalchemy import func
+
+        async with sessions() as control:
+            now = (await control.execute(select(func.clock_timestamp()))).scalar_one()
+        await asyncio.sleep(max(0, (execution.deadline - now).total_seconds()) + 0.05)
+    else:
+        async with sessions() as control:
+            await control.execute(
+                update(BackgroundJob)
+                .where(BackgroundJob.id == job.id)
+                .values(execution_token="replacement-token")
+            )
+            await control.commit()
+    before = await _product_snapshot(sessions, repair_id)
+    async with sessions() as session:
+        # Load objects before installing the fence to exercise dirty/identity-map
+        # writes as well as query-based service writes after authority is lost.
+        user_id = (await session.get(RepairSession, repair_id)).user_id
+        user = await session.get(User, user_id)
+        run = await session.get(ObservationExtractionRun, run_id) if run_id else None
+        from bike_doc_api.models.observation_extraction import (
+            ObservationExtractionAttempt,
+        )
+
+        attempt = (
+            await session.get(ObservationExtractionAttempt, attempt_id)
+            if attempt_id
+            else None
+        )
+        fence = DiagnosticExecutionFence(session, execution)
+        graph = build_diagnostic_orchestrator(
+            session=session, settings=settings, resources=resources, fence=fence
+        )
+        runs = ObservationExtractionRunRepository(session)
+        with pytest.raises(
+            StaleDiagnosticExecutionError, match=r"^diagnostic_execution_stale$"
+        ):
+            if family == "event":
+                await graph.event_service.append_event(
+                    repair_session_id=repair_id,
+                    turn_id=job.input["turn_id"],
+                    event_type="assistant.delta",
+                    data={"text": "late"},
+                )
+            elif family == "input":
+                await graph.request_diagnostic_input._service.request_diagnostic_input(
+                    current_user=user,
+                    repair_session_id=repair_id,
+                    diagnostic_session_id=phase_id,
+                    request_type=InputRequestType.TEXT,
+                    prompt="Describe noise",
+                    required=True,
+                    accepted_media_types=[],
+                    choices=[],
+                    min_artifacts=None,
+                    max_artifacts=None,
+                )
+            elif family == "safety":
+                await graph.raise_safety_flag._service.raise_safety_flag(
+                    current_user=user,
+                    repair_session_id=repair_id,
+                    safety_flag={
+                        "code": "unsafe_riding_condition",
+                        "severity": "blocking",
+                        "phase": "diagnostic",
+                        "message": "Stop riding",
+                        "blocks_repair_instructions": True,
+                    },
+                )
+            elif family == "report":
+                payload = {
+                    "schema_version": "diagnostic_report.v2",
+                    "diagnostic_outcome": "diagnosis_supported",
+                    "reported_symptoms": ["Chain skips"],
+                    "primary_diagnosis": {
+                        "component": "chain",
+                        "issue": "Wear",
+                        "confidence": "medium",
+                        "diy_suitability": "caution",
+                        "supporting_finding_ids": ["symptom"],
+                    },
+                    "contributing_factors": [],
+                    "observed_findings": [
+                        {
+                            "finding_id": "symptom",
+                            "component": "chain",
+                            "finding": "Skipping",
+                            "evidence_source": "user_report",
+                            "evidence_source_detail": None,
+                            "relationship_to_symptoms": "supports_primary_diagnosis",
+                            "artifact_ids": [],
+                        }
+                    ],
+                    "alternate_hypotheses": [],
+                    "unresolved_uncertainties": [],
+                    "evidence_summary": "Reported skipping",
+                    "key_artifact_ids": [],
+                    "user_skill_level": "beginner",
+                    "safety_flags": [],
+                    "diagnostic_session_id": phase_id,
+                }
+                await graph.save_diagnostic_report._service.persist_diagnostic_report(
+                    current_user=user,
+                    repair_session_id=repair_id,
+                    summary="Wear",
+                    payload=payload,
+                    safety_flags=[],
+                    source_artifact_ids=[],
+                )
+            elif family == "completion":
+                await graph._append_turn_completed(
+                    user_id=user_id,
+                    repair_session_id=repair_id,
+                    turn_id=job.input["turn_id"],
+                    status=RepairSessionStatus.AWAITING_USER,
+                )
+            elif family == "session_dml":
+                await session.execute(
+                    update(RepairSession)
+                    .where(RepairSession.id == repair_id)
+                    .values(status="awaiting_user")
+                )
+            elif family == "visual_start":
+                await runs.get_or_create(
+                    ObservationExtractionRun(
+                        turn_id=job.input["turn_id"],
+                        repair_session_id=repair_id,
+                        image_analysis_mode="enabled",
+                        input_artifact_ids=[],
+                        preprocessing_version="test",
+                        extractor_version="test",
+                        prompt_version="test",
+                        output_schema_version="visual-observation.v1",
+                        provider="fake",
+                        model="fake",
+                    )
+                )
+            elif family == "visual_manifest":
+                await runs.set_preprocessing_manifest(run, manifest=[{"late": True}])
+            elif family == "visual_attempt":
+                await runs.append_attempt(run_id=run_id, provider="fake", model="fake")
+            elif family == "visual_complete":
+                await runs.mark_completed(run, validated_output={"late": True})
+            elif family == "visual_failed":
+                await runs.mark_failed(run, failure_metadata={"late": True})
+            elif family == "visual_finish_attempt":
+                await runs.finish_attempt(attempt, outcome="completed")
+            elif family == "visual_agent_start":
+                await runs.mark_diagnostic_agent_started(run)
+            elif family == "visual_redact":
+                await runs.redact(run, reason="late")
+            await session.commit()
+        await session.rollback()
+    assert await _product_snapshot(sessions, repair_id) == before
+    assert not context[4]._requests
+
+
+async def test_boundary_race_idempotence_and_replaced_owner_cannot_inherit(context):
+    import asyncio
+    from dataclasses import replace
+
+    from sqlalchemy import update
+
+    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+
+    _, sessions, job, _, _, _, _ = context
+    execution, _ = await _fencing_execution(context)
+
+    async def cross(identity):
+        async with sessions() as session:
+            try:
+                await DiagnosticExecutionFence(session, identity).cross_boundary()
+                return True
+            except StaleDiagnosticExecutionError:
+                return False
+
+    assert sorted(
+        await asyncio.gather(cross(execution), cross(replace(execution, token="other")))
+    ) == [False, True]
+    async with sessions() as session:
+        row = await session.get(BackgroundJob, job.id)
+        boundary = row.effect_boundary_at
+        assert row.effect_boundary_token == execution.token
+        assert row.execution_deadline == execution.deadline
+    assert await cross(execution)
+    async with sessions() as session:
+        row = await session.get(BackgroundJob, job.id)
+        assert row.effect_boundary_at == boundary
+        await session.execute(
+            update(BackgroundJob)
+            .where(BackgroundJob.id == job.id)
+            .values(execution_token="replacement")
+        )
+        await session.commit()
+    assert not await cross(execution)
+    assert not await cross(replace(execution, token="replacement"))
+
+
+async def test_flushed_effect_rolls_back_if_deadline_passes_before_commit(context):
+    import asyncio
+
+    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.events import RepairSessionEventRepository
+
+    _, sessions, _job, repair_id, _, _, _ = context
+    execution, _ = await _fencing_execution(context, duration=0.6)
+    before = await _product_snapshot(sessions, repair_id)
+    async with sessions() as session:
+        fence = DiagnosticExecutionFence(session, execution)
+        await fence.cross_boundary()
+        fence.bind()
+        await RepairSessionEventRepository(session).append_for_session(
+            repair_session_id=repair_id,
+            event_type="assistant.delta",
+            data={"text": "flushed"},
+        )
+        await asyncio.sleep(0.7)
+        with pytest.raises(StaleDiagnosticExecutionError):
+            await session.commit()
+        await session.rollback()
+    assert await _product_snapshot(sessions, repair_id) == before
+
+
+async def test_lock_wait_checks_wall_clock_after_deadline(context):
+    import asyncio
+
+    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+
+    _, sessions, job, _, _, _, _ = context
+    execution, _ = await _fencing_execution(context, duration=0.5)
+    async with sessions() as blocker:
+        await blocker.execute(
+            select(BackgroundJob).where(BackgroundJob.id == job.id).with_for_update()
+        )
+
+        async def late_boundary():
+            async with sessions() as session:
+                with pytest.raises(StaleDiagnosticExecutionError):
+                    await DiagnosticExecutionFence(session, execution).cross_boundary()
+
+        task = asyncio.create_task(late_boundary())
+        await asyncio.sleep(0.6)
+        assert not task.done()
+        await blocker.commit()
+        await task
+    async with sessions() as session:
+        row = await session.get(BackgroundJob, job.id)
+        assert row.effect_boundary_at is None
+        assert row.execution_deadline == execution.deadline
+
+
+async def test_in_flight_provider_loses_authority_despite_progress(
+    context,
+):
+    from sqlalchemy import update
+
+    settings, sessions, job, repair_id, model, resources, _ = context
+    model._started, model._release = asyncio.Event(), asyncio.Event()
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        await runtime.transport.client.jetstream().publish(
+            runtime.options.subject,
+            json.dumps(
+                {"version": 1, "job_id": job.id, "publication_generation": 1}
+            ).encode(),
+        )
+        delivery = NatsDelivery(
+            (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+        )
+        running = asyncio.create_task(runtime.process(delivery))
+        try:
+            await asyncio.wait_for(model._started.wait(), timeout=10)
+            before = await _product_snapshot(sessions, repair_id)
+            async with sessions() as control:
+                row = await control.get(BackgroundJob, job.id)
+                assert row.effect_boundary_at is not None
+                deadline = row.execution_deadline
+                await control.execute(
+                    update(BackgroundJob)
+                    .where(BackgroundJob.id == job.id)
+                    .values(execution_token="new-owner")
+                )
+                await control.commit()
+            for _ in range(3):
+                await delivery.progress()
+            model._release.set()
+            await asyncio.wait_for(running, timeout=10)
+            assert await _product_snapshot(sessions, repair_id) == before
+            async with sessions() as control:
+                row = await control.get(BackgroundJob, job.id)
+                assert row.state == "running"
+                assert row.execution_token == "new-owner"
+                assert row.execution_deadline == deadline
+            assert (
+                await runtime.transport.subscription.consumer_info()
+            ).num_ack_pending == 1
+        finally:
+            model._release.set()
+            if not running.done():
+                running.cancel()
+                await asyncio.gather(running, return_exceptions=True)
+
+
+async def test_boundary_and_token_replacement_race_has_one_owner(context):
+    from dataclasses import replace
+
+    from sqlalchemy import update
+
+    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+
+    _, sessions, job, _, _, _, _ = context
+    execution, _ = await _fencing_execution(context)
+    replacement = replace(execution, token="b" * 32)
+
+    async def cross(identity):
+        async with sessions() as session:
+            try:
+                await DiagnosticExecutionFence(session, identity).cross_boundary()
+                return True
+            except StaleDiagnosticExecutionError:
+                return False
+
+    async def replace_and_cross():
+        async with sessions() as session:
+            await session.execute(
+                update(BackgroundJob)
+                .where(BackgroundJob.id == job.id)
+                .values(execution_token=replacement.token)
+            )
+            await session.commit()
+        return await cross(replacement)
+
+    old_won, new_won = await asyncio.gather(cross(execution), replace_and_cross())
+    assert old_won != new_won
+    async with sessions() as session:
+        row = await session.get(BackgroundJob, job.id)
+        assert row.execution_deadline == execution.deadline
+        assert row.effect_boundary_token == (
+            execution.token if old_won else replacement.token
+        )
+        # Even the current execution cannot rewrite an earlier reservation owner.
+        from sqlalchemy.exc import IntegrityError
+
+        with pytest.raises(IntegrityError):
+            await session.execute(
+                update(BackgroundJob)
+                .where(BackgroundJob.id == job.id)
+                .values(effect_boundary_token="c" * 32)
+            )
+        await session.rollback()

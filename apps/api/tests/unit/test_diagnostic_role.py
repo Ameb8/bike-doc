@@ -230,6 +230,14 @@ async def test_authoritative_loading_and_ensure_precede_orchestration(
         lambda _: SimpleNamespace(ensure_or_resume=ensure),
     )
 
+    async def cross():
+        calls.append("boundary")
+
+    fence = SimpleNamespace(cross_boundary=cross)
+    monkeypatch.setattr(
+        diagnostic_application, "DiagnosticExecutionFence", lambda *_: fence
+    )
+
     async def process(**kwargs):
         calls.append("process")
         assert kwargs == {"current_user": user, "turn": turn}
@@ -257,9 +265,10 @@ async def test_authoritative_loading_and_ensure_precede_orchestration(
             JobError.PROVIDER_UNAVAILABLE,
         }
     else:
-        assert calls == ["ensure", "commit", "process"]
+        assert calls == ["ensure", "commit", "boundary", "process"]
         assert outcome.state == "succeeded"
         assert build.call_args.kwargs["resources"] is resources
+        assert build.call_args.kwargs["fence"] is fence
 
 
 @pytest.mark.parametrize("fail_client", [False, True])

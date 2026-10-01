@@ -136,8 +136,9 @@ not start a second background execution.
 
 Turn acceptance creates or reuses only the app-owned phase reference, with a
 null ADK binding for new rows. The executor ensures and binds durable ADK state
-before orchestration; bound identities are resumed exactly. Diagnostic queue
-execution and effect fencing remain later Chunk #137 tasks. The ADK session service is lifespan-owned and
+before orchestration; bound identities are resumed exactly. The external queue
+executor persists its fenced effect boundary afterward, as described below.
+The ADK session service is lifespan-owned and
 PostgreSQL-backed; see the [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
 for migration, startup validation, missing-session, and retention rules.
 
@@ -459,13 +460,13 @@ only, with no access to job state or message content.
 `workers/role.py:create_workload_worker` is the thin workload-role seam. The
 process host constructs and owns the database pool, NATS connection and durable
 pull subscription, providers, and any ADK resources, then supplies its complete
-registry and adapters. Both profile and later diagnostic roles reuse this same
+registry and adapters. Both profile and diagnostic roles reuse this same
 runtime. Dependency direction is `worker role -> registry/runtime/adapters`,
 `runtime -> typed job store/transport protocols`, `database adapter -> job
 repository`, and `NATS adapter -> core/nats + official client`. Registry and
 handler interfaces import no NATS, FastAPI, providers, or ADK. A diagnostic
-store/handler must add atomic product terminalization and effect fencing in
-Chunk #137. The profile role supplies its own isolated extractor and storage.
+store/handler uses the fencing described below; atomic failure terminalization
+remains #151 work. The profile role supplies its own isolated extractor and storage.
 
 The initial role defaults are concurrency/fetch batch 4 (bounded by the
 consumer's 128 pending acknowledgements), one-second fetches, ten-second
@@ -692,7 +693,7 @@ or shutdown algorithms.
 This task does not enable a diagnostic producer. The policy declares a fenced
 workload and conservative interruption on timeout; expired-execution recovery
 returns no transition until #151 supplies atomic diagnostic product repair.
-Effect-token enforcement belongs to #150, and terminalization of pre-boundary
+Effect-token enforcement is documented below for #150; terminalization of pre-boundary
 failure/exhaustion and post-boundary loss belongs to #151. These are required
 before canary producers may run (#152). Do not add this provisional recovery
 policy to generic maintenance to simulate completed terminalization.
@@ -710,3 +711,75 @@ policy to generic maintenance to simulate completed terminalization.
 | Cancellation propagation | Handler cancellation/unknown-error tests; shared runtime timeout/shutdown tests remain active |
 | Bounded content-safe outcomes and telemetry | Model error redaction and provider failure tests; real test checks accepted content, provider exception text and artifact paths are absent from logs |
 | Verification | `task format`, `task check`, `task test:diagnostic`; existing ADK orchestration/runner/service suites stay active |
+
+## Diagnostic execution fencing (#150)
+
+`core/diagnostic_execution.py` defines the frozen, transport-neutral
+`DiagnosticExecution(job_id, token, deadline)` and the bounded
+`StaleDiagnosticExecutionError`. Tokens are excluded from representations. The
+claimed worker constructs this context after authoritative preparation and
+ADK ensure/resume. Immediately before composing/invoking orchestration,
+`repositories/diagnostic_execution.py:DiagnosticExecutionFence.cross_boundary`
+locks the job, checks the current token and database wall-clock deadline, and
+conditionally persists the irreversible boundary. Migration `0012` retains
+`effect_boundary_token`, so a new current token cannot inherit an earlier
+reservation. Repeating the crossing for its original current token is
+idempotent; neither crossing nor subsequent checks changes the deadline.
+Existing boundaries without a recorded owner fail closed.
+
+The shared graph binds this authority to its executor-owned product session.
+Every service and repository in that graph uses this same session, including
+input-request, safety, report, event, session-completion and visual-extraction
+operations. Session-local SQLAlchemy hooks lock/check the job before ORM SQL
+(including direct DML), before autoflush/flush, after flush, and before commit.
+This is a transactional compare-and-write: the job lock is held through the
+product mutation and commit, so replacement cannot interleave. Clock checks
+happen after lock acquisition, use `clock_timestamp()` rather than transaction
+start time, and run again at commit to roll back writes flushed before expiry.
+The lock order is job then product rows. A rejection remains sticky for the
+execution, and service rollback discards its pending mutations and SSE hints.
+Any future diagnostic service must reuse this fenced session; creating an
+independent product session would bypass its authority and is prohibited.
+
+```text
+claimed handler -> DiagnosticExecutionApplication -> DiagnosticExecutionFence
+                                                      -> product session hooks
+                -> shared diagnostic graph -> orchestrator / runner / tools
+                                           -> services -> repositories
+                                                        -> same fenced session
+```
+
+Services and tools import no JetStream or worker types. Orchestration, the
+runner request, and tool composition carry the same private execution context;
+tool context uses a Pydantic private attribute. Explicit runner content/state
+mapping omits it. It never enters public schemas, ADK state/model input, or
+broker envelopes. Ordinary HTTP and legacy graph sessions are not bound to a
+queue token; producer/executor selection remains #152's responsibility.
+
+The committed whole-turn boundary is the durable fenced reservation for
+external work: ADK invocation and its independent session writes, model calls,
+observation extraction, storage reads, and optional report pricing. No recovered
+execution may repeat this reservation. Before runner/model/extraction
+invocation, the graph rechecks authority and commits pending visual attempt or
+agent-start markers. Report pricing checks authority while retaining its
+existing product-row locks and validated state. Storage reads are bounded,
+read-only operations under the already-committed reservation. The boundary
+does not promise exactly-once calls: an in-flight external call may continue
+after cancellation/expiry, but its late product result is transactionally
+rejected. No cancellation assumption or renewable lease underpins safety.
+JetStream progress continues to extend acknowledgement time only.
+
+Stale authority propagates through services, tool normalization, model adapter,
+runner and orchestration without generating a public error/completion pair.
+The shared runtime emits only `job_worker_execution_stale` and leaves delivery
+unsettled; #151 owns the recovery/product-terminalization transaction.
+
+| #150 acceptance | Implementation and evidence |
+| --- | --- |
+| Valid, unexpired boundary after phase initialization | Worker preparation-order unit test; real missing-binding test; locked conditional crossing |
+| Single boundary, same-owner idempotence, immutable deadline | Independent-session boundary race, repeat-crossing and replacement-owner tests |
+| Every protected write family | Session SQL/flush/commit hook unit tests; service stale-error unit tests; PostgreSQL replacement/expiry matrix for events, input, safety, report, session DML, completion, visual run/manifest/attempt/result/failure/start/redaction |
+| Expiry despite a live process | Real wall-clock lock-wait test and rollback of a previously flushed event; no replacement needed |
+| Safe stale rejection and external reservation | Private-context unit test; real in-flight model loses token, progress cannot renew deadline, product snapshot remains unchanged and delivery remains unacknowledged |
+| Existing product contracts | Existing orchestration, tool, event, safety, report, visual and public-contract suites; real seeded valid/handled-error role paths |
+| Required verification | `task format`, `task check`, `task test:diagnostic` |

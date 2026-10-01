@@ -34,6 +34,10 @@ from bike_doc_api.adk.turn_telemetry_state import (
     DiagnosticTurnTelemetrySnapshot,
     DiagnosticTurnTelemetryState,
 )
+from bike_doc_api.core.diagnostic_execution import (
+    DiagnosticExecution,
+    StaleDiagnosticExecutionError,
+)
 from bike_doc_api.core.errors import NotFoundError, ServerError
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -171,6 +175,7 @@ class DiagnosticTurnOrchestrator:
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry,
     )
+    execution: DiagnosticExecution | None = field(default=None, repr=False)
     monotonic_clock: Callable[[], float] | None = None
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
@@ -218,6 +223,7 @@ class DiagnosticTurnOrchestrator:
                 ),
                 turn_id=turn_snapshot.id,
             )
+            context._execution = self.execution
             seed = await self._build_seed_context(
                 context=context,
                 turn=turn_snapshot,
@@ -253,6 +259,7 @@ class DiagnosticTurnOrchestrator:
                 bike_profile=seed.bike_profile,
                 repair_history=seed.repair_history,
                 diagnostic_artifacts=seed.diagnostic_artifacts,
+                execution=self.execution,
                 current_images=visual_context.current_images,
                 current_observations=visual_context.current_observations,
                 prior_observations=visual_context.prior_observations,
@@ -295,6 +302,9 @@ class DiagnosticTurnOrchestrator:
         except asyncio.CancelledError:
             telemetry_state.note_cancelled()
             telemetry_state.finalize()
+            raise
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
             raise
         except Exception:
             telemetry_state.note_error(
@@ -520,6 +530,9 @@ class DiagnosticTurnOrchestrator:
                     ),
                 )
             )
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception:
             # Count queries and telemetry export are post-commit observations.
             # Failure must not alter public events, safety, or terminal status.
@@ -719,6 +732,9 @@ class DiagnosticTurnOrchestrator:
             )
             if self.commit is not None:
                 await self.commit()
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc

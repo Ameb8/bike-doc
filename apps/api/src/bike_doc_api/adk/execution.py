@@ -40,6 +40,7 @@ from bike_doc_api.core.config import (
 from bike_doc_api.providers.storage import StorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
+from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
 from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.observation_extraction import (
     ObservationExtractionRunRepository,
@@ -85,9 +86,13 @@ def build_diagnostic_orchestrator(
     session: AsyncSession,
     settings: Settings,
     resources: DiagnosticResources,
+    fence: DiagnosticExecutionFence | None = None,
 ) -> DiagnosticTurnOrchestrator:
     """Rebuild the ADK orchestration graph around a fresh DB session."""
 
+    if fence is not None:
+        fence.bind()
+    reserve_external = fence.reserve_external if fence is not None else None
     repair_sessions = RepairSessionRepository(session)
     phase_sessions = RepairPhaseSessionRepository(session)
     events = RepairSessionEventRepository(session)
@@ -130,6 +135,7 @@ def build_diagnostic_orchestrator(
         events,
         artifacts,
         cost_estimate_service=resources.cost_estimate_service,
+        reserve_external=fence.require_external if fence is not None else None,
         commit=session.commit,
         rollback=session.rollback,
     )
@@ -154,19 +160,24 @@ def build_diagnostic_orchestrator(
         safety_service=cast(SafetyServiceProtocol, safety_service),
         report_service=cast(DiagnosticReportServiceProtocol, report_service),
         telemetry=telemetry,
+        execution=fence.execution if fence is not None else None,
     )
     session_service = resources.session_service
     agent = create_diagnostic_agent(tool_dependencies, settings=settings)
     if resources.model is not None:
         agent.model = BoundedDiagnosticModel(
-            resources.model, settings.diagnostic_agent_timeout_seconds
+            resources.model,
+            settings.diagnostic_agent_timeout_seconds,
+            reserve_external=reserve_external,
         )
     runner = DiagnosticRunner(
         agent=agent,
         session_service=session_service,
         settings=settings,
+        reserve_external=reserve_external,
     )
     return DiagnosticTurnOrchestrator(
+        execution=fence.execution if fence is not None else None,
         phase_sessions=phase_sessions,
         turns=RepairTurnRepository(session),
         repair_sessions=repair_sessions,
@@ -206,6 +217,7 @@ def build_diagnostic_orchestrator(
             extractor=observation_extractor,
             extractor_version=settings.observation_extraction_extractor_version,
             prompt_version=settings.observation_extraction_prompt_version,
+            reserve_external=reserve_external,
         ),
         commit=session.commit,
         rollback=session.rollback,
