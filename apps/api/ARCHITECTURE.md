@@ -408,8 +408,8 @@ Reconciliation uses bounded `SKIP LOCKED` scans and conditional updates inside
 short transactions. Its policy registry is keyed by stored `(job_kind,
 input_version)`; absent definitions are omitted at the database scan. Policies
 make pure decisions about expired outcomes and safe no-progress notification
-recovery. The API host registers the profile safe-replay policy; diagnostic product
-terminalization belongs to its cutover task. `ProfileJobRepository` couples
+recovery. The API host registers profile safe replay and diagnostic boundary-aware
+recovery, with atomic product terminalization described under #151. `ProfileJobRepository` couples
 job transitions to existing inference-run audit state in that same transaction. Recovery of a retryable expired execution preserves attempts,
 clears the expired token, advances durable generation, and schedules publication
 at the policy's `eligible_at`. Exhaustion terminalizes as dead. No-progress
@@ -513,7 +513,7 @@ Issue #145 acceptance evidence (unit tests are in
 artifact storage, signal handling, and resource shutdown. It constructs the
 complete `profile_inference` workload registry in `workers/profile_inference.py`
 and runs the shared `PullWorker`. No handler publishes or settles messages.
-The API maintenance composition imports only the pure profile recovery policy;
+The API maintenance composition imports pure workload recovery policies;
 it does not construct worker/provider resources.
 
 `profile_inference.v1` resolves accepted turn/artifact references through the
@@ -674,8 +674,9 @@ at execution, preserving independent profile-inference timing.
 Known transient preparation failures alone return bounded retry categories.
 Confirmed missing bound ADK state returns a permanent pre-effect failure without
 orchestration. Handled runner errors return job success after the existing
-orchestrator durably settles the public turn; cancellation and unknown failures
-propagate. Model errors are redacted before entering dependency telemetry. Optional pricing
+orchestrator durably settles the public turn; cancellation and stale execution
+propagate. Unknown failures request a permanent outcome; the repository uses the
+authoritative boundary to classify unhandled reserved execution as interrupted. Model errors are redacted before entering dependency telemetry. Optional pricing
 lifecycle summaries omit requirement/search/listing text and raw exception traces, and
 all completion logs/metrics reuse the bounded diagnostic telemetry contract.
 
@@ -690,13 +691,12 @@ shared diagnostic composition -> orchestration/services`, and `role -> shared
 registry/runtime/adapters`. No worker copies pull/claim/progress/retry/settlement
 or shutdown algorithms.
 
-This task does not enable a diagnostic producer. The policy declares a fenced
-workload and conservative interruption on timeout; expired-execution recovery
-returns no transition until #151 supplies atomic diagnostic product repair.
-Effect-token enforcement is documented below for #150; terminalization of pre-boundary
-failure/exhaustion and post-boundary loss belongs to #151. These are required
-before canary producers may run (#152). Do not add this provisional recovery
-policy to generic maintenance to simulate completed terminalization.
+This task does not enable a diagnostic producer. Effect-token enforcement is
+provided by #150 below, and #151 supplies atomic product repair and registers
+expired-execution recovery. Runtime timeouts request a classified pre-boundary
+retry; persistence rejects that outcome after the boundary so deadline recovery
+terminalizes the reserved execution without replay. Producer canary selection
+remains #152.
 
 | #149 acceptance | Evidence |
 | --- | --- |
@@ -783,3 +783,49 @@ unsettled; #151 owns the recovery/product-terminalization transaction.
 | Safe stale rejection and external reservation | Private-context unit test; real in-flight model loses token, progress cannot renew deadline, product snapshot remains unchanged and delivery remains unacknowledged |
 | Existing product contracts | Existing orchestration, tool, event, safety, report, visual and public-contract suites; real seeded valid/handled-error role paths |
 | Required verification | `task format`, `task check`, `task test:diagnostic` |
+
+### Diagnostic terminal outcomes (#151)
+
+`repositories/diagnostic_terminalization.py:append_diagnostic_completion` owns
+the validated completion/error writes shared by legacy setup, orchestration, and
+job recovery. `repositories/diagnostic_jobs.py:DiagnosticJobRepository` composes the generic
+transition hook with diagnostic product terminalization and the existing profile
+lifecycle hook. The diagnostic worker uses it for outcome and permanent-definition
+resolution; API maintenance uses it for both registered workloads. Every terminal
+repair holds the job lock before the repair-session lock, validates the stored
+turn reference, and commits the job, `awaiting_user` state, validated error, and
+immediately following completion snapshot together. Terminal job state guards
+repeated delivery/reconciliation. Malformed or missing references cannot authorize
+product mutation.
+
+`DiagnosticRecoveryPolicy` retries lost pre-boundary execution within the persisted
+attempt budget, exhausting to `dead`; reserved execution becomes `interrupted`
+without advancing publication. The generic scan and publication CAS preserve
+eligibility, attempts, and active deadlines. Preparation classifies only explicit
+connection/timeout and transient PostgreSQL failures as retryable; other preparation
+exceptions are permanent. Unknown handler failures never retry: the repository
+maps them to dead before the boundary and interrupted after it. Handled
+orchestration errors commit their public pair
+together and return job success. If product completion committed before job
+settlement was lost, the hook recognizes it as success and preserves the current
+session snapshot, including a newer accepted turn. Post-commit event notification
+hooks remain the only cross-process wake-up path. Public retryability authorizes a
+new user turn; it cannot revive the terminal job.
+
+Real PostgreSQL/JetStream diagnostic tests cover rollback after completion flush,
+competing and repeated recovery, exhaustion, invalid definitions, handled model
+errors, completion-before-settlement loss, and terminal delivery without another
+attempt or model invocation. Producer selection and route cutover remain #152.
+
+| #151 contract | Implementation and verification |
+| --- | --- |
+| Only classified pre-boundary retries, durable before delayed NAK | Preparation classifier, handler and generic outcome contract; unit classification tests and real `test_classified_retry_is_durable_before_real_delayed_nak` |
+| Exhaustion/permanent failure repairs product and emits one ordered pair | `DiagnosticJobRepository` plus shared `append_diagnostic_completion`; pre-boundary outcomes and expired-attempt-budget integration tests |
+| Trusted definition failure consumes no attempt; malformed identities do not mutate product | Transition hook validates a minimal turn reference from the trusted row; version/extra/malformed/missing definition integration matrix |
+| Handled error succeeds, including loss after product commit | Atomic orchestration pair; seeded model-error and completion-before-settlement integration tests preserve newer session state |
+| Expired post-boundary execution interrupts without replay | Recovery policy and conditional generic persistence; expired-boundary race test asserts unchanged generation and no model calls |
+| Concurrent/repeated recovery cannot duplicate or reverse results | Job/session lock order, terminal-state guard and completion identity; rollback-after-flush, competing recovery and repeated maintenance tests |
+| Notification recovery respects boundary, eligibility, attempts and active deadlines | Generic scan/CAS plus conservative diagnostic policy; diagnostic recovery tests and existing maintenance timing matrix |
+| Succeeded/dead/interrupted deliveries acknowledge without attempts | Existing terminal resolution/ACK mapping; real broker terminal-redelivery and completion-before-settlement tests |
+| Public retryability creates new work only | Terminal outcomes remain immutable under the existing database trigger; terminal-redelivery tests prove the original is never revived |
+| Content-safe errors/telemetry and unchanged event validation/wake-ups | Fixed `JobError` values and public error text, shared schema validation and event repository commit hooks; privacy, public event and cross-process SSE compatibility suites |

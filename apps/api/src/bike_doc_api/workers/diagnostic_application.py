@@ -140,10 +140,35 @@ class DiagnosticExecutionApplication:
                 raise DiagnosticPreparationError(
                     JobError.PERMANENT_FAILURE, retryable=False
                 ) from None
-            except (TimeoutError, ConnectionError, OperationalError):
+            except (TimeoutError, ConnectionError):
                 await session.rollback()
                 raise DiagnosticPreparationError(
                     JobError.PROVIDER_UNAVAILABLE, retryable=True
+                ) from None
+            except OperationalError as error:
+                await session.rollback()
+                # Retry only explicitly transient connection/transaction failures.
+                # OperationalError also includes permanent schema/configuration
+                # problems, so its type alone does not authorize replay.
+                sqlstate = getattr(error.orig, "sqlstate", None)
+                transient = error.connection_invalidated or (
+                    isinstance(sqlstate, str)
+                    and (
+                        sqlstate.startswith("08")
+                        or sqlstate
+                        in {"40001", "40P01", "53300", "57P01", "57P02", "57P03"}
+                    )
+                )
+                raise DiagnosticPreparationError(
+                    JobError.PROVIDER_UNAVAILABLE
+                    if transient
+                    else JobError.PERMANENT_FAILURE,
+                    retryable=transient,
+                ) from None
+            except Exception:
+                await session.rollback()
+                raise DiagnosticPreparationError(
+                    JobError.PERMANENT_FAILURE, retryable=False
                 ) from None
             fields: dict[str, object] = {
                 "diagnostic_session_id": phase.id,

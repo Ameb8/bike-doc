@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Protocol
 
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.repositories.background_jobs import JobError, JobOutcome, JobSnapshot
 from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
 from bike_doc_api.workers.registry import (
@@ -32,18 +33,28 @@ class DiagnosticApplication(Protocol):
 
 @dataclass(frozen=True)
 class DiagnosticRecoveryPolicy:
-    """Fail closed until atomic diagnostic terminalization lands in #151.
+    """Bounded pre-effect replay; lost reserved effects are never replayed."""
 
-    Running executions require product-state repair, including pre-effect
-    exhaustion. Generic maintenance must not terminalize or replay them alone.
-    The later diagnostic repository/policy supplies that transaction.
-    """
+    retry_seconds: float = 10
 
-    def expired_outcome(self, job: JobSnapshot) -> JobOutcome | None:
-        return None
+    def expired_outcome(self, job: JobSnapshot) -> JobOutcome:
+        if job.effect_boundary_at is not None:
+            return JobOutcome("interrupted", JobError.EXECUTION_LOST)
+        if job.attempt_count >= job.attempt_limit:
+            return JobOutcome("dead", JobError.ATTEMPTS_EXHAUSTED)
+        return JobOutcome(
+            "retrying",
+            JobError.EXECUTION_LOST,
+            timedelta(seconds=self.retry_seconds),
+        )
 
     def may_republish(self, job: JobSnapshot) -> bool:
-        return job.effect_boundary_at is None and job.attempt_count < job.attempt_limit
+        return (
+            job.state in {"queued", "retrying"}
+            and job.execution_deadline is None
+            and job.effect_boundary_at is None
+            and job.attempt_count < job.attempt_limit
+        )
 
 
 def diagnostic_policy(settings: Settings) -> HandlerPolicy:
@@ -81,10 +92,15 @@ def diagnostic_policy(settings: Settings) -> HandlerPolicy:
         timedelta(seconds=hard),
         timedelta(seconds=grace),
         timedelta(seconds=hard - handler - grace),
-        # A timeout may have interrupted effects. Never replay it automatically.
-        JobOutcome("interrupted", JobError.EXECUTION_TIMEOUT),
+        # Persistence permits this classified retry only before the boundary.
+        # Reserved execution rejects it and remains for deadline reconciliation.
+        JobOutcome(
+            "retrying",
+            JobError.EXECUTION_TIMEOUT,
+            timedelta(seconds=settings.diagnostic_worker_retry_seconds),
+        ),
         EffectPolicy.FENCED,
-        DiagnosticRecoveryPolicy(),
+        DiagnosticRecoveryPolicy(settings.diagnostic_worker_retry_seconds),
     )
 
 
@@ -104,8 +120,14 @@ class DiagnosticTurnHandler:
                     "retrying", error.category, timedelta(seconds=self.retry_seconds)
                 )
             return JobOutcome("dead", error.category)
+        except StaleDiagnosticExecutionError:
+            raise
+        except Exception:
+            # Unknown failures never authorize retry. Persistence reads the
+            # authoritative boundary and maps an unsafe loss to interrupted.
+            return JobOutcome("dead", JobError.PERMANENT_FAILURE)
         # Handled runner errors also succeeded: orchestration durably settled
-        # the product turn. Unknown failures and cancellation propagate.
+        # the product turn. Cancellation propagates.
         return JobOutcome("succeeded")
 
 

@@ -773,3 +773,458 @@ async def test_boundary_and_token_replacement_race_has_one_owner(context):
                 .values(effect_boundary_token="c" * 32)
             )
         await session.rollback()
+
+
+async def _terminal_events(context):
+    _, sessions, job, repair_id, *_ = context
+    async with sessions() as session:
+        repair = await session.get(RepairSession, repair_id)
+        row = await session.get(BackgroundJob, job.id)
+        events = list(
+            await session.scalars(
+                select(RepairSessionEvent)
+                .where(RepairSessionEvent.turn_id == job.input["turn_id"])
+                .order_by(RepairSessionEvent.sequence)
+            )
+        )
+        return row, repair, events
+
+
+async def _assert_error_pair(context, state, attempts):
+    row, repair, events = await _terminal_events(context)
+    assert row.state == state and row.attempt_count == attempts
+    assert repair.status == "awaiting_user"
+    assert [e.type for e in events] == ["turn.started", "error", "turn.completed"]
+    assert events[-1].sequence == events[-2].sequence + 1
+    assert events[-2].data["code"] == "diagnostic_processing_error"
+    assert events[-2].data["retryable"] is True
+    snapshot = events[-1].data["session"]
+    assert snapshot["status"] == "awaiting_user"
+    assert snapshot["latest_event_id"] == str(repair.latest_event_sequence)
+    assert events[-1].data["turn_id"] == context[2].input["turn_id"]
+
+
+@pytest.mark.parametrize("error", ["version", "extra", "malformed", "missing"])
+async def test_trusted_definition_failure_repairs_only_valid_product_identity(
+    context, error
+):
+    from bike_doc_api.repositories.background_jobs import JobError, ResolutionKind
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    _, sessions, job, repair_id, *_ = context
+    # The stored definition is immutable: seed a separate poison row rather than
+    # corrupting it through forbidden updates.
+    async with sessions() as session, session.begin():
+        instruction = dict(job.input)
+        if error == "extra":
+            instruction["unexpected"] = "private content"
+        elif error == "malformed":
+            instruction = {"turn_id": "private malformed"}
+        elif error == "missing":
+            instruction = {}
+        poison = await DiagnosticJobRepository(session).record(
+            JobRecord(
+                "diagnostic_turn",
+                "diagnostic",
+                2 if error == "version" else 1,
+                instruction,
+                uuid.uuid4().hex,
+                3,
+            )
+        )
+        result = await DiagnosticJobRepository(session).resolve_delivery(
+            job_id=poison.id,
+            generation=1,
+            workload_class="diagnostic",
+            validate_definition=lambda _: JobError.INPUT_INVALID,
+        )
+        assert result.kind == ResolutionKind.DEFINITION_FAILURE
+    row, repair, events = await _terminal_events(context)
+    assert row.state == "queued"
+    if error in {"version", "extra"}:
+        await _assert_error_pair(
+            (context[0], sessions, poison, repair_id, *context[4:]), "dead", 0
+        )
+    else:
+        assert repair.status == "running"
+        assert [e.type for e in events] == ["turn.started"]
+
+
+@pytest.mark.parametrize("outcome", ["permanent", "exhausted", "retry"])
+async def test_preboundary_outcomes_commit_before_settlement(context, outcome):
+    from datetime import timedelta
+
+    from bike_doc_api.repositories.background_jobs import (
+        ExecutionPolicy,
+        JobError,
+        JobOutcome,
+    )
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    _, sessions, job, *_ = context
+    current = None
+    for attempt in range(3 if outcome == "exhausted" else 1):
+        async with sessions() as session, session.begin():
+            repo = DiagnosticJobRepository(session)
+            current = (
+                await repo.resolve_delivery(
+                    job_id=job.id,
+                    generation=1,
+                    workload_class="diagnostic",
+                    validate_definition=lambda _: ExecutionPolicy(
+                        timedelta(seconds=30)
+                    ),
+                )
+            ).job
+        assert current.execution_token
+        async with sessions() as session, session.begin():
+            result = await DiagnosticJobRepository(session).apply_outcome_and_load(
+                job_id=job.id,
+                execution_token=current.execution_token,
+                outcome=JobOutcome("dead", JobError.PERMANENT_FAILURE)
+                if outcome == "permanent"
+                else JobOutcome(
+                    "retrying",
+                    JobError.PROVIDER_UNAVAILABLE,
+                    timedelta(milliseconds=10),
+                ),
+            )
+        if outcome == "exhausted" and attempt < 2:
+            await asyncio.sleep(0.02)
+    if outcome == "retry":
+        assert result.state == "retrying" and result.eligible_at > current.eligible_at
+        _, repair, events = await _terminal_events(context)
+        assert repair.status == "running"
+        assert [e.type for e in events] == ["turn.started"]
+    else:
+        await _assert_error_pair(context, "dead", 3 if outcome == "exhausted" else 1)
+    # Completion/NAK is lost; an eventual delivery must not execute early or revive.
+    async with sessions() as session, session.begin():
+        resolved = (
+            await DiagnosticJobRepository(session).resolve_delivery(
+                job_id=job.id,
+                generation=1,
+                workload_class="diagnostic",
+                validate_definition=lambda _: pytest.fail("terminal must not validate"),
+            )
+            if outcome != "retry"
+            else None
+        )
+        if resolved:
+            assert (
+                resolved.kind.value == "terminal"
+                and resolved.job.attempt_count == result.attempt_count
+            )
+
+
+@pytest.mark.parametrize("boundary", [False, True])
+async def test_expired_execution_race_repeated_maintenance_and_no_progress(
+    context, boundary
+):
+    from contextlib import asynccontextmanager
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
+
+    settings, sessions, job, *_ = context
+    execution, _ = await _fencing_execution(context, duration=0.15)
+    if boundary:
+        async with sessions() as session:
+            await DiagnosticExecutionFence(session, execution).cross_boundary()
+    await asyncio.sleep(0.2)
+
+    @asynccontextmanager
+    async def transaction():
+        async with sessions() as session, session.begin():
+            yield DiagnosticJobRepository(session)
+
+    host = JobMaintenance(
+        settings,
+        transaction,
+        AsyncMock(),
+        {("diagnostic_turn", 1): DiagnosticRecoveryPolicy(10)},
+    )
+    await asyncio.gather(host.reconcile_once(), host.reconcile_once())
+    await host.reconcile_once()
+    row, repair, events = await _terminal_events(context)
+    assert row.attempt_count == 1
+    assert not context[4]._requests
+    if boundary:
+        await _assert_error_pair(context, "interrupted", 1)
+        assert row.desired_generation == 1
+    else:
+        assert row.state == "retrying" and row.desired_generation == 2
+        assert row.eligible_at > datetime.now(UTC)
+        assert repair.status == "running"
+        assert [e.type for e in events] == ["turn.started"]
+    async with sessions() as session, session.begin():
+        assert not await DiagnosticJobRepository(session).advance_publication(
+            job_id=job.id,
+            observed_generation=row.desired_generation,
+            no_progress_before=datetime.now(UTC),
+        )
+
+
+async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emits_once(
+    context, monkeypatch
+):
+    from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.events import RepairSessionEventRepository
+
+    _, sessions, job, *_ = context
+    execution, _ = await _fencing_execution(context, duration=0.03)
+    await asyncio.sleep(0.05)
+    original = RepairSessionEventRepository.add
+
+    async def crash(self, event):
+        await original(self, event)
+        if event.type == "turn.completed":
+            raise RuntimeError("simulated loss after flushed completion")
+        return event
+
+    async def recover():
+        async with sessions() as session, session.begin():
+            return await DiagnosticJobRepository(session).recover_expired(
+                job_id=job.id,
+                execution_token=execution.token,
+                outcome=JobOutcome("dead", JobError.ATTEMPTS_EXHAUSTED),
+            )
+
+    monkeypatch.setattr(RepairSessionEventRepository, "add", crash)
+    with pytest.raises(RuntimeError):
+        await recover()
+    row, repair, events = await _terminal_events(context)
+    assert row.state == "running" and repair.status == "running"
+    assert [e.type for e in events] == ["turn.started"]
+    monkeypatch.setattr(RepairSessionEventRepository, "add", original)
+    assert sorted(await asyncio.gather(recover(), recover())) == [False, True]
+    assert not await recover()
+    await _assert_error_pair(context, "dead", 1)
+
+
+@pytest.mark.parametrize("handled_error", [False, True])
+async def test_crash_after_product_commit_before_job_settlement_is_success(
+    context, handled_error
+):
+    from datetime import UTC, datetime
+
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
+    from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
+    from bike_doc_api.workers.diagnostic_application import (
+        DiagnosticExecutionApplication,
+    )
+    from bike_doc_api.workers.registry import ClaimedJob
+
+    settings, sessions, job, repair_id, model, resources, _ = context
+    model._fail = handled_error
+    execution, _ = await _fencing_execution(context, duration=2)
+    await DiagnosticExecutionApplication(sessions, settings, resources).execute(
+        ClaimedJob(
+            job.id,
+            DiagnosticTurnInputV1.model_validate(job.input),
+            1,
+            execution.token,
+            execution.deadline,
+        )
+    )
+    row, _, events = await _terminal_events(context)
+    assert row.state == "running"
+    assert [e.type for e in events].count("turn.completed") == 1
+    assert [e.type for e in events].count("error") == int(handled_error)
+    if handled_error:
+        assert [e.type for e in events][-2:] == ["error", "turn.completed"]
+    # A user can accept another turn before settlement; recovery must preserve it.
+    async with sessions() as session, session.begin():
+        repair = await session.get(RepairSession, repair_id)
+        repair.status = "running"
+    before = await _product_snapshot(sessions, repair_id)
+    await asyncio.sleep(
+        max(0, (execution.deadline - datetime.now(UTC)).total_seconds()) + 0.05
+    )
+    async with sessions() as session, session.begin():
+        repo = DiagnosticJobRepository(session)
+        assert await repo.recover_expired(
+            job_id=job.id,
+            execution_token=execution.token,
+            outcome=DiagnosticRecoveryPolicy().expired_outcome(row),
+        )
+    after, _, _ = await _terminal_events(context)
+    assert after.state == "succeeded" and after.latest_error_category is None
+    assert await _product_snapshot(sessions, repair_id) == before
+    assert len(model._requests) == 1
+    # Eventual broker delivery acknowledges without calling ADK again.
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        await runtime.transport.client.jetstream().publish(
+            runtime.options.subject,
+            json.dumps(
+                {"version": 1, "job_id": job.id, "publication_generation": 1}
+            ).encode(),
+        )
+        delivery = NatsDelivery(
+            (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+        )
+        await runtime.process(delivery)
+        assert (
+            await runtime.transport.subscription.consumer_info()
+        ).num_ack_pending == 0
+    assert len(model._requests) == 1
+    after, _, _ = await _terminal_events(context)
+    assert after.attempt_count == 1
+
+
+@pytest.mark.parametrize("state", ["dead", "interrupted"])
+async def test_terminal_delivery_after_commit_and_ack_loss_is_attempt_free(
+    context, state
+):
+    from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    settings, sessions, job, _, model, resources, _ = context
+    execution, _ = await _fencing_execution(context)
+    if state == "interrupted":
+        from bike_doc_api.repositories.diagnostic_execution import (
+            DiagnosticExecutionFence,
+        )
+
+        async with sessions() as session:
+            await DiagnosticExecutionFence(session, execution).cross_boundary()
+    async with sessions() as session, session.begin():
+        assert await DiagnosticJobRepository(session).apply_outcome(
+            job_id=job.id,
+            execution_token=execution.token,
+            outcome=JobOutcome(state, JobError.PERMANENT_FAILURE),
+        )
+    await _assert_error_pair(context, state, 1)
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        for _ in range(2):
+            await runtime.transport.client.jetstream().publish(
+                runtime.options.subject,
+                json.dumps(
+                    {"version": 1, "job_id": job.id, "publication_generation": 1}
+                ).encode(),
+            )
+            await runtime.process(
+                NatsDelivery(
+                    (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+                )
+            )
+            assert (
+                await runtime.transport.subscription.consumer_info()
+            ).num_ack_pending == 0
+    assert not model._requests
+    await _assert_error_pair(context, state, 1)
+
+
+async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
+    from datetime import timedelta
+
+    from bike_doc_api.repositories.background_jobs import (
+        ExecutionPolicy,
+        ResolutionKind,
+    )
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
+
+    _, sessions, job, *_ = context
+    generation = 1
+    policy = DiagnosticRecoveryPolicy(0.01)
+    for attempt in range(1, 4):
+        async with sessions() as session, session.begin():
+            result = await DiagnosticJobRepository(session).resolve_delivery(
+                job_id=job.id,
+                generation=generation,
+                workload_class="diagnostic",
+                validate_definition=lambda _: ExecutionPolicy(
+                    timedelta(milliseconds=20)
+                ),
+            )
+        assert result.kind == ResolutionKind.EXECUTABLE
+        assert result.job.attempt_count == attempt
+        await asyncio.sleep(0.03)
+        async with sessions() as session, session.begin():
+            assert await DiagnosticJobRepository(session).recover_expired(
+                job_id=job.id,
+                execution_token=result.job.execution_token,
+                outcome=policy.expired_outcome(result.job),
+            )
+        generation += 1
+        await asyncio.sleep(0.02)
+    await _assert_error_pair(context, "dead", 3)
+    row, _, _ = await _terminal_events(context)
+    assert row.desired_generation == 3
+    assert not context[4]._requests
+
+
+async def test_classified_retry_is_durable_before_real_delayed_nak(
+    context, monkeypatch
+):
+    from bike_doc_api.repositories.background_jobs import JobError
+    from bike_doc_api.workers.diagnostic import DiagnosticPreparationError
+    from bike_doc_api.workers.diagnostic_application import (
+        DiagnosticExecutionApplication,
+    )
+
+    settings, _sessions, job, _, model, resources, _ = context
+    settings = settings.model_copy(update={"diagnostic_worker_retry_seconds": 0.05})
+    observed = []
+    original = NatsDelivery.nak
+
+    async def unavailable(self, claimed, span):
+        raise DiagnosticPreparationError(JobError.PROVIDER_UNAVAILABLE, retryable=True)
+
+    async def nak_after_commit(self, delay):
+        row, repair, events = await _terminal_events(context)
+        assert row.state == "retrying"
+        assert row.latest_error_category == "provider_unavailable"
+        assert row.execution_token is None
+        assert delay > 0
+        assert repair.status == "running"
+        assert [e.type for e in events] == ["turn.started"]
+        observed.append(row.eligible_at)
+        await original(self, delay)
+
+    monkeypatch.setattr(DiagnosticExecutionApplication, "_execute", unavailable)
+    monkeypatch.setattr(NatsDelivery, "nak", nak_after_commit)
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        await runtime.transport.client.jetstream().publish(
+            runtime.options.subject,
+            json.dumps(
+                {"version": 1, "job_id": job.id, "publication_generation": 1}
+            ).encode(),
+        )
+        for _ in range(3):
+            delivery = NatsDelivery(
+                (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+            )
+            await runtime.process(delivery)
+        assert (
+            await runtime.transport.subscription.consumer_info()
+        ).num_ack_pending == 0
+    assert len(observed) == 2 and observed[1] > observed[0]
+    assert not model._requests
+    await _assert_error_pair(context, "dead", 3)
+
+
+async def test_arbitrary_postboundary_failure_is_interrupted_without_retry(context):
+    from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    _, sessions, job, *_ = context
+    execution, _ = await _fencing_execution(context)
+    async with sessions() as session:
+        await DiagnosticExecutionFence(session, execution).cross_boundary()
+    async with sessions() as session, session.begin():
+        result = await DiagnosticJobRepository(session).apply_outcome_and_load(
+            job_id=job.id,
+            execution_token=execution.token,
+            outcome=JobOutcome("dead", JobError.PERMANENT_FAILURE),
+        )
+    assert result.state == "interrupted" and result.desired_generation == 1
+    await _assert_error_pair(context, "interrupted", 1)

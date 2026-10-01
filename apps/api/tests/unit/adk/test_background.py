@@ -143,7 +143,11 @@ class _PhaseSessionRepository:
 
 class _EventRepository:
     def __init__(self, _session: _FakeSession, _store: _Store) -> None:
-        pass
+        self.store = _store
+
+    async def add(self, event: Any) -> Any:
+        self.store.events.append((event.type, event.turn_id, event.data))
+        return event
 
 
 class _EventService:
@@ -296,7 +300,6 @@ async def test_background_missing_user_restores_session_and_writes_terminal_even
     fresh_session = _FakeSession()
     _patch_background_session(monkeypatch, session=fresh_session)
     _patch_background_repositories(monkeypatch, store=store)
-    monkeypatch.setattr(background, "EventService", _EventService)
 
     await background.execute_diagnostic_turn_background(
         "usr_bg",
@@ -308,7 +311,7 @@ async def test_background_missing_user_restores_session_and_writes_terminal_even
     assert [event[0] for event in store.events] == ["error", "turn.completed"]
     assert store.events[0][2] == {
         "code": "diagnostic_processing_error",
-        "message": "Diagnostic processing could not be started.",
+        "message": "Diagnostic processing could not be completed.",
         "retryable": True,
     }
     assert store.events[1][2]["turn_id"] == "turn_bg"

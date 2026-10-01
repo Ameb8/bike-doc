@@ -49,6 +49,9 @@ from bike_doc_api.providers.observation_extraction import (
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
+from bike_doc_api.repositories.diagnostic_terminalization import (
+    append_diagnostic_completion,
+)
 from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.profile_inference import ProfileInferenceRunRepository
 from bike_doc_api.repositories.repair_sessions import (
@@ -58,9 +61,6 @@ from bike_doc_api.repositories.repair_sessions import (
 )
 from bike_doc_api.repositories.users import UserRepository
 from bike_doc_api.schemas.common import RepairSessionStatus
-from bike_doc_api.schemas.event import RepairSessionEventType
-from bike_doc_api.schemas.repair_session import repair_session_from_model
-from bike_doc_api.services.events import EventService
 from bike_doc_api.services.observation_extraction import (
     DiagnosticObservationExtractor,
     ObservationExtractionRequest,
@@ -493,36 +493,12 @@ async def _handle_background_setup_failure(
         await session.commit()
         return
 
-    event_service = EventService(
+    await append_diagnostic_completion(
         events,
-        repair_sessions,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    await event_service.append_event(
-        repair_session_id=repair_session.id,
+        repair_session,
         turn_id=turn_id,
-        event_type=RepairSessionEventType.ERROR,
-        data={
-            "code": "diagnostic_processing_error",
-            "message": "Diagnostic processing could not be started.",
-            "retryable": True,
-        },
+        status="awaiting_user",
+        now=datetime.now(UTC),
+        processing_error=True,
     )
-
-    repair_session = await repair_sessions.get_for_update(repair_session_id)
-    if repair_session is None or repair_session.user_id != user_id:
-        return
-    repair_session.status = RepairSessionStatus.AWAITING_USER.value
-    repair_session.updated_at = datetime.now(UTC)
-    await event_service.append_event(
-        repair_session_id=repair_session.id,
-        turn_id=turn_id,
-        event_type=RepairSessionEventType.TURN_COMPLETED,
-        data={
-            "turn_id": turn_id,
-            "session": repair_session_from_model(repair_session).model_dump(
-                mode="json",
-            ),
-        },
-    )
+    await session.commit()

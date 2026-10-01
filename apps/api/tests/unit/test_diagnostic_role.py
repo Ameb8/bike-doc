@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from google.adk.sessions import InMemorySessionService
+from sqlalchemy.exc import OperationalError
 
 from bike_doc_api.adk import resources as resource_module
 from bike_doc_api.adk.diagnostic_model import (
@@ -18,6 +19,7 @@ from bike_doc_api.adk.diagnostic_model import (
 from bike_doc_api.adk.execution import DiagnosticResources
 from bike_doc_api.adk.sessions import StaleInMemoryADKSessionError
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.repositories.background_jobs import JobError, JobOutcome, JobSnapshot
 from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
@@ -73,7 +75,9 @@ async def test_exact_registry_and_complete_policy() -> None:
     assert definition.policy.hard_duration == timedelta(seconds=120)
     assert definition.policy.timeout_grace == timedelta(seconds=5)
     assert definition.policy.settlement_reserve == timedelta(seconds=5)
-    assert definition.policy.timeout_outcome.state == "interrupted"
+    assert definition.policy.timeout_outcome == JobOutcome(
+        "retrying", JobError.EXECUTION_TIMEOUT, timedelta(seconds=10)
+    )
     assert await definition.invoke(row) == JobOutcome("succeeded")
     accepted = app.execute.call_args.args[0]
     assert accepted.input.turn_id == row.input["turn_id"]
@@ -101,8 +105,11 @@ async def test_exact_registry_and_complete_policy() -> None:
     with pytest.raises(ValueError):
         replace(definition, policy=None)
     recovery = DiagnosticRecoveryPolicy()
-    assert recovery.expired_outcome(row) is None
-    assert recovery.may_republish(row)
+    assert recovery.expired_outcome(row) == JobOutcome(
+        "retrying", JobError.EXECUTION_LOST, timedelta(seconds=10)
+    )
+    assert not recovery.may_republish(row)
+    assert recovery.may_republish(replace(row, state="queued", execution_deadline=None))
     assert not recovery.may_republish(
         replace(row, effect_boundary_at=datetime.now(UTC))
     )
@@ -133,9 +140,9 @@ async def test_only_classified_preparation_failures_return_bounded_outcomes(
 
 
 @pytest.mark.parametrize(
-    "error", [asyncio.CancelledError(), RuntimeError("private content")]
+    "error", [asyncio.CancelledError(), StaleDiagnosticExecutionError()]
 )
-async def test_cancellation_and_unknown_failure_propagate(error: BaseException) -> None:
+async def test_cancellation_and_stale_execution_propagate(error: BaseException) -> None:
     app = SimpleNamespace(execute=AsyncMock(side_effect=error))
     with pytest.raises(type(error)):
         await DiagnosticTurnHandler(app, 10)(claimed())
@@ -165,7 +172,17 @@ def test_invalid_diagnostic_configuration_fails_startup(values: dict) -> None:
 
 
 @pytest.mark.parametrize(
-    "failure", [None, StaleInMemoryADKSessionError(), TimeoutError("private")]
+    "failure",
+    [
+        None,
+        StaleInMemoryADKSessionError(),
+        TimeoutError("private"),
+        RuntimeError("private arbitrary error"),
+        OperationalError(None, None, Exception("private permanent SQL")),
+        OperationalError(
+            None, None, Exception("private connection"), connection_invalidated=True
+        ),
+    ],
 )
 async def test_authoritative_loading_and_ensure_precede_orchestration(
     monkeypatch: pytest.MonkeyPatch, failure: Exception | None
@@ -574,3 +591,38 @@ async def test_orchestration_failure_spans_do_not_export_exception_content(
     assert span.events == ()
     assert "private" not in repr(span.attributes)
     provider.shutdown()
+
+
+@pytest.mark.parametrize("boundary", [False, True])
+@pytest.mark.parametrize("attempt", [1, 3])
+def test_diagnostic_expired_policy_is_bounded(boundary: bool, attempt: int) -> None:
+    now = datetime(2026, 10, 1, tzinfo=UTC)
+    job = replace(
+        snapshot(),
+        attempt_count=attempt,
+        execution_deadline=now,
+        effect_boundary_at=now if boundary else None,
+    )
+    policy = DiagnosticRecoveryPolicy(7)
+    outcome = policy.expired_outcome(job)
+    if boundary:
+        assert outcome == JobOutcome("interrupted", JobError.EXECUTION_LOST)
+    elif attempt == 3:
+        assert outcome == JobOutcome("dead", JobError.ATTEMPTS_EXHAUSTED)
+    else:
+        assert outcome == JobOutcome(
+            "retrying", JobError.EXECUTION_LOST, timedelta(seconds=7)
+        )
+    assert not policy.may_republish(job)
+    assert policy.may_republish(
+        replace(job, state="retrying", execution_deadline=None)
+    ) == (not boundary and attempt < 3)
+
+
+async def test_arbitrary_failure_never_authorizes_retry() -> None:
+    app = SimpleNamespace(
+        execute=AsyncMock(side_effect=RuntimeError("private content"))
+    )
+    assert await DiagnosticTurnHandler(app, 10)(claimed()) == JobOutcome(
+        "dead", JobError.PERMANENT_FAILURE
+    )

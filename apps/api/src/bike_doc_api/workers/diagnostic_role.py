@@ -22,6 +22,7 @@ from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.core.telemetry import initialize_telemetry
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
 from bike_doc_api.workers.adapters import (
     NatsPullTransport,
     PostgresJobStore,
@@ -76,7 +77,7 @@ async def diagnostic_worker(
             runtime = create_workload_worker(
                 settings,
                 registry,
-                PostgresJobStore(sessions),
+                PostgresJobStore(sessions, repository_factory=DiagnosticJobRepository),
                 NatsPullTransport(subscription, client=client),
             )
             previous_wakeups = get_event_wakeups()
