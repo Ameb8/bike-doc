@@ -1,8 +1,10 @@
 """Profile definitions, policy, and one-call application attempts through fakes."""
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,12 +17,14 @@ from bike_doc_api.services.profile_inference import (
     ProfileInferenceOutcome,
     ProfileInferenceStatus,
 )
+from bike_doc_api.services.profile_inference_resolution import ProfileResolverPolicy
 from bike_doc_api.workers.profile_inference import (
     ProfileInferenceHandler,
     profile_policy,
     profile_registry,
 )
-from bike_doc_api.workers.registry import EffectPolicy
+from bike_doc_api.workers.profile_role import ProfileApplication
+from bike_doc_api.workers.registry import ClaimedJob, EffectPolicy
 
 
 def snapshot() -> JobSnapshot:
@@ -79,6 +83,47 @@ async def test_maps_committed_application_result(
         application_attempt=1,
         inference_schema_version="bike_profile_inference.v1",
     )
+
+
+async def test_unexpected_application_failure_is_not_reclassified_as_provider_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from bike_doc_api.workers import profile_role
+
+    session = AsyncMock()
+
+    @asynccontextmanager
+    async def sessions() -> AsyncIterator[Any]:
+        yield session
+
+    failure = RuntimeError("private user content")
+    handler = AsyncMock(side_effect=failure)
+    monkeypatch.setattr(
+        profile_role,
+        "ProfileInferenceHandler",
+        lambda application, retry_seconds: handler,
+    )
+    application = ProfileApplication(
+        cast(Any, sessions),
+        Settings(),
+        AsyncMock(),
+        AsyncMock(),
+        ProfileResolverPolicy.production(),
+    )
+    row = snapshot()
+    claimed = ClaimedJob(
+        row.id,
+        ProfileInferenceInputV1.model_validate(row.input),
+        row.attempt_count,
+        cast(str, row.execution_token),
+        cast(datetime, row.execution_deadline),
+    )
+
+    with pytest.raises(RuntimeError) as raised:
+        await application.handle(claimed)
+
+    assert raised.value is failure
+    session.rollback.assert_awaited_once_with()
 
 
 def test_definition_rejects_unpinned_or_invalid_behavior_before_attempt() -> None:

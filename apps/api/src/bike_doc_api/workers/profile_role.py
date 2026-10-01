@@ -20,7 +20,7 @@ from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.providers.storage import GCSStorageProvider, LocalStorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
-from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
+from bike_doc_api.repositories.background_jobs import JobOutcome
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.profile_inference import ProfileInferenceRunRepository
 from bike_doc_api.repositories.profile_jobs import ProfileJobRepository
@@ -98,11 +98,9 @@ class ProfileApplication:
                 )(job)
             except Exception:
                 await session.rollback()
-                return JobOutcome(
-                    "retrying",
-                    JobError.PROVIDER_UNAVAILABLE,
-                    profile_policy(self.settings).max_retry_delay,
-                )
+                # Unknown failures have no proven-safe retry classification. Let the
+                # shared runtime leave the delivery unsettled for deadline recovery.
+                raise
 
 
 @asynccontextmanager

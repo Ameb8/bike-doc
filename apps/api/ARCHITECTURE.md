@@ -532,6 +532,13 @@ transactional audit adapter for runtime and reconciler transitions, including
 failures before dispatch. Domain write phases verify the current job token and
 deadline under a job-row lock before mutating and again before commit.
 
+Only failures explicitly classified by profile inference produce a retry
+outcome. An unexpected application exception is rolled back and propagated to
+the shared runtime, which leaves the delivery unsettled; the existing hard
+deadline and expired-execution policy then govern recovery. It is never relabeled
+as a provider outage, and exception text is not copied into durable job state or
+worker logs.
+
 After extraction, bounded resolution retries reload ORM state after rollback
 and retry only database resolution, including commit conflicts. Claims,
 dispositions, resolutions, profile projection/revision, and completion commit
