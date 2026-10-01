@@ -27,13 +27,14 @@ from bike_doc_api.core.event_wakeups import (
 )
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.telemetry import TelemetryRuntime, initialize_telemetry
+from bike_doc_api.maintenance.hosting import create_job_maintenance
 
 logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """Start and close process-owned telemetry and ADK storage."""
+    """Own the telemetry, storage, notification, and maintenance lifecycles."""
 
     runtime = app.state.telemetry_initializer(app.state.settings)
     app.state.telemetry_runtime = runtime
@@ -46,9 +47,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         wakeups.publisher = notifications
         install_event_wakeups(wakeups)
         notifications.start()
+        maintenance = create_job_maintenance(app.state.settings)
+        maintenance.start()
         try:
             yield
         finally:
+            await maintenance.close()
             await wakeups.drain()
             await notifications.close()
             install_event_wakeups(EventWakeups())

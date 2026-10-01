@@ -63,7 +63,8 @@ class RepairSessionRepository:
                 RepairSession.id == repair_session_id,
                 RepairSession.user_id == user_id,
             )
-            .with_for_update(),
+            .with_for_update()
+            .execution_options(populate_existing=True),
         )
         return result.scalar_one_or_none()
 

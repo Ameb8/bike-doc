@@ -112,6 +112,25 @@ class DiagnosticADKSessionClient:
         )
         return adk_session_id
 
+    async def ensure_unbound_session(
+        self, *, phase_session_id: str, repair_session_id: str
+    ) -> str:
+        """Resume deterministic initialization after loss before app binding."""
+        identity = f"adk_diagnostic_{phase_session_id}"
+        existing = await self._session_service.get_session(
+            app_name=DIAGNOSTIC_ADK_APP_NAME,
+            user_id=DIAGNOSTIC_ADK_USER_ID,
+            session_id=identity,
+        )
+        if existing is None:
+            await self._session_service.create_session(
+                app_name=DIAGNOSTIC_ADK_APP_NAME,
+                user_id=DIAGNOSTIC_ADK_USER_ID,
+                session_id=identity,
+                state={"repair_session_id": repair_session_id, "phase": "diagnostic"},
+            )
+        return identity
+
     async def close_session(self, *, adk_session_id: str) -> None:
         """Best-effort cleanup for an ADK session that lost a creation race."""
 

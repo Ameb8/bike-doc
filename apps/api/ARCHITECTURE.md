@@ -31,6 +31,8 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
+| `workers/` | Shared pull execution and typed registry; independently runnable profile process resources and application composition | `PullWorker`, `profile_registry`, `profile_role` |
+| `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService` |
@@ -203,6 +205,10 @@ SQLAlchemy and ADK. It contains the client-visible IDs, status/phase enums,
 event payload validation, report envelope, and model-to-schema conversion
 helpers. Public API changes begin here and in
 [`docs/specs/openapi.yaml`](../../docs/specs/openapi.yaml), not in an ORM model.
+`schemas/background_jobs.py` is a separate internal contract: strict immutable
+profile-inference instructions pin only turn ID and behavior versions. These
+models are never exposed in the public API.
+
 Schemas may be used by API and services, but they must never require a FastAPI
 request or expose provider/ADK internals.
 
@@ -243,6 +249,32 @@ deletion endpoint. Alembic migrations are
 the authoritative record of table, constraint, and index changes. When adding
 or changing persisted behavior, update model, repository, migration, and the
 tests/spec that define its observable semantics as appropriate.
+
+### Durable background job persistence
+
+`services/background_jobs.py` validates the pinned `profile_inference.v1`
+instruction and derives its logical identity from a canonical tuple hash.
+`repositories/background_jobs.py` owns PostgreSQL job recording, exact-generation
+publication claims and confirmation, atomic delivery resolution, token/deadline
+fenced outcomes, and bounded locked maintenance scans. Its typed snapshots and
+resolution outcomes are the publisher/runtime seam. Definition validation is a
+pure synchronous callback under the delivery row lock; it must not perform I/O.
+
+All operations use a caller-owned async transaction and never commit or publish.
+Product services can record work with their existing writes; worker and
+maintenance callers commit short transactions before transport settlement or
+network calls. Scan results remain locked only for that transaction. Publication
+claim tokens persist across the publisher's network call and expire independently
+of execution tokens. `models/background_job.py` and Alembic revision `0009`
+provide bounded state, immutable inputs, monotonic counters, terminal-outcome
+protection, and scan indexes. Stored errors are fixed categories, never exception
+messages. Expired deliveries wait for reconciliation; only maintenance advances
+recovery publication intent. Retention scans exclude nonterminal and unconfirmed
+jobs, and their configured cutoff must exceed broker lifetime and all longer
+retry, recovery, and audit horizons.
+
+This foundation does not register diagnostic jobs, publish messages, run handlers,
+or change the current turn executor. Those integrations build on this seam.
 
 ### `providers/`
 
@@ -343,3 +375,233 @@ schema/OpenAPI alignment.
 - [Diagnostic API workflow](../../docs/specs/apps/api-diagnostic.md), [event/SSE semantics](../../docs/specs/apps/api-events-diagnostic.md), and [diagnostic persistence](../../docs/specs/apps/api-db-diagnostic.md)
 - [Artifact storage boundary](../../docs/specs/apps/api-artifacts-diagnostic.md), [report schema](../../docs/specs/apps/diagnostic-report-v1.md), and [safety rules](../../docs/specs/apps/safety-diagnostic.md)
 - [ADK tool contracts](../../docs/specs/apps/adk-diagnostic-tools.md), [ADK wiring](../../docs/specs/apps/adk-wiring-spec.md), and the package-local [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
+
+## Durable job maintenance
+
+`main.lifespan` starts `maintenance.hosting.create_job_maintenance` and cancels
+it before closing the other API resources. `JobMaintenance.start()` immediately
+schedules independent publication and reconciliation loops; `close()` bounds
+cancellation and publisher shutdown by `job_shutdown_timeout_seconds`. The
+module has no FastAPI, route, ADK, or profile-provider dependency and can be
+hosted through this lifecycle elsewhere after a deployment decision.
+
+The publisher polls committed state even during NATS outages. A short
+`BackgroundJobRepository.claim_publications` transaction commits an opaque token
+and exact desired generation, then releases its session before broker I/O. A
+bounded concurrent batch maps stored workloads through two fixed settings-backed
+subjects and publishes only `version`, `job_id`, and `publication_generation`.
+`Nats-Msg-Id` is `job_id:generation`. A JetStream acknowledgement precedes a
+separate conditional confirmation transaction. Cancellation, failed confirmation,
+and abandoned leases leave the generation republishable; an older confirmation
+preserves newer intent. Transport failures retain a bounded error enum and a
+future retry time with exponential equal jitter capped by settings. Backoff is
+host-local efficiency state; PostgreSQL claims remain the correctness boundary.
+
+The JetStream adapter connects and verifies the pinned topology lazily. NATS
+connection failure cannot block lifespan startup or valid HTTP acceptance.
+Routine failure logs contain fixed events/categories only. No route invokes
+maintenance or publishes work directly. The existing background execution path
+remains until its job-kind cutover tasks land.
+
+Reconciliation uses bounded `SKIP LOCKED` scans and conditional updates inside
+short transactions. Its policy registry is keyed by stored `(job_kind,
+input_version)`; absent definitions are omitted at the database scan. Policies
+make pure decisions about expired outcomes and safe no-progress notification
+recovery. The API host registers the profile safe-replay policy; diagnostic product
+terminalization belongs to its cutover task. `ProfileJobRepository` couples
+job transitions to existing inference-run audit state in that same transaction. Recovery of a retryable expired execution preserves attempts,
+clears the expired token, advances durable generation, and schedules publication
+at the policy's `eligible_at`. Exhaustion terminalizes as dead. No-progress
+recovery advances only eligible queued/retrying work with remaining attempts
+and no effect boundary. Publication remains the sole JetStream writer.
+
+Settings and their timing constraints are documented in the root `.env.example`
+and passed explicitly by Compose. `task test:maintenance` verifies real
+PostgreSQL/JetStream acknowledgement-window replay, deterministic deduplication,
+exact generation/coalescing, abandoned leases, two-host publication and recovery,
+and policy/eligibility/deadline/attempt omissions with independent sessions.
+
+## Shared pull workers
+
+`workers/registry.py` defines the strict V1 delivery envelope, immutable typed
+`ClaimedJob[Input]`, and exact `(kind, input_version)` allowlist. Definitions
+supply the strict immutable input model, workload, async handler, application
+attempt limit, maximum retry delay, effect policy, hard duration, cancellation
+grace, settlement reserve, explicit timeout outcome, and reconciliation policy.
+Registry construction rejects duplicate or incompatible definitions. Every
+replica sharing a consumer must receive the complete supported registry;
+deploy new definitions before enabling producers, retaining old versions through
+all possible redeliveries. Database strings never become imports or commands.
+
+`workers/runtime.py` owns one workload's bounded pull lifecycle through
+`JobStore` and `PullTransport` protocols. PostgreSQL atomically validates and
+claims authoritative input before a handler runs. Only an executable resolution
+increments an application attempt. Terminal/stale deliveries acknowledge;
+early/running deliveries receive a delayed NAK from authoritative eligibility
+or deadline; expired running deliveries wait for API-hosted reconciliation.
+Untrusted deliveries terminate without mutation; trusted definition/input
+failures commit `dead` before termination. Exhaustion commits `dead` and
+acknowledges. Handlers return bounded outcomes and never receive broker types.
+
+`workers/adapters.py` supplies short, independent PostgreSQL transactions and
+the official NATS delivery adapter. `apply_outcome_and_load` returns actual
+committed eligibility/state, including attempt exhaustion, so the runtime
+settles from durable state rather than guessing from a handler result. An ack
+failure leaves safe redelivery. Progress affects only the broker AckWait;
+the execution deadline cannot renew. Timeout starts cancellation before the
+grace and settlement reserve. A cancellation-resistant handler or failed/stale
+outcome persistence leaves the message unsettled for deadline recovery;
+protected effects must still enforce the execution token and deadline. A handler
+that resists cancellation retains its local concurrency slot until it finishes.
+Maximum-delivery and termination advisory subscriptions log fixed categories
+only, with no access to job state or message content.
+
+`workers/role.py:create_workload_worker` is the thin workload-role seam. The
+process host constructs and owns the database pool, NATS connection and durable
+pull subscription, providers, and any ADK resources, then supplies its complete
+registry and adapters. Both profile and later diagnostic roles reuse this same
+runtime. Dependency direction is `worker role -> registry/runtime/adapters`,
+`runtime -> typed job store/transport protocols`, `database adapter -> job
+repository`, and `NATS adapter -> core/nats + official client`. Registry and
+handler interfaces import no NATS, FastAPI, providers, or ADK. A diagnostic
+store/handler must add atomic product terminalization and effect fencing in
+Chunk #137. The profile role supplies its own isolated extractor and storage.
+
+The initial role defaults are concurrency/fetch batch 4 (bounded by the
+consumer's 128 pending acknowledgements), one-second fetches, ten-second
+progress within the fixed thirty-second production AckWait, and thirty seconds
+for in-flight shutdown. Timing is validated at worker construction. Provider
+calls must fit the handler duration and use the single registered attempt
+budget, without nested retries. Shutdown stops fetching, permits bounded
+completion, cancels remaining work, then unsubscribes and drains NATS; forced
+loss leaves running jobs and unacknowledged deliveries for recovery.
+
+Run `task test:worker` after `task format` and `task check`. The script creates
+disposable PostgreSQL 16 and pinned NATS 2.12.1 containers, migrates the database,
+and runs `tests/integration/test_worker_runtime.py` with fake typed handlers and
+real job rows on the profile workload consumer. It verifies pull, progress,
+duplicate exclusion, delayed NAK, early/stale/future/malformed deliveries,
+strict stored-input failures, confirmed acknowledgement, dropped acknowledgements,
+timeout, graceful drain, and forced-loss redelivery. Containers and volumes are
+removed on exit; no provider credentials are needed.
+
+Issue #145 acceptance evidence (unit tests are in
+`tests/unit/test_shared_worker.py`; real infrastructure tests are in
+`tests/integration/test_worker_runtime.py`):
+
+| Acceptance contract | Implementation and verification |
+| --- | --- |
+| Strict minimal envelope | `DeliveryEnvelope.decode`; strict-envelope and ambiguous/non-object JSON unit cases, real malformed termination |
+| Fail-closed exact registry and policies | `HandlerDefinition`, `HandlerPolicy`, `HandlerRegistry`; duplicate, missing-policy, workload, strict-input, and invalid-timing unit cases |
+| Subject role and authoritative dispatch | `PostgresJobStore.resolve` delegates locked validation to the registry; real wrong-subject/workload and stored-definition cases |
+| One attempt/handler and bounded duplicate NAK | Atomic repository claim; simultaneous independent PostgreSQL transactions invoke once, duplicate delivery waits through the hard deadline |
+| Terminal/stale no-op; future/workload rejection | Resolution settlement matrix unit cases and real attempt-free branch cases; newer intent is untouched |
+| Untrusted identity versus trusted permanent failure | Decode before store access; real missing identity and unknown-kind/version/invalid-input cases prove zero attempts and trusted `dead` state |
+| Retry commit and earliest eligibility | `finish` returns committed eligibility; real retry/early delivery verifies no premature second invocation |
+| Terminal commit before ack and safe lost ack | Typed outcome matrix and stale-token/commit-failure unit cases; real dropped ack redelivers as a terminal no-op |
+| Non-renewable deadline, timeout grace, and progress | Monotonic execution budget plus cancellation and settlement reserves; deterministic timing unit test and real progress/timeout tests |
+| Graceful and forced shutdown | Bounded close lifecycle; fake resistant-fetch/handler cases and real drain/forced-loss redelivery |
+| Typed handlers and bounded outcomes | `ClaimedJob[Input]`, registered outcome validation; typed-handler and invalid-result/retry unit tests |
+| Fakes and real transport evidence | Complete resolution matrix with fakes; real pull, delayed NAK, progress, confirmed ack, redelivery, advisory, and drain tests |
+| Required verification commands | `task format`, `task check`, then `task test:worker` |
+
+## External profile inference role
+
+`workers/profile_role.py` owns a native async process, bounded PostgreSQL pool
+(no overflow), NATS connection, profile durable subscription, structured provider,
+artifact storage, signal handling, and resource shutdown. It constructs the
+complete `profile_inference` workload registry in `workers/profile_inference.py`
+and runs the shared `PullWorker`. No handler publishes or settles messages.
+The API maintenance composition imports only the pure profile recovery policy;
+it does not construct worker/provider resources.
+
+`profile_inference.v1` resolves accepted turn/artifact references through the
+existing application service. Schema `bike_profile_inference.v1` and extractor
+`drivetrain-specifications.v1` are the supported pinned implementations; unknown
+pins fail definition validation before a claim. Deploy overlapping supported
+definitions before any future version producer change.
+
+Queue attempts bypass the domain run's legacy running lease and provider retry
+loop. Domain metadata records the generic application attempt, and SDK retries
+are disabled. Provider errors and timeouts retry at a fixed bounded delay;
+exhaustion commits a dead job and exhausted domain audit. Expired execution can
+replay safely within the same attempt budget; committed completed/abstained
+runs return their result without extracting or mutating again. There is no
+profile effect boundary that prohibits replay. `ProfileJobRepository` is the
+transactional audit adapter for runtime and reconciler transitions, including
+failures before dispatch. Domain write phases verify the current job token and
+deadline under a job-row lock before mutating and again before commit.
+
+Only failures explicitly classified by profile inference produce a retry
+outcome. An unexpected application exception is rolled back and propagated to
+the shared runtime, which leaves the delivery unsettled; the existing hard
+deadline and expired-execution policy then govern recovery. It is never relabeled
+as a provider outage, and exception text is not copied into durable job state or
+worker logs.
+
+After extraction, bounded resolution retries reload ORM state after rollback
+and retry only database resolution, including commit conflicts. Claims,
+dispositions, resolutions, profile projection/revision, and completion commit
+atomically. The run's unique identity remains the authoritative result.
+
+The process accepts SIGINT/SIGTERM, stops fetching and uses the shared bounded
+shutdown/drain lifecycle, then closes provider/storage transports and disposes
+the database pool. Forced termination leaves authoritative deadline recovery.
+See root README for invocation, timing settings and worker-first canary rollout.
+
+
+## Atomic profile canary acceptance
+
+`Settings.profile_inference_execution` is a deployment-only `legacy` (default) or
+`durable_queue` selection. The turn route composes `BackgroundJobService` over the
+same request session as turn/event/session repositories. In queue mode,
+`TurnService` validates all image evidence, locks the repair session, records an
+app-owned phase reference (null ADK binding until executor initialization), the
+turn and `turn.started`, state updates, and the strict `profile_inference.v1` job
+before committing once. Migration `0010` permits the unbound phase reference.
+The job pins `bike_profile_inference.v1` and the configured extractor; the existing
+canonical tuple hash and database unique key define its logical identity.
+
+A committed job is the durable selection. `last_profile_job_recorded` is the
+request-local scheduling result, set after recording intent. The route schedules
+the legacy profile function only for a new eligible acceptance without a job;
+it schedules the existing diagnostic function independently. Idempotent replay
+exits before selecting any executor, including after configuration changes.
+Neither acceptance nor route constructs broker messages or opens NATS.
+
+Queue-mode phase creation avoids ADK I/O and preliminary commits. The existing
+diagnostic background host binds an unbound reference under the repair-session
+lock after acceptance, using a deterministic ADK ID derived from the phase ID.
+An initialization crash before binding resumes that ID; bound sessions retain
+the existing missing-session policy. Legacy acceptance retains its existing ADK
+phase-manager behavior during this canary. Diagnostic effect fencing and queue
+execution remain Chunk #137 work.
+
+`task test:profile-canary` runs the integrated real PostgreSQL/JetStream matrix
+with fake extraction. Profile tests now create their jobs through turn acceptance,
+then exercise the real profile handler and shared runtime. Maintenance/runtime
+suites supply the remaining transport and lifecycle injections. README documents
+expand-first deployment, the worker readiness event, exactly-one-executor
+selection and rollback preserving accepted queue work.
+
+Issue #147 acceptance evidence:
+
+| Criterion | Implementation and verification |
+| --- | --- |
+| Atomic turn/event/job/pins/intent and rollback | `TurnService` with one request transaction; profile fixture checks the committed rows and null phase binding; rollback tests cover commit loss, invalid pin and invalid artifact with no phase/turn/event/job intent left behind |
+| Acceptance without NATS; later publication | Real HTTP outage canary stops NATS, receives `202`, then runs `JobMaintenance` and the profile worker after restart |
+| Idempotent and concurrent acceptance | API replay tests switch selection in both directions; real same-key concurrent acceptance yields one turn/job/event; distinct-key concurrency cannot bypass running-session validation |
+| Ineligible and legacy work | Unit/API image and text selection tests; existing invalid-artifact and legacy profile tests remain active |
+| Exactly one executor; no route publication | API scheduling spies and real outage route prove queue work skips the legacy profile function while diagnostic work is scheduled; route imports only the recorder, never NATS |
+| Worker-first compatibility/readiness | Idle real profile worker constructed with legacy producer selection; `profile_worker_ready` process event; README expansion sequence |
+| One authoritative run/effects through loss and restart | Accepted-turn crash/effect tests, acknowledgement-window/broker/worker restart canary, and independent SIGKILL/restart/SIGTERM worker test with real PostgreSQL/JetStream and fake provider |
+| Stale/future/subject/malformed/unknown definitions | Real shared-runtime fail-closed matrix plus profile unsupported-pin tests; no provider invocation or attempt for rejected definitions |
+| Duplicate/retry/timeout/ack/shutdown/reconciliation/budget | Real maintenance/runtime matrix and accepted-turn profile timeout, resistant provider, exhaustion, ambiguous loss and external-process tests |
+| Workload isolation | Profile pull-loop test inspects the untouched diagnostic durable consumer separately from job/run/profile rows |
+| Unchanged HTTP/events; runnable diagnostic path | Existing API/contract/event tests; real deferred-binding diagnostic executor test resumes initialization after simulated binding loss |
+| Required checks and integrated canary | `task format`, `task check`, then `task test:profile-canary`; the latter runs the real maintenance/runtime/profile suites and PostgreSQL job persistence tests |
+
+This canary creates no `diagnostic_turn` job, introduces no profile dependency
+for diagnostic eligibility, and retains the diagnostic background executor.
+Monitoring, broker reconstruction, cleanup and load certification remain outside
+this Task's scope.

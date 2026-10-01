@@ -344,3 +344,66 @@ async def test_accept_turn_validates_every_mixed_artifact_before_rejecting_all()
     assert repositories.turns == []
     assert repositories.events == []
     assert orchestrator.calls == []
+
+
+@pytest.mark.parametrize("has_image", [False, True])
+async def test_queue_selection_records_pinned_input_before_commit_and_replay(
+    has_image: bool,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from bike_doc_api.models._ids import generate_prefixed_ulid
+    from bike_doc_api.services.background_jobs import BackgroundJobService
+
+    class QueueRepositories(_TurnRepositories):
+        async def get_for_session_phase(self, **kwargs: object) -> None:
+            return None
+
+        async def add(self, model: object) -> object:
+            if isinstance(model, RepairPhaseSession):
+                model.id = generate_prefixed_ulid("phs_")
+                assert model.adk_session_id is None
+                return model
+            result = await super().add(model)
+            if isinstance(result, RepairTurn):
+                result.id = generate_prefixed_ulid("turn_")
+            return result
+
+    repositories = QueueRepositories()
+    recorder = AsyncMock()
+    commit = AsyncMock()
+    service = TurnService(
+        repositories,
+        repositories,
+        repositories,
+        repositories,
+        repositories,
+        background_jobs=BackgroundJobService(recorder),
+        profile_inference_execution="durable_queue",
+        profile_inference_extractor_version="accepted.v1",
+        profile_inference_max_attempts=2,
+        commit=commit,
+    )
+    request = _request(*(["art_ready"] if has_image else []))
+    accepted = await service.accept_turn(
+        current_user=_user(), repair_session_id=repositories.session.id, request=request
+    )
+    assert service.last_profile_job_recorded is has_image
+    if has_image:
+        definition = recorder.record.call_args.args[0]
+        assert definition.input == {
+            "turn_id": accepted.turn_id,
+            "inference_schema_version": "bike_profile_inference.v1",
+            "extractor_version": "accepted.v1",
+        }
+        assert definition.attempt_limit == 2
+    else:
+        recorder.record.assert_not_awaited()
+    commit.assert_awaited_once()
+    # Configuration changes must not reinterpret accepted work.
+    legacy = _service(repositories, _OrchestratorSpy())
+    replay = await legacy.accept_turn(
+        current_user=_user(), repair_session_id=repositories.session.id, request=request
+    )
+    assert replay == accepted and legacy.last_acceptance_was_idempotent_replay
+    assert recorder.record.await_count == int(has_image)

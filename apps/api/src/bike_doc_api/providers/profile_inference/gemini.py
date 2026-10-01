@@ -115,7 +115,11 @@ class GeminiProfileInferenceExtractor:
     ) -> GeminiProfileInferenceExtractor:
         """Build a Google AI Studio backed extractor."""
 
-        client = genai.Client()
+        client = genai.Client(
+            http_options=types.HttpOptions(
+                retry_options=types.HttpRetryOptions(attempts=1)
+            )
+        )
         return cls(
             model=model,
             timeout_seconds=timeout_seconds,
@@ -132,13 +136,26 @@ class GeminiProfileInferenceExtractor:
     ) -> GeminiProfileInferenceExtractor:
         """Build a Vertex AI backed extractor from standard runtime settings."""
 
-        client = genai.Client(vertexai=True)
+        client = genai.Client(
+            vertexai=True,
+            http_options=types.HttpOptions(
+                retry_options=types.HttpRetryOptions(attempts=1)
+            ),
+        )
         return cls(
             model=model,
             timeout_seconds=timeout_seconds,
             generate_content=client.aio.models.generate_content,
             client=client,
         )
+
+    async def close(self) -> None:
+        """Release the process-owned async provider client."""
+        if self._client is not None:
+            try:
+                await self._client.aio.aclose()
+            finally:
+                await asyncio.to_thread(self._client.close)
 
     async def extract(self, request: ProfileInferenceRequest) -> dict[str, Any]:
         """Issue exactly one structured call with no profile or diagnostic history."""

@@ -64,3 +64,61 @@ the exact generation workflow and review process.
 
 Keep ADK internals behind `src/bike_doc_api/adk`; the Android app talks only to
 the product API contract.
+
+## API-hosted durable job maintenance
+
+Run migrations before starting the API (`uv run alembic upgrade head` from
+`apps/api` with the configured database URL). The root Compose environment passes
+the `BIKE_DOC_API_JOB_*` variables documented in `.env.example` to each API
+replica. `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` starts the reusable publisher
+and reconciler from FastAPI lifespan; there is no separate maintenance executable.
+The profile and diagnostic job producers/workers are enabled by their own later
+cutover tasks, after compatible worker support is deployed. Recovery policies
+must be explicitly registered through `create_job_maintenance(settings, policies)`.
+An empty registry safely skips reconciliation while publishing committed intent.
+
+NATS can be temporarily unavailable at API startup or acceptance. Maintenance
+connects lazily, retains unconfirmed generations in PostgreSQL, and retries with
+bounded exponential equal jitter. Keep the claim duration longer than the total
+publish timeout, and the no-progress threshold longer than claim + polling,
+maximum backoff, and reconciliation cadence. Defaults are 16 publications per
+batch, 100 reconciliation candidates, 1-second publication polling, a 10-second
+publish bound, 30-second leases, 2..60-second retry ceilings, a 300-second
+no-progress threshold, and a 30-second reconciliation cadence. A 10-second
+shutdown budget cancels loops and closes broker resources; unfinished claims
+expire for another host. Multiple API replicas use PostgreSQL coordination.
+
+From the repository root, run:
+
+```bash
+task format
+task check
+task test:maintenance
+```
+
+`test:maintenance` needs a working Docker daemon and permission to run local
+containers. It creates disposable PostgreSQL 16 and pinned NATS 2.12.1 servers
+on private random localhost ports, migrates the fresh database, runs real
+maintenance failure/race tests, and removes the containers and volumes on exit.
+No production credentials or model provider are required. To use an existing
+**disposable migrated** test installation instead:
+
+```bash
+cd apps/api
+BIKE_DOC_API_MAINTENANCE_TEST_DATABASE_URL=<postgresql+asyncpg-test-url> \
+BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL=<test-nats-url> \
+uv run pytest -vv -m nats tests/integration/test_job_maintenance.py
+```
+
+The tests inspect job rows and broker message state separately. They exercise
+cancellation after publish acknowledgement, lease expiry/replay, generation
+coalescing, independent replica sessions, and attempt-free reconciliation.
+Retention cleanup, broker reconstruction, worker settlement, and diagnostic
+effect recovery are owned by their respective follow-up tasks.
+
+Shared worker runtime verification: run `task test:worker` from the repository
+root. It creates disposable PostgreSQL and pinned JetStream containers, applies
+migrations, and verifies typed fake handlers against real durable job rows and
+the profile pull consumer. See `ARCHITECTURE.md` for worker composition, timing,
+settlement, and shutdown contracts. Workload handlers and executable role
+resource composition are supplied by their feature tasks.

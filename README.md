@@ -50,7 +50,7 @@ Important backend settings:
 - `BIKE_DOC_API_DATABASE_URL`: host-side SQLAlchemy async PostgreSQL URL for
   `task run` and host-side migrations.
 - `BIKE_DOC_API_DATABASE_URL_COMPOSE`: container-side URL for the Compose API,
-  migrations, and future workers. Its host must be `db` for the Compose database.
+  migrations, and workload workers. Its host must be `db` for the Compose database.
 - `BIKE_DOC_API_AUTH_MODE`: `dev`, `local_unsigned_jwt`, or `firebase`.
   Production rejects anything except `firebase`.
 - `BIKE_DOC_API_FIREBASE_PROJECT_ID`: required when auth mode is `firebase`.
@@ -76,7 +76,7 @@ name aligned with `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`.
 The host-side URL uses `localhost`; the Compose URL uses `db` and container
 port `5432`. When adding a new API setting, document it in `.env.example` and
 decide which Compose services need it. The shared API environment mapping in
-`compose.yaml` is the runtime contract for the API and future API workers.
+`compose.yaml` is the runtime contract for the API and workload workers.
 
 ### Backend compatibility verification
 
@@ -1071,3 +1071,98 @@ architecture," not "already deployed production system." The project can be run
 as a FastAPI service today, and the code is structured so a future deployment
 can expose one stable product API while keeping ADK as an internal orchestration
 library.
+
+### Independent profile worker
+
+Run migrations and the private PostgreSQL/NATS services first. With the root
+`.env` configured, `task run:profile` starts the independent native async role.
+For Compose, run `docker compose --profile profile-worker up --build profile-worker`.
+The optional Google credential override also mounts ADC into this role. API
+and worker local artifact roots must resolve to the same storage; the Compose
+bind mount shares the existing API artifact directory. For production, run
+`python -m bike_doc_api.workers.profile_role` from the installed API image,
+provide the explicit settings/secrets, and allow at least 120 seconds for process
+shutdown. The role needs the profile workload consumer and advisory subjects;
+publication belongs to the API maintenance host.
+
+Turn acceptance defaults to the legacy profile executor. Set
+`BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` only after the compatible
+worker and API maintenance host are running. The accepted job records this
+selection permanently; settings changes affect only future acceptances. Never
+manually enqueue legacy-selected work. The profile role supports `profile_inference.v1`, schema
+`bike_profile_inference.v1`, and extractor `drivetrain-specifications.v1`.
+Unsupported pins fail permanently before consuming an application attempt.
+Future behavior/version changes require deploying compatible workers first.
+
+| Setting suffix (prefix `BIKE_DOC_API_`) | Default | Constraint |
+| --- | --- | --- |
+| `PROFILE_INFERENCE_TIMEOUT_SECONDS` | 30 | Provider timeout below handler timeout |
+| `PROFILE_WORKER_HANDLER_SECONDS` | 50 | Handler plus grace below hard duration |
+| `PROFILE_WORKER_HARD_SECONDS` | 60 | Includes 5s cancellation grace and 5s settlement reserve |
+| `PROFILE_WORKER_TIMEOUT_GRACE_SECONDS` | 5 | Bounded cancellation after handler timeout |
+| `PROFILE_INFERENCE_MAX_ATTEMPTS` | 3 | Single generic provider-call budget, 1–5 |
+| `PROFILE_WORKER_RETRY_SECONDS` | 10 | Fixed retry/recovery delay |
+| `WORKER_PROGRESS_SECONDS` | 10 | Less than half the pinned 30s AckWait |
+| `WORKER_FETCH_TIMEOUT_SECONDS` | 1 | Bounded fetch wait |
+| `WORKER_CONCURRENCY` / `WORKER_FETCH_BATCH` | 4 / 4 | Fetch <= concurrency <= broker pending limit 128 |
+| `PROFILE_WORKER_POOL_SIZE` | 6 | At least concurrency + 2; overflow disabled |
+| `WORKER_SHUTDOWN_SECONDS` | 30 | Bounded in-flight settlement before cancellation/drain |
+
+Retries reuse one authoritative inference-run identity. Each queue attempt can
+call the provider once; SDK and domain provider retries are bypassed. An
+ambiguous crash may incur another provider call within the attempt limit.
+Database-only resolution retries reuse the response and remain bounded to three
+tries, with all profile changes and completion committed together. Committed
+outcomes replay without duplicate claims or profile revision changes. Deadline
+recovery uses the API-hosted shared reconciler and atomically updates existing
+run audit metadata. Routine worker output uses only bounded categories.
+
+`task test:profile` creates disposable migrated PostgreSQL and pinned JetStream,
+uses fake storage/extraction behavior, and verifies role consumption, crash
+recovery, idempotent effects, database resolution retries, timeout and provider
+exhaustion. It accepts queue-selected turns with fake providers and never calls a real model.
+
+
+### Profile queue canary and rollback
+
+1. Apply migrations through `0010` before running the new API/worker image.
+   Keep `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=legacy` during expansion.
+2. Start PostgreSQL and pinned NATS, then the API with
+   `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` and the profile worker using the
+   invocation above. The worker logs `profile_worker_ready` after connecting,
+   verifying migrated job storage, validating topology and constructing its
+   supported registry. Inspect the
+   profile durable consumer separately from PostgreSQL job state. The worker
+   can start idle while producers remain disabled; no standalone maintenance
+   deployment is needed.
+3. Run `task format`, `task check`, then `task test:profile-canary`. This command
+   creates disposable PostgreSQL 16 and NATS 2.12.1 with file-backed volumes,
+   migrates them, and combines maintenance/runtime failure injection with the
+   accepted-turn profile role tests. No model credentials are required. It
+   verifies acceptance during broker outage, pinned inputs, rollback, concurrent
+   replay, publisher loss after broker acknowledgement, broker/worker restart,
+   duplicate/stale/future/wrong-subject/malformed/unsupported delivery, early and
+   running duplicates, timeout, dropped acknowledgements, graceful/forced loss,
+   no-progress reconciliation, and ambiguous provider loss within one attempt
+   budget. A separate Python worker process is killed with SIGKILL inside fake
+   extraction, recovered through the publisher, restarted, and drained with
+   SIGTERM; it verifies the shared budget and one committed profile effect. Each suite inspects database rows and consumer state independently.
+4. Enable `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` on API producers
+   (`task run` with root `.env`, or recreate the Compose API). Eligible image turns
+   now commit one profile job, input and generation intent with `turn.started`.
+   Text-only turns create no job. HTTP `202` needs no broker connection. Diagnostic
+   processing continues through its existing background executor and does not
+   wait for profile inference. The route never publishes a notification.
+
+For rollback, stop/drain the profile consumer (`docker compose stop profile-worker`
+with its 120-second grace period), inspect running jobs and deadlines, and retain
+all PostgreSQL intent and inference rows. Select `legacy` for future work only
+when it is proven safe; do not send accepted queue jobs to the legacy executor.
+Pending queue work waits for a compatible worker to resume, using maintenance
+recovery and the same bounded attempt budget. Replays create or schedule no work
+under either setting. Do not downgrade migration `0010` while unbound accepted
+phase references remain; its downgrade fails instead of deleting accepted work.
+
+The canary adds no diagnostic jobs and removes no diagnostic executor. Production
+monitoring/load certification, broker reconstruction and diagnostic queue cutover
+remain later Chunk work.

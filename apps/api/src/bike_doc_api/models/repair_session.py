@@ -288,7 +288,7 @@ class RepairPhaseSession(Base):
         nullable=False,
     )
     phase: Mapped[str] = mapped_column(Text, nullable=False)
-    adk_session_id: Mapped[str] = mapped_column(Text, nullable=False)
+    adk_session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     diagnostic_report_schema_version: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(
         Text,

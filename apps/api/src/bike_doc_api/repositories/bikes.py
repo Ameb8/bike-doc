@@ -55,7 +55,8 @@ class BikeRepository:
                 BikeProfile.user_id == user_id,
                 BikeProfile.deleted_at.is_(None),
             )
-            .with_for_update(),
+            .with_for_update()
+            .execution_options(populate_existing=True),
         )
         return result.scalar_one_or_none()
 

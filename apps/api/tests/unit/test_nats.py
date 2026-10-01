@@ -46,3 +46,25 @@ async def test_connection_error_does_not_reveal_endpoint(
         ):
             pass
     assert "password" not in str(exc.value)
+
+
+async def test_connection_context_accepts_worker_owned_drain(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = FakeClient()
+    calls = 0
+
+    async def drain() -> None:
+        nonlocal calls
+        calls += 1
+        client.is_closed = True
+
+    client.drain = drain
+
+    async def connect(**kwargs: object) -> FakeClient:
+        return client
+
+    monkeypatch.setattr("bike_doc_api.core.nats.nats.connect", connect)
+    async with nats_connection(Settings()) as connected:
+        await connected.drain()
+    assert calls == 1 and client.is_closed

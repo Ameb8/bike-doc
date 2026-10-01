@@ -105,6 +105,38 @@ class Settings(BaseSettings):
     nats_profile_subject: str = "bikedoc.work.v1.profile"
     nats_diagnostic_consumer: str = "bikedoc_diagnostic_v1"
     nats_profile_consumer: str = "bikedoc_profile_v1"
+    profile_worker_handler_seconds: float = Field(
+        default=50, gt=0, le=600, allow_inf_nan=False
+    )
+    profile_worker_hard_seconds: float = Field(
+        default=60, gt=0, le=600, allow_inf_nan=False
+    )
+    profile_worker_timeout_grace_seconds: float = Field(
+        default=5, gt=0, le=30, allow_inf_nan=False
+    )
+    profile_worker_pool_size: int = Field(default=6, ge=2, le=130)
+    profile_worker_retry_seconds: float = Field(
+        default=10, gt=0, le=300, allow_inf_nan=False
+    )
+    worker_concurrency: int = Field(default=4, ge=1, le=128)
+    worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    worker_fetch_timeout_seconds: float = Field(
+        default=1, gt=0, le=30, allow_inf_nan=False
+    )
+    worker_progress_seconds: float = Field(default=10, gt=0, lt=15, allow_inf_nan=False)
+    worker_shutdown_seconds: float = Field(default=30, gt=0, le=60, allow_inf_nan=False)
+
+    job_maintenance_enabled: bool = True
+    job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
+    job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
+    job_publication_poll_seconds: float = Field(default=1, ge=0.1, le=30)
+    job_publish_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
+    job_publication_claim_seconds: float = Field(default=30, ge=1, le=300)
+    job_backoff_initial_seconds: float = Field(default=2, ge=0.1, le=300)
+    job_backoff_max_seconds: float = Field(default=60, ge=1, le=3600)
+    job_no_progress_seconds: float = Field(default=300, ge=1, le=86400)
+    job_reconciliation_poll_seconds: float = Field(default=30, ge=0.1, le=300)
+    job_shutdown_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
     auth_mode: Literal["firebase", "dev", "local_unsigned_jwt"] = "dev"
     dev_auth_token: str = "dev-token"
     dev_auth_subject: str = "dev-user"
@@ -141,6 +173,7 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy"
     profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)
     profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)
@@ -234,6 +267,20 @@ class Settings(BaseSettings):
             raise ValueError("NATS workload subjects must differ")
         if self.nats_diagnostic_consumer == self.nats_profile_consumer:
             raise ValueError("NATS durable consumers must differ")
+        return self
+
+    @model_validator(mode="after")
+    def validate_job_maintenance_timing(self) -> "Settings":
+        if self.job_publication_claim_seconds <= self.job_publish_timeout_seconds:
+            raise ValueError("publication claim must exceed publish timeout")
+        if self.job_backoff_max_seconds < self.job_backoff_initial_seconds:
+            raise ValueError("maximum backoff must cover initial backoff")
+        if self.job_no_progress_seconds <= max(
+            self.job_publication_claim_seconds + self.job_publication_poll_seconds,
+            self.job_backoff_max_seconds,
+            self.job_reconciliation_poll_seconds,
+        ):
+            raise ValueError("no-progress threshold must exceed maintenance timings")
         return self
 
     @field_validator("auth_mode", mode="before")

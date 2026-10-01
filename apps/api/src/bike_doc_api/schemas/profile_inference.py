@@ -169,3 +169,7 @@ class ProfileInferenceRequest(BaseModel):
     allowed_field_paths: list[str] = Field(
         default_factory=lambda: sorted(PROFILE_INFERENCE_FIELD_PATHS),
     )
+
+
+# Exact behavior supported by the deployed structured extractor.
+EXTRACTOR_VERSION = "drivetrain-specifications.v1"

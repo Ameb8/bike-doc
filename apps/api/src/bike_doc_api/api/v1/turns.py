@@ -21,6 +21,7 @@ from bike_doc_api.api.deps import (
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
+from bike_doc_api.repositories.background_jobs import BackgroundJobRepository
 from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
@@ -28,6 +29,7 @@ from bike_doc_api.repositories.repair_sessions import (
     RepairTurnRepository,
 )
 from bike_doc_api.schemas.turn import TurnAccepted, TurnCreate
+from bike_doc_api.services.background_jobs import BackgroundJobService
 from bike_doc_api.services.turns import TurnService
 
 router = APIRouter(tags=["Turns and Events"])
@@ -65,6 +67,11 @@ def get_turn_service(
         rollback=session.rollback,
         phase_session_manager=phase_session_manager,
         image_analysis_mode=settings.image_analysis_mode,
+        background_jobs=BackgroundJobService(BackgroundJobRepository(session)),
+        profile_inference_execution=settings.profile_inference_execution,
+        profile_inference_extractor_version=settings.profile_inference_extractor_version,
+        profile_inference_max_attempts=settings.profile_inference_max_attempts,
+        diagnostic_report_version=settings.diagnostic_report_version,
     )
 
 
@@ -94,7 +101,7 @@ async def create_repair_session_turn(
             accepted.repair_session_id,
             accepted.turn_id,
         )
-        if request.message.artifact_ids:
+        if request.message.artifact_ids and not service.last_profile_job_recorded:
             # Run after diagnostic processing so enrichment cannot delay it.
             background_tasks.add_task(
                 execute_profile_inference_background,

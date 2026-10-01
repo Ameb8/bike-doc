@@ -3,20 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
-from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import Final
 
 import pytest
-import pytest_asyncio
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from bike_doc_api.core.config import get_settings
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.bike import BikeProfile
 from bike_doc_api.models.observation_extraction import ObservationExtractionRun
@@ -41,55 +33,7 @@ from bike_doc_api.repositories.repair_sessions import (
 from bike_doc_api.repositories.reports import PhaseReportRepository
 from bike_doc_api.repositories.users import UserRepository
 
-TEST_DATABASE_URL_ENV: Final = "BIKE_DOC_API_TEST_DATABASE_URL"
 CONTENT_SHA256: Final = "a" * 64
-
-
-def _test_database_url() -> str:
-    database_url = os.environ.get(TEST_DATABASE_URL_ENV)
-    if not database_url:
-        pytest.skip(f"{TEST_DATABASE_URL_ENV} is not configured")
-    return database_url
-
-
-@pytest.fixture(scope="session", autouse=True)
-def migrated_test_database() -> None:
-    """Run Alembic once against the dedicated repository test database."""
-    database_url = _test_database_url()
-    api_root = Path(__file__).resolve().parents[3]
-    alembic_config = Config(api_root / "alembic.ini")
-    alembic_config.set_main_option("sqlalchemy.url", database_url)
-    os.environ["BIKE_DOC_API_DATABASE_URL"] = database_url
-    get_settings.cache_clear()
-    command.upgrade(alembic_config, "head")
-
-
-@pytest_asyncio.fixture
-async def db_session() -> AsyncIterator[AsyncSession]:
-    """Yield an isolated async session for repository tests."""
-    engine = create_async_engine(_test_database_url(), pool_pre_ping=True)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with engine.begin() as connection:
-        await connection.execute(
-            text(
-                """
-                TRUNCATE
-                  artifact_refs,
-                  repair_session_events,
-                  repair_turns,
-                  phase_reports,
-                  repair_phase_sessions,
-                  repair_sessions,
-                  bike_profiles,
-                  users
-                CASCADE;
-                """,
-            ),
-        )
-    async with session_factory() as session:
-        yield session
-        await session.rollback()
-    await engine.dispose()
 
 
 async def _create_user_bike_session(
@@ -549,11 +493,13 @@ async def test_observation_run_appends_ordered_attempts_only_for_eligible_recove
 
     assert (first.attempt_number, second.attempt_number) == (1, 2)
     assert run.provider_attempt_count == 2
-    await runs.mark_diagnostic_agent_started(run)
+    # Failure must precede the agent-start fence. The database forbids later
+    # extraction changes; the marker blocks an otherwise eligible recovery.
     await runs.mark_failed(
         run,
         failure_metadata={"code": "provider_timeout", "retryable": True},
     )
+    await runs.mark_diagnostic_agent_started(run)
     with pytest.raises(ValueError, match="not eligible"):
         await runs.append_attempt(
             run_id=run.id,

@@ -21,7 +21,9 @@ docker run -d --name "$db_name" \
   -e POSTGRES_USER=bikedoc -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=bikedoc \
   -p 127.0.0.1::5432 -v "$db_volume:/var/lib/postgresql/data" \
   postgres:16-alpine >/dev/null
-docker run -d --name "$nats_name" -p 127.0.0.1::4222 \
+# A fixed selected host port survives Docker stop/start failure injection.
+nats_host_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+docker run -d --name "$nats_name" -p "127.0.0.1:${nats_host_port}:4222" \
   -v "$nats_volume:/data" nats:2.12.1-alpine \
   -js -sd /data -m 8222 >/dev/null
 
@@ -49,8 +51,32 @@ export BIKE_DOC_API_ADK_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL"
 export BIKE_DOC_API_EVENT_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL"
 export BIKE_DOC_API_EVENT_TEST_NATS_URL="nats://127.0.0.1:${nats_port}"
 
+export BIKE_DOC_API_MAINTENANCE_TEST_NATS_CONTAINER="$nats_name"
+export BIKE_DOC_API_MAINTENANCE_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL"
+export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL"
+
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == canary ]]; then
+  uv run pytest -vv -m nats tests/integration/test_job_maintenance.py tests/integration/test_worker_runtime.py tests/integration/test_profile_worker.py
+  BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \
+    uv run pytest tests/unit/repositories/test_background_job_persistence.py
+  exit 0
+fi
+if [[ "${1:-}" == profile ]]; then
+  uv run pytest -vv -m nats tests/integration/test_profile_worker.py
+  exit 0
+fi
+if [[ "${1:-}" == worker ]]; then
+  uv run pytest -vv -m nats tests/integration/test_worker_runtime.py
+  exit 0
+fi
+if [[ "${1:-}" == maintenance ]]; then
+  uv run pytest -vv -m nats tests/integration/test_job_maintenance.py
+  BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \
+    uv run pytest tests/unit/repositories/test_background_job_persistence.py
+  exit 0
+fi
 uv run pytest -vv tests/integration/test_adk_postgres.py
 uv run pytest -vv -m nats tests/integration/test_nats_compatibility.py
 for _ in $(seq 1 "${SSE_REPEATS:-1}"); do
