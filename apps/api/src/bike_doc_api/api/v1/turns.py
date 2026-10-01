@@ -10,13 +10,11 @@ from bike_doc_api.adk.background import (
     execute_profile_inference_background,
 )
 from bike_doc_api.adk.sessions import (
-    DiagnosticADKSessionClientProtocol,
     DiagnosticPhaseSessionManager,
 )
 from bike_doc_api.api.deps import (
     get_current_user,
     get_db_session,
-    get_diagnostic_adk_session_client,
 )
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
@@ -37,10 +35,6 @@ router = APIRouter(tags=["Turns and Events"])
 
 def get_turn_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    adk_sessions: Annotated[
-        DiagnosticADKSessionClientProtocol,
-        Depends(get_diagnostic_adk_session_client),
-    ],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TurnService:
     """Build the turn service for this request."""
@@ -52,9 +46,6 @@ def get_turn_service(
     artifacts = ArtifactRepository(session)
     phase_session_manager = DiagnosticPhaseSessionManager(
         phase_sessions=phase_sessions,
-        adk_sessions=adk_sessions,
-        commit=session.commit,
-        rollback=session.rollback,
         diagnostic_report_version=settings.diagnostic_report_version,
     )
     return TurnService(

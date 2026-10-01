@@ -270,6 +270,7 @@ class RepairPhaseSession(Base):
             "ux_repair_phase_sessions_adk_session",
             "adk_session_id",
             unique=True,
+            postgresql_where=text("adk_session_id IS NOT NULL"),
         ),
     )
 

@@ -15,9 +15,8 @@ from sqlalchemy.exc import IntegrityError
 
 from bike_doc_api.adk.sessions import (
     DiagnosticPhaseSessionManager,
-    LocalDiagnosticADKSessionClient,
 )
-from bike_doc_api.core.config import ImageAnalysisMode
+from bike_doc_api.core.config import DiagnosticReportVersion, ImageAnalysisMode
 from bike_doc_api.core.errors import (
     ArtifactNotReadyError,
     IdempotencyConflictError,
@@ -187,7 +186,7 @@ class TurnService:
         profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy",
         profile_inference_extractor_version: str = "drivetrain-specifications.v1",
         profile_inference_max_attempts: int = 3,
-        diagnostic_report_version: str = "diagnostic_report.v2",
+        diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2",
     ) -> None:
         if profile_inference_execution == "durable_queue" and background_jobs is None:
             raise ValueError("queue acceptance requires a job recorder")
@@ -195,7 +194,6 @@ class TurnService:
         self._profile_execution = profile_inference_execution
         self._profile_extractor_version = profile_inference_extractor_version
         self._profile_max_attempts = profile_inference_max_attempts
-        self._diagnostic_report_version = diagnostic_report_version
         self._last_profile_job_recorded = False
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
@@ -207,9 +205,7 @@ class TurnService:
         self._phase_session_manager = phase_session_manager or (
             DiagnosticPhaseSessionManager(
                 phase_sessions=phase_sessions,
-                adk_sessions=LocalDiagnosticADKSessionClient(),
-                commit=commit,
-                rollback=rollback,
+                diagnostic_report_version=diagnostic_report_version,
             )
         )
         self._orchestrator = orchestrator
@@ -261,14 +257,6 @@ class TurnService:
         _validate_accepting_diagnostic_turns(preflight_session)
         _validate_input_request(preflight_session, request)
 
-        phase_session = (
-            await self._ensure_diagnostic_phase_session(
-                repair_session_id=repair_session_id,
-            )
-            if self._profile_execution == "legacy"
-            else None
-        )
-
         try:
             repair_session = await self._repair_sessions.get_owned_for_update(
                 repair_session_id=repair_session_id,
@@ -298,20 +286,9 @@ class TurnService:
                 artifact_ids=request.message.artifact_ids,
             )
 
-            if phase_session is None:
-                phase_session = await self._phase_sessions.get_for_session_phase(
-                    repair_session_id=repair_session.id, phase="diagnostic"
-                )
-                if phase_session is None:
-                    phase_session = await self._phase_sessions.add(
-                        RepairPhaseSessionModel(
-                            repair_session_id=repair_session.id,
-                            phase="diagnostic",
-                            adk_session_id=None,
-                            diagnostic_report_schema_version=self._diagnostic_report_version,
-                            status="active",
-                        )
-                    )
+            phase_session = await self._ensure_diagnostic_phase_session(
+                repair_session_id=repair_session.id,
+            )
 
             turn = await self._create_turn_started(
                 repair_session=repair_session,

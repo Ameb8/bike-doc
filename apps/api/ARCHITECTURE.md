@@ -134,10 +134,10 @@ turn and its `turn.started` event together, changes the repair session to
 running, and commits before returning `202 Accepted`. An idempotent replay does
 not start a second background execution.
 
-Today turn acceptance can create or resume the durable ADK session binding;
-`repair_phase_sessions.adk_session_id` remains non-null. Chunk #137 will move
-initialization to the worker with a nullable, idempotent ensure-and-bind step
-and diagnostic effect fencing. The ADK session service is lifespan-owned and
+Turn acceptance creates or reuses only the app-owned phase reference, with a
+null ADK binding for new rows. The executor ensures and binds durable ADK state
+before orchestration; bound identities are resumed exactly. Diagnostic queue
+execution and effect fencing remain later Chunk #137 tasks. The ADK session service is lifespan-owned and
 PostgreSQL-backed; see the [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
 for migration, startup validation, missing-session, and retention rules.
 
@@ -569,13 +569,31 @@ it schedules the existing diagnostic function independently. Idempotent replay
 exits before selecting any executor, including after configuration changes.
 Neither acceptance nor route constructs broker messages or opens NATS.
 
-Queue-mode phase creation avoids ADK I/O and preliminary commits. The existing
-diagnostic background host binds an unbound reference under the repair-session
-lock after acceptance, using a deterministic ADK ID derived from the phase ID.
-An initialization crash before binding resumes that ID; bound sessions retain
-the existing missing-session policy. Legacy acceptance retains its existing ADK
-phase-manager behavior during this canary. Diagnostic effect fencing and queue
-execution remain Chunk #137 work.
+All turn acceptance modes use `DiagnosticPhaseSessionManager` under the
+repair-session lock to create or reuse an app-owned phase reference. Its ID,
+phase uniqueness, status, and report-schema snapshot belong to the acceptance
+transaction; a new reference has null `adk_session_id`. The manager performs
+no ADK I/O or commit, and the route no longer resolves an ADK client.
+
+Before orchestration, the legacy diagnostic background executor invokes
+`DiagnosticADKSessionClient.ensure_or_resume` in its own product transaction.
+For null references it ensures `adk_diagnostic_{phase_session_id}` in the fixed
+`bike_doc_diagnostic` / `backend_system` namespace, then uses the repository's
+null-only compare-and-set. ADK commits independently of the product transaction.
+Concurrent creators confirm the durable winning identity; concurrent binding
+resumes the winner without replacement. A crash before the binding commit
+repeats the same deterministic ensure. Non-null bindings always resume exactly
+and confirmed missing state raises the pre-orchestration failure seam, never
+recreates conversation state. The legacy host rolls back failed initialization
+and emits its existing safe setup-failure events. Neither ADK IDs nor stored
+state enter public responses/events or routine telemetry.
+
+Migration `0011` indexes only non-null bindings, preserving the nonblank CHECK.
+Its downgrade restores `0010`'s nullable full unique index; downgrading `0010`
+with retained uninitialized references fails rather than discarding data.
+`DiagnosticTurnInputV1` extends the existing internal job-input module with
+exactly one strict ULID `turn_id`. No diagnostic producer, handler registration,
+effect fencing, or executor selection is enabled by this change.
 
 `task test:profile-canary` runs the integrated real PostgreSQL/JetStream matrix
 with fake extraction. Profile tests now create their jobs through turn acceptance,
@@ -605,3 +623,28 @@ This canary creates no `diagnostic_turn` job, introduces no profile dependency
 for diagnostic eligibility, and retains the diagnostic background executor.
 Monitoring, broker reconstruction, cleanup and load certification remain outside
 this Task's scope.
+
+### Deferred diagnostic sessions (#148)
+
+The task's acceptance evidence is mapped below. `task test:sessions` runs the
+real PostgreSQL tests, durable ADK compatibility tests, and phase persistence
+repository tests in disposable storage. Model/provider work is faked; ADK
+storage, SQL constraints, binding transactions, migrations, and child-process
+resume are real.
+
+| Acceptance criterion | Implementation and evidence |
+| --- | --- |
+| Strict `diagnostic_turn.v1` input | `DiagnosticTurnInputV1` in the existing internal `schemas/background_jobs.py`; strict-input tests accept one ULID and reject missing, blank, malformed, non-string, and additional fields |
+| Nullable binding, partial uniqueness, nonblank validation, safe downgrade | Existing migration `0010` plus `0011` and matching model index; model metadata test and real migration roundtrip test cover multiple nulls, duplicate non-null rejection, blank rejection, restoration of `0010`, refusal to discard null references, and upgrade/downgrade/upgrade through `0009` |
+| App identity and report snapshot without ADK | Manager unit tests and real acceptance tests preserve the phase ID, selected report schema, and existing phase row; new rows remain null |
+| Acceptance independent of unavailable ADK and atomic phase creation | Route composition has no ADK dependency; real acceptance tests reject any attempted ADK access in both profile modes, and commit-loss tests prove no phase, turn, event, or running-state change survives rollback |
+| Concurrent deterministic ensure and null-only stable binding | Independently constructed PostgreSQL ADK clients and product sessions initialize concurrently; repository winner test proves an existing binding cannot be replaced |
+| Crash after ADK creation before binding/commit | Failure injection at both points followed by initialization in a child process derives the same identity and leaves exactly one durable ADK session |
+| Exact bound resume across processes | A second independently constructed child process resumes the committed binding; existing ADK compatibility tests also verify durable state and event preservation |
+| Missing binding fails closed before effects | Repository/client tests leave a confirmed missing identity unchanged with no replacement state; legacy integration test verifies orchestration is not invoked again and existing safe setup-failure events restore `awaiting_user` |
+| Runnable legacy executor and unchanged public contracts | Background composition uses the shared ensure-or-resume; unit/API/contract tests and real legacy integration cover scheduling, orchestration, public `202`, and ordered persisted events; the profile canary's diagnostic compatibility test covers its existing deferred reference |
+| Private ADK IDs/state and safe telemetry | Public response/event assertions and existing ADK storage/runner privacy tests cover internal identity, stored state, model content, and routine telemetry; the new failure path logs only the existing bounded event name |
+| Focused and standard verification | Strict-input, model, session-manager, background, turn-service, API, real migration/repository/cross-process suites, `task format`, and `task check` |
+
+This task does not record or register diagnostic jobs, change diagnostic executor
+selection, start a diagnostic worker, or implement effect fencing/retry policy.

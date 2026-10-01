@@ -262,19 +262,14 @@ async def _execute_diagnostic_turn_attempt(
                     outcome="terminal_error",
                 )
                 return
-            if phase_session.adk_session_id is None:
-                # Acceptance owns only the reference. Serialize binding using the
-                # same session lock as acceptance, outside the HTTP transaction.
-                await repair_sessions.get_for_update(repair_session_id)
-                await session.refresh(phase_session)
-                if phase_session.adk_session_id is None:
-                    phase_session.adk_session_id = await DiagnosticADKSessionClient(
-                        get_adk_session_service()
-                    ).ensure_unbound_session(
-                        phase_session_id=phase_session.id,
-                        repair_session_id=repair_session_id,
-                    )
-                    await session.commit()
+            await DiagnosticADKSessionClient(
+                get_adk_session_service()
+            ).ensure_or_resume(
+                phase_session=phase_session,
+                phase_sessions=RepairPhaseSessionRepository(session),
+            )
+            await session.commit()
+            await session.refresh(phase_session)
             turn_index = (
                 await turns.count_for_phase_session_through_start_event_sequence(
                     repair_phase_session_id=phase_session.id,
@@ -353,6 +348,7 @@ async def _execute_diagnostic_turn_attempt(
             raise
         except Exception:
             _safe_log("error", "diagnostic_background_turn_failed")
+            await session.rollback()
             await _handle_background_setup_failure(
                 session=session,
                 user_id=user_id,

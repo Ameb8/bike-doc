@@ -25,6 +25,9 @@ class _FakeSession:
     async def commit(self) -> None:
         self.commits += 1
 
+    async def refresh(self, _row: object) -> None:
+        pass
+
     async def rollback(self) -> None:
         self.rollbacks += 1
 
@@ -189,6 +192,16 @@ def _patch_background_repositories(
     *,
     store: _Store,
 ) -> None:
+    class SessionClient:
+        def __init__(self, _service: object) -> None:
+            pass
+
+        async def ensure_or_resume(self, **kwargs: Any) -> str:
+            assert kwargs["phase_session"].id == store.turn.repair_phase_session_id
+            return "adk_existing"
+
+    monkeypatch.setattr(background, "DiagnosticADKSessionClient", SessionClient)
+    monkeypatch.setattr(background, "get_adk_session_service", lambda: object())
     monkeypatch.setattr(
         background,
         "UserRepository",

@@ -184,8 +184,7 @@ async def setup() -> AsyncIterator[
         await session.flush()
     async with sessions() as session:
         user = await session.get(User, user_id)
-        adk = AsyncMock()
-        service = get_turn_service(session, adk, settings)
+        service = get_turn_service(session, settings)
         accepted = await service.accept_turn(
             current_user=user,
             repair_session_id=session_id,
@@ -201,7 +200,6 @@ async def setup() -> AsyncIterator[
             ),
         )
         assert service.last_profile_job_recorded
-        adk.create_session.assert_not_awaited()
         turn_id = accepted.turn_id
         row = (
             await session.scalars(
@@ -587,7 +585,6 @@ async def test_concurrent_replay_does_not_reselect_executor(
         async with sessions() as session:
             service = get_turn_service(
                 session,
-                AsyncMock(),
                 settings.model_copy(update={"profile_inference_execution": selection}),
             )
             result = await service.accept_turn(
@@ -652,7 +649,6 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
     async with sessions() as session:
         service = get_turn_service(
             session,
-            AsyncMock(),
             settings.model_copy(
                 update={
                     "profile_inference_extractor_version": "invalid pin"
@@ -944,7 +940,7 @@ async def test_concurrent_distinct_turns_cannot_bypass_running_session(
 
     async def accept(key: str) -> object:
         async with sessions() as session:
-            return await get_turn_service(session, AsyncMock(), settings).accept_turn(
+            return await get_turn_service(session, settings).accept_turn(
                 current_user=user,
                 repair_session_id=turn.repair_session_id,
                 request=TurnCreate.model_validate(

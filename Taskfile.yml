@@ -24,6 +24,11 @@ tasks:
     cmds:
       - uv run pytest
 
+  test:sessions:
+    desc: Verify deferred diagnostic sessions and migrations with disposable PostgreSQL.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh sessions
+
   test:nats:
     desc: Run pinned real-NATS compatibility tests in a disposable broker container.
     cmds:

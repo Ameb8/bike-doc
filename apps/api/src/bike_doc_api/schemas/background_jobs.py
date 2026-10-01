@@ -32,3 +32,13 @@ class ProfileInferenceInputV1(BaseModel):
             ensure_ascii=True,
         )
         return hashlib.sha256(identity.encode("ascii")).hexdigest()
+
+
+class DiagnosticTurnInputV1(BaseModel):
+    """Only the immutable accepted turn identifies diagnostic_turn.v1 input."""
+
+    model_config = ConfigDict(
+        extra="forbid", strict=True, frozen=True, hide_input_in_errors=True
+    )
+
+    turn_id: str = Field(pattern=r"^turn_[0-7][0-9A-HJKMNP-TV-Z]{25}$")

@@ -229,12 +229,21 @@ must not be added to the normalized union.
 `DiagnosticPhaseSessionManager` creates or resumes one
 `RepairPhaseSession` per repair session and phase. The row's ID is the
 app-owned `diagnostic_session_id` that may appear in a report; its
-`adk_session_id` is internal and opaque. Creation races are handled by rolling
-back, best-effort deleting the orphaned ADK session, and returning the row
-that won the unique database race.
-The current turn-acceptance path can create this non-null binding. Nullable
-binding, worker-side idempotent ensure-and-bind, and effect fencing are deferred
-to Chunk #137.
+`adk_session_id` is internal and opaque. Acceptance holds the repair-session
+lock and creates a null binding in the same product transaction as the turn,
+without ADK I/O. The manager never commits or rolls back the caller's work.
+
+`DiagnosticADKSessionClient.ensure_or_resume` is the executor precondition.
+For an unbound row it ensures `adk_diagnostic_{phase_session_id}` in the fixed
+BikeDoc app/user namespace and binds using the repository's null-only
+compare-and-set. ADK persistence commits independently; the executor owns the
+product binding commit. Creation conflicts require confirmation of the durable
+winner. Binding conflicts return the winner without replacement. Lost binding
+commits repeat the same deterministic ensure. Already-bound state resumes its
+exact identity, and a confirmed missing session raises a safe pre-orchestration
+failure without creation or rebinding. The legacy background host uses this
+operation before orchestration; diagnostic queue execution and effect fencing
+remain later Chunk #137 work.
 
 For diagnostic sessions, the same row also snapshots the app-owned selected
 diagnostic report schema version. Orchestration seeds that immutable value into
