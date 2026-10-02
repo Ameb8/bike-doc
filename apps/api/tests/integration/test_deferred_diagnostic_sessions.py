@@ -75,6 +75,13 @@ async def context() -> AsyncIterator[
                 )
             )
             await session.execute(
+                text(
+                    "DELETE FROM background_jobs WHERE input->>'turn_id' IN "
+                    "(SELECT id FROM repair_turns WHERE repair_session_id=:id)"
+                ),
+                {"id": repair_id},
+            )
+            await session.execute(
                 text("DELETE FROM repair_sessions WHERE id=:id"), {"id": repair_id}
             )
             await session.execute(
@@ -339,6 +346,7 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
     settings, sessions, phase_id, repair_id = context
     from bike_doc_api.adk import sessions as adk_sessions
     from bike_doc_api.api import deps
+    from bike_doc_api.models.background_job import BackgroundJob
 
     def unavailable(*_: object, **__: object) -> None:
         raise AssertionError("acceptance must not access unavailable ADK")
@@ -346,6 +354,9 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
     monkeypatch.setattr(deps, "get_adk_session_service", unavailable)
     monkeypatch.setattr(
         adk_sessions.DiagnosticADKSessionClient, "create_session", unavailable
+    )
+    monkeypatch.setattr(
+        adk_sessions.DiagnosticADKSessionClient, "ensure_or_resume", unavailable
     )
     async with sessions() as session, session.begin():
         await session.execute(
@@ -359,6 +370,7 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
             settings.model_copy(
                 update={
                     "profile_inference_execution": selection,
+                    "diagnostic_execution": selection,
                 }
             ),
         )
@@ -383,6 +395,16 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
         assert phase.id.startswith("phs_")
         assert phase.adk_session_id is None
         assert phase.diagnostic_report_schema_version == "diagnostic_report.v2"
+        jobs = list(
+            await session.scalars(
+                select(BackgroundJob).where(
+                    BackgroundJob.input["turn_id"].astext == accepted.turn_id
+                )
+            )
+        )
+        assert {job.job_kind for job in jobs} == (
+            {"diagnostic_turn"} if selection == "durable_queue" else set()
+        )
 
 
 async def test_legacy_executor_initializes_and_missing_binding_terminalizes(

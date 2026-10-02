@@ -40,6 +40,11 @@ tasks:
     cmds:
       - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.workers.diagnostic_role
 
+  test:diagnostic-canary:
+    desc: Run the integrated diagnostic acceptance and PostgreSQL/JetStream failure matrix.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh diagnostic-canary
+
   test:diagnostic:
     desc: Verify diagnostic role with disposable PostgreSQL/JetStream and fake model/providers.
     cmds:

@@ -140,3 +140,22 @@ def test_outcomes_and_execution_policy_reject_unbounded_or_raw_errors() -> None:
         replace(JobOutcome("dead"), error="provider secret")
     with pytest.raises(ValueError):
         JobOutcome("succeeded", retry_after=timedelta(seconds=1))
+
+
+async def test_diagnostic_producer_derives_identity_and_revalidates_input() -> None:
+    from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
+
+    recorder = Recorder()
+    service = BackgroundJobService(recorder)
+    instruction = DiagnosticTurnInputV1(turn_id=VALID["turn_id"])
+    job = await service.record_diagnostic_turn(instruction, attempt_limit=3)
+    assert job.job_kind == "diagnostic_turn" and job.workload_class == "diagnostic"
+    assert job.input == {"turn_id": VALID["turn_id"]}
+    assert recorder.records[0].deduplication_key == VALID["turn_id"]
+    with pytest.raises(ValidationError):
+        await service.record_diagnostic_turn(
+            DiagnosticTurnInputV1.model_construct(turn_id="invalid"), attempt_limit=3
+        )
+    with pytest.raises(ValueError):
+        await service.record_diagnostic_turn(instruction, attempt_limit=0)
+    assert len(recorder.records) == 1

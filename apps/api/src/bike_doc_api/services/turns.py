@@ -39,7 +39,10 @@ from bike_doc_api.models.repair_session import (
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.artifact import ACCEPTED_DIAGNOSTIC_IMAGE_MIME_TYPES
-from bike_doc_api.schemas.background_jobs import ProfileInferenceInputV1
+from bike_doc_api.schemas.background_jobs import (
+    DiagnosticTurnInputV1,
+    ProfileInferenceInputV1,
+)
 from bike_doc_api.schemas.common import (
     ArtifactMediaType,
     ArtifactPurpose,
@@ -184,13 +187,21 @@ class TurnService:
         orchestrator: DiagnosticTurnOrchestratorProtocol | None = None,
         image_analysis_mode: ImageAnalysisMode = "off",
         background_jobs: BackgroundJobService | None = None,
+        diagnostic_execution: Literal["legacy", "durable_queue"] = "legacy",
+        diagnostic_attempt_limit: int = 3,
         profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy",
         profile_inference_extractor_version: str = "drivetrain-specifications.v1",
         profile_inference_max_attempts: int = 3,
         diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2",
     ) -> None:
-        if profile_inference_execution == "durable_queue" and background_jobs is None:
+        if (
+            diagnostic_execution == "durable_queue"
+            or profile_inference_execution == "durable_queue"
+        ) and background_jobs is None:
             raise ValueError("queue acceptance requires a job recorder")
+        self._diagnostic_execution = diagnostic_execution
+        self._diagnostic_attempt_limit = diagnostic_attempt_limit
+        self._last_diagnostic_job_recorded = False
         self._background_jobs = background_jobs
         self._profile_execution = profile_inference_execution
         self._profile_extractor_version = profile_inference_extractor_version
@@ -214,6 +225,11 @@ class TurnService:
         self._last_acceptance_was_idempotent_replay = False
 
     @property
+    def last_diagnostic_job_recorded(self) -> bool:
+        """Whether this new acceptance committed external diagnostic execution."""
+        return self._last_diagnostic_job_recorded
+
+    @property
     def last_profile_job_recorded(self) -> bool:
         """Whether this new acceptance durably selected the queue executor."""
         return self._last_profile_job_recorded
@@ -235,6 +251,7 @@ class TurnService:
 
         self._last_acceptance_was_idempotent_replay = False
         self._last_profile_job_recorded = False
+        self._last_diagnostic_job_recorded = False
         request_hash = _canonical_turn_request_hash(request)
         preflight_session = await self._repair_sessions.get_owned(
             repair_session_id=repair_session_id,
@@ -258,6 +275,8 @@ class TurnService:
         _validate_accepting_diagnostic_turns(preflight_session)
         _validate_input_request(preflight_session, request)
 
+        diagnostic_job_recorded = False
+        profile_job_recorded = False
         try:
             repair_session = await self._repair_sessions.get_owned_for_update(
                 repair_session_id=repair_session_id,
@@ -297,9 +316,16 @@ class TurnService:
                 request=request,
                 request_hash=request_hash,
             )
-            if (
-                request.message.artifact_ids
-                and self._profile_execution == "durable_queue"
+            if self._diagnostic_execution == "durable_queue":
+                assert self._background_jobs is not None
+                await self._background_jobs.record_diagnostic_turn(
+                    DiagnosticTurnInputV1(turn_id=turn.id),
+                    attempt_limit=self._diagnostic_attempt_limit,
+                )
+                diagnostic_job_recorded = True
+            if request.message.artifact_ids and (
+                self._profile_execution == "durable_queue"
+                or self._diagnostic_execution == "durable_queue"
             ):
                 assert self._background_jobs is not None
                 await self._background_jobs.record_profile_inference(
@@ -310,7 +336,7 @@ class TurnService:
                     ),
                     attempt_limit=self._profile_max_attempts,
                 )
-                self._last_profile_job_recorded = True
+                profile_job_recorded = True
             if self._commit is not None:
                 await self._commit()
         except (
@@ -338,7 +364,9 @@ class TurnService:
             await self._rollback_if_configured()
             raise ServerError() from exc
 
-        if self._orchestrator is not None:
+        self._last_diagnostic_job_recorded = diagnostic_job_recorded
+        self._last_profile_job_recorded = profile_job_recorded
+        if self._orchestrator is not None and not self._last_diagnostic_job_recorded:
             try:
                 await self._orchestrator.process_turn(
                     current_user=current_user,
@@ -348,7 +376,9 @@ class TurnService:
                 await self._rollback_if_configured()
                 raise ServerError() from exc
 
-        return turn_accepted_from_model(turn, repair_session)
+        return turn_accepted_from_model(
+            turn, _turn_acceptance_session_snapshot(repair_session, turn)
+        )
 
     async def request_diagnostic_input(
         self,
@@ -640,4 +670,5 @@ def _turn_acceptance_session_snapshot(
     snapshot.status = RepairSessionStatus.RUNNING.value
     snapshot.current_input_request = None
     snapshot.latest_event_sequence = turn.start_event_sequence
+    snapshot.updated_at = turn.created_at
     return snapshot

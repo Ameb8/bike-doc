@@ -57,6 +57,15 @@ export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL
 
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == diagnostic-canary ]]; then
+  # Downgrade checks require a clean database. Run them before failure tests
+  # intentionally retain accepted jobs and deferred phase references.
+  uv run pytest -vv tests/integration/test_deferred_diagnostic_sessions.py tests/integration/test_adk_postgres.py
+  uv run pytest -vv -m nats tests/integration/test_job_maintenance.py tests/integration/test_worker_runtime.py tests/integration/test_profile_worker.py tests/integration/test_diagnostic_worker.py tests/integration/test_cross_process_event_wakeups.py
+  BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \
+    uv run pytest tests/unit/repositories/test_background_job_persistence.py
+  exit 0
+fi
 if [[ "${1:-}" == diagnostic ]]; then
   uv run pytest -vv -m nats tests/integration/test_diagnostic_worker.py
   exit 0

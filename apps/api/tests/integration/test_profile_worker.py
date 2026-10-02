@@ -564,11 +564,22 @@ async def acceptance_context(
         return user, turn
 
 
+@pytest.mark.parametrize("diagnostic_queue", [False, True])
+@pytest.mark.parametrize("has_image", [False, True])
 async def test_concurrent_replay_does_not_reselect_executor(
     setup: ProfileSetup,
+    diagnostic_queue: bool,
+    has_image: bool,
 ) -> None:
+    from bike_doc_api.core.errors import IdempotencyConflictError
+
     settings, sessions, job, _ = setup
     user, turn = await acceptance_context(sessions, job)
+    settings = settings.model_copy(
+        update={
+            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
+        }
+    )
     # Reset this fixture's session so a new client key can race at acceptance.
     async with sessions() as session, session.begin():
         repair = await session.get(RepairSession, turn.repair_session_id)
@@ -577,7 +588,9 @@ async def test_concurrent_replay_does_not_reselect_executor(
         {
             "schema_version": "ai_turn.v1",
             "client_turn_id": "concurrent",
-            "message": turn.message,
+            "message": turn.message
+            if has_image
+            else {"text": "Chain skips", "artifact_ids": []},
         }
     )
 
@@ -585,7 +598,14 @@ async def test_concurrent_replay_does_not_reselect_executor(
         async with sessions() as session:
             service = get_turn_service(
                 session,
-                settings.model_copy(update={"profile_inference_execution": selection}),
+                settings.model_copy(
+                    update={
+                        "profile_inference_execution": selection,
+                        "diagnostic_execution": settings.diagnostic_execution
+                        if selection == "durable_queue"
+                        else ("legacy" if diagnostic_queue else "durable_queue"),
+                    }
+                ),
             )
             result = await service.accept_turn(
                 current_user=user,
@@ -601,9 +621,24 @@ async def test_concurrent_replay_does_not_reselect_executor(
     first, second = await asyncio.gather(accept(), accept())
     assert first[0] == second[0]
     assert sorted([first[1], second[1]]) == [False, True]
-    assert sorted([first[2], second[2]]) == [False, True]
+    assert sorted([first[2], second[2]]) == [False, has_image]
     replay = await accept("legacy")
     assert replay == (first[0], True, False)
+    # A conflicting HTTP key must not modify either job, even after cutover.
+    async with sessions() as session:
+        service = get_turn_service(session, settings)
+        with pytest.raises(IdempotencyConflictError):
+            await service.accept_turn(
+                current_user=user,
+                repair_session_id=turn.repair_session_id,
+                request=request.model_copy(
+                    update={
+                        "message": request.message.model_copy(
+                            update={"text": "Changed content"}
+                        )
+                    }
+                ),
+            )
     async with sessions() as session:
         jobs = list(
             await session.scalars(
@@ -617,17 +652,34 @@ async def test_concurrent_replay_does_not_reselect_executor(
                 select(RepairSessionEvent).where(RepairSessionEvent.turn_id == first[0])
             )
         )
-        assert len(jobs) == len(events) == 1
+        assert len(events) == 1
+        assert {row.job_kind for row in jobs} == (
+            ({"diagnostic_turn"} if diagnostic_queue else set())
+            | ({"profile_inference"} if has_image else set())
+        )
+        assert all(
+            row.desired_generation == 1 and row.confirmed_generation == 0
+            for row in jobs
+        )
 
 
-@pytest.mark.parametrize("failure", ["commit", "invalid_pin", "invalid_artifact"])
+@pytest.mark.parametrize("diagnostic_queue", [False, True])
+@pytest.mark.parametrize(
+    "failure", ["commit", "invalid_pin", "invalid_artifact", "profile_record"]
+)
 async def test_acceptance_rollback_has_no_product_or_job_intent(
     setup: ProfileSetup,
     failure: str,
+    diagnostic_queue: bool,
 ) -> None:
     from bike_doc_api.core.errors import AppError
 
     settings, sessions, job, _ = setup
+    settings = settings.model_copy(
+        update={
+            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
+        }
+    )
     user, turn = await acceptance_context(sessions, job)
     repair_id = generate_prefixed_ulid("rs_")
     async with sessions() as session, session.begin():
@@ -659,6 +711,11 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
         )
         if failure == "commit":
             service._commit = AsyncMock(side_effect=RuntimeError("injected loss"))
+        elif failure == "profile_record":
+            # Crash between the two queue inserts must roll back the first too.
+            service._background_jobs.record_profile_inference = AsyncMock(
+                side_effect=RuntimeError("injected profile insert loss")
+            )
         with pytest.raises(AppError):
             await service.accept_turn(
                 current_user=user,
@@ -673,6 +730,8 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
                     }
                 ),
             )
+        assert not service.last_diagnostic_job_recorded
+        assert not service.last_profile_job_recorded
     async with sessions() as session:
         assert not list(
             await session.scalars(
@@ -713,9 +772,11 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
         )
 
 
+@pytest.mark.parametrize("diagnostic_queue", [False, True])
 async def test_acceptance_outage_ack_window_broker_and_worker_restart(
     setup: ProfileSetup,
     monkeypatch: pytest.MonkeyPatch,
+    diagnostic_queue: bool,
 ) -> None:
     from datetime import timedelta
 
@@ -732,6 +793,11 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
     from bike_doc_api.repositories.background_jobs import PublicationClaim
 
     settings, sessions, initial, bike_id = setup
+    settings = settings.model_copy(
+        update={
+            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
+        }
+    )
     container = os.getenv("BIKE_DOC_API_MAINTENANCE_TEST_NATS_CONTAINER")
     assert container, "canary requires disposable broker restart injection"
 
@@ -806,15 +872,19 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
         assert response.status_code == 202
         accepted_id = response.json()["turn_id"]
         assert "job_id" not in response.json()
-        diagnostic.assert_awaited_once_with(
-            user.id, turn.repair_session_id, accepted_id
-        )
+        if diagnostic_queue:
+            diagnostic.assert_not_awaited()
+        else:
+            diagnostic.assert_awaited_once_with(
+                user.id, turn.repair_session_id, accepted_id
+            )
         legacy_profile.assert_not_awaited()
         async with sessions() as session:
             row = (
                 await session.scalars(
                     select(BackgroundJob).where(
-                        BackgroundJob.input["turn_id"].astext == accepted_id
+                        BackgroundJob.input["turn_id"].astext == accepted_id,
+                        BackgroundJob.job_kind == "profile_inference",
                     )
                 )
             ).one()

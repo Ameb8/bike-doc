@@ -72,7 +72,9 @@ for ADK code to depend on FastAPI transport concerns.
   sessions and authenticated users, configured providers, and the lifespan-owned
   PostgreSQL ADK session service.
 - [`adk/background.py`](src/bike_doc_api/adk/background.py) is the diagnostic
-  background composition root invoked after a new turn is accepted.
+  legacy composition root invoked after a legacy-selected turn is accepted.
+  [`workers/diagnostic_role.py`](src/bike_doc_api/workers/diagnostic_role.py)
+  hosts external execution for queue-selected turns.
 - [`db/migrations/`](src/bike_doc_api/db/migrations/) owns durable-schema
   evolution; models alone do not change deployed databases.
 
@@ -120,8 +122,9 @@ durable acceptance from model execution:
 ```text
 turn route
   -> TurnService accepts, locks, validates, and persists turn.started
-  -> FastAPI BackgroundTasks
-  -> adk/background builds a fresh service/repository graph
+  -> durable_queue: atomically record diagnostic and eligible profile jobs
+     -> API maintenance publishes -> separate workload workers
+  -> legacy: FastAPI BackgroundTasks -> adk/background
   -> DiagnosticTurnOrchestrator prepares current-turn visual context, seeds durable context, and streams DiagnosticRunner
   -> ADK tools call services; runner events become public events
   -> EventService persists/commits events, then local and Core NATS wake-ups
@@ -132,7 +135,15 @@ referenced artifacts, and enforces client-turn idempotency using a canonical
 request hash. It creates or resumes one diagnostic phase session, persists the
 turn and its `turn.started` event together, changes the repair session to
 running, and commits before returning `202 Accepted`. An idempotent replay does
-not start a second background execution.
+not start a second execution, even after a deployment selection changes. Its
+acceptance cursor and timestamp remain anchored to the immutable turn rather
+than subsequent worker or heartbeat updates.
+`Settings.diagnostic_execution` defaults to `legacy`; `durable_queue` commits a
+strict turn-ID-only diagnostic job and, for validated image evidence, an
+independent pinned profile job in that same transaction. Job presence preserves
+the executor selection. The route schedules neither legacy function for those
+turns, including when `profile_inference_execution=legacy`. No route publishes
+JetStream messages or calls ADK session storage.
 
 Turn acceptance creates or reuses only the app-owned phase reference, with a
 null ADK binding for new rows. The executor ensures and binds durable ADK state
@@ -158,8 +169,10 @@ the agent cannot be invoked persists its safe recoverable error and terminal
 awaiting-user event without invoking the runner. `DiagnosticRunner` translates
 Google ADK output into app-owned event objects; no raw ADK event, prompt, tool
 trace, model setting, or ADK session ID crosses that boundary. Profile
-inference is separately scheduled after diagnostic processing and does not
-delay it.
+inference uses a separate workload consumer for queue-selected turns and may
+commit before or after diagnostics. Diagnostic context includes inferred facts
+only when already committed; profile state never gates diagnostic eligibility.
+Legacy profile inference remains scheduled after legacy diagnostics.
 
 The visual-context service seam is verified with deterministic storage and
 extractor fakes plus real encoded image fixtures for one through three current
@@ -829,3 +842,7 @@ attempt or model invocation. Producer selection and route cutover remain #152.
 | Succeeded/dead/interrupted deliveries acknowledge without attempts | Existing terminal resolution/ACK mapping; real broker terminal-redelivery and completion-before-settlement tests |
 | Public retryability creates new work only | Terminal outcomes remain immutable under the existing database trigger; terminal-redelivery tests prove the original is never revived |
 | Content-safe errors/telemetry and unchanged event validation/wake-ups | Fixed `JobError` values and public error text, shared schema validation and event repository commit hooks; privacy, public event and cross-process SSE compatibility suites |
+
+The integrated diagnostic canary and worker-first enablement/drain/rollback
+procedure are documented in [README.md](README.md#diagnostic-queue-canary).
+Final removal of legacy background composition remains a later completion gate.

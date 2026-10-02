@@ -27,13 +27,21 @@ specifications linked below.
 | `tools/` | Internal tool input validation, context checks, service adaptation, and ADK `FunctionTool` wrappers | `build_tool_catalog`, individual tool classes |
 | `report_schemas/` | Agent-facing structured report payload models | `DiagnosticReportToolPayload`, `PlanReportToolPayload` |
 
-The production entry point is `execute_diagnostic_turn_background`. The turns
-route accepts and durably commits a turn before scheduling this function with
+The legacy entry point is `execute_diagnostic_turn_background`. For
+`diagnostic_execution=legacy`, the turns route commits before scheduling it with
 only `user_id`, `repair_session_id`, and `turn_id`. The function validates
 runtime configuration, opens a fresh async database session, reloads those
 records, and builds a fresh repository/service/agent/orchestrator graph. It
 must never retain a request-scoped `AsyncSession`, ORM instance, service, or
 FastAPI dependency after the response is returned.
+
+`diagnostic_execution=durable_queue` records diagnostic and eligible profile
+jobs in the acceptance transaction. Only the external diagnostic role calls
+`DiagnosticExecutionApplication` for that turn. It ensures/binds the deterministic
+durable ADK session before crossing the fenced effect boundary, then uses the
+same resource/orchestrator composition. Job presence is durable selection;
+changing producer settings never schedules a legacy executor for replayed turns.
+Profile work uses independent capacity and may finish in either order.
 
 `background.py` imports selected provider and session factories from
 `api.deps`; this is a composition-root convenience, not a transport
@@ -45,7 +53,8 @@ routes, request objects, or public endpoint handlers.
 The package sits behind the service workflow rather than beside the HTTP API:
 
 ```text
-turn route -> TurnService accepts and commits -> BackgroundTasks
+turn route -> TurnService accepts and commits -> jobs -> publisher -> diagnostic worker
+                                             -> BackgroundTasks (legacy selection)
                                              -> adk/background
                                              -> DiagnosticTurnOrchestrator
                                              -> DiagnosticRunner -> Google ADK
@@ -129,8 +138,9 @@ storage, settings-driven preprocessing, and the fresh background database
 session. It never retains route/request-scoped dependencies. `off` mode keeps
 submitted artifacts visible as explicit uninspected statuses without reading
 their bytes; `pixels_only` normalizes only current-turn valid images and makes
-no extraction call. Profile inference remains a separately queued task after
-diagnostic processing, so it cannot delay the diagnostic runner.
+no extraction call. Queue-selected turns have independent profile and diagnostic
+jobs from acceptance; either may finish first. Legacy composition schedules
+profile inference after diagnostic processing.
 
 While the runner is active, assistant delta and completed-message events are
 validated and appended through `EventService`; that service persists before
@@ -174,10 +184,10 @@ product outcome.
 Background setup failure follows a similar rule. It restores a verified,
 owned repair session out of `running`, writes a retryable
 `diagnostic_processing_error` and terminal event when a turn is known, and
-does not disclose missing or unowned records. FastAPI `BackgroundTasks` are
-local-first, in-process work—not a durable job queue—so worker crashes and
-restarts require a future queue boundary without changing the public turn/SSE
-contract.
+does not disclose missing or unowned records. The transitional FastAPI
+`BackgroundTasks` path remains in-process. Queue-selected turns instead use the
+external worker's fenced execution and durable recovery without changing the
+public turn/SSE contract.
 
 ## Agents, prompts, and runner
 
@@ -376,8 +386,9 @@ replaces provider exceptions with a fixed category before ADK records them.
 SDK retries are disabled; storage, observation and price calls are bounded.
 The thin diagnostic process host owns the NATS connection and imports the
 shared queue runtime. Cancellation remains cancellation; it does not create a
-business state. Execution-token effect protection is described below. Producer enablement and
-atomic failure repair remain the later #151–#152 contracts.
+business state. Execution-token effect protection is described below. Atomic
+acceptance and failure repair are integrated with the queue canary; deployment
+enablement and rollback follow the [backend runbook](../../../README.md#diagnostic-queue-canary).
 
 ## Private diagnostic execution authority
 

@@ -59,6 +59,8 @@ def get_turn_service(
         phase_session_manager=phase_session_manager,
         image_analysis_mode=settings.image_analysis_mode,
         background_jobs=BackgroundJobService(BackgroundJobRepository(session)),
+        diagnostic_execution=settings.diagnostic_execution,
+        diagnostic_attempt_limit=settings.diagnostic_worker_attempt_limit,
         profile_inference_execution=settings.profile_inference_execution,
         profile_inference_extractor_version=settings.profile_inference_extractor_version,
         profile_inference_max_attempts=settings.profile_inference_max_attempts,
@@ -86,12 +88,13 @@ async def create_repair_session_turn(
         request=request,
     )
     if not service.last_acceptance_was_idempotent_replay:
-        background_tasks.add_task(
-            execute_diagnostic_turn_background,
-            current_user.id,
-            accepted.repair_session_id,
-            accepted.turn_id,
-        )
+        if not service.last_diagnostic_job_recorded:
+            background_tasks.add_task(
+                execute_diagnostic_turn_background,
+                current_user.id,
+                accepted.repair_session_id,
+                accepted.turn_id,
+            )
         if request.message.artifact_ids and not service.last_profile_job_recorded:
             # Run after diagnostic processing so enrichment cannot delay it.
             background_tasks.add_task(

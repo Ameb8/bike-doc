@@ -681,3 +681,13 @@ def test_profile_executor_selection_defaults_to_legacy_and_rejects_unknown() -> 
     )
     with pytest.raises(ValueError):
         Settings(profile_inference_execution="both")
+
+
+def test_diagnostic_executor_selection_is_disabled_by_default_and_typed() -> None:
+    assert Settings().diagnostic_execution == "legacy"
+    assert (
+        Settings(diagnostic_execution="durable_queue").diagnostic_execution
+        == "durable_queue"
+    )
+    with pytest.raises(ValidationError):
+        Settings(diagnostic_execution="both")
