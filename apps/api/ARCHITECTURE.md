@@ -212,6 +212,14 @@ resolve dependencies, call a service, and map its result. Add reusable wiring
 to `deps.py`; do not parse bearer tokens in individual routes or create ad hoc
 database sessions.
 
+Route decorators publish stable canonical operation IDs and use
+`api/responses.py` for the shared `ErrorResponse` descriptions. The event route
+advertises `text/event-stream` and the public event vocabulary. Contract tests
+resolve local schema/response references and check media types, request
+constraints, required fields, and permitted values across the diagnostic slice;
+implemented routes have no expected-failure exemption. Existing owner-scoped
+listing and pagination errors are recorded explicitly in that gate.
+
 ### `schemas/`
 
 This package defines the public Pydantic V2 contract independently from
@@ -219,6 +227,12 @@ SQLAlchemy and ADK. It contains the client-visible IDs, status/phase enums,
 event payload validation, report envelope, and model-to-schema conversion
 helpers. Public API changes begin here and in
 [`docs/specs/openapi.yaml`](../../docs/specs/openapi.yaml), not in an ORM model.
+Report payloads use a discriminator on `schema_version` with typed diagnostic,
+planning, execution, and shop referral variants. Report schema annotations also
+describe the existing conditional evidence/outcome validation and required
+serialized currency fields. There is no unrestricted dictionary payload in the
+public report schema.
+
 `schemas/background_jobs.py` is a separate internal contract: strict immutable
 profile-inference instructions pin only turn ID and behavior versions. These
 models are never exposed in the public API.
@@ -704,12 +718,13 @@ shared diagnostic composition -> orchestration/services`, and `role -> shared
 registry/runtime/adapters`. No worker copies pull/claim/progress/retry/settlement
 or shutdown algorithms.
 
-This task does not enable a diagnostic producer. Effect-token enforcement is
-provided by #150 below, and #151 supplies atomic product repair and registers
-expired-execution recovery. Runtime timeouts request a classified pre-boundary
-retry; persistence rejects that outcome after the boundary so deadline recovery
-terminalizes the reserved execution without replay. Producer canary selection
-remains #152.
+Effect-token enforcement is provided by #150 below, and #151 supplies atomic
+product repair and registers expired-execution recovery. Runtime timeouts
+request a classified pre-boundary retry; persistence rejects that outcome after
+the boundary so deadline recovery terminalizes the reserved execution without
+replay. The #152 producer canary
+uses `Settings.diagnostic_execution` to select this role for newly accepted
+turns, as described in the diagnostic turn path above.
 
 | #149 acceptance | Evidence |
 | --- | --- |
@@ -767,7 +782,8 @@ runner request, and tool composition carry the same private execution context;
 tool context uses a Pydantic private attribute. Explicit runner content/state
 mapping omits it. It never enters public schemas, ADK state/model input, or
 broker envelopes. Ordinary HTTP and legacy graph sessions are not bound to a
-queue token; producer/executor selection remains #152's responsibility.
+queue token. The route uses acceptance's committed job selection to schedule
+exactly one executor; an idempotent replay schedules neither executor.
 
 The committed whole-turn boundary is the durable fenced reservation for
 external work: ADK invocation and its independent session writes, model calls,
@@ -828,7 +844,8 @@ new user turn; it cannot revive the terminal job.
 Real PostgreSQL/JetStream diagnostic tests cover rollback after completion flush,
 competing and repeated recovery, exhaustion, invalid definitions, handled model
 errors, completion-before-settlement loss, and terminal delivery without another
-attempt or model invocation. Producer selection and route cutover remain #152.
+attempt or model invocation. The #152 canary composes these contracts with
+atomic acceptance and route executor selection.
 
 | #151 contract | Implementation and verification |
 | --- | --- |

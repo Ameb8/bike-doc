@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from bike_doc_api.models.phase_report import PhaseReport as PhaseReportModel
 from bike_doc_api.schemas.common import (
@@ -47,10 +47,9 @@ class Diagnosis(APIBaseModel):
     component: str
     issue: str
     confidence: Confidence
-    diy_suitability: (
-        Literal["unknown", "reasonable", "caution", "shop_recommended", "blocked"]
-        | None
-    ) = "unknown"
+    diy_suitability: Literal[
+        "unknown", "reasonable", "caution", "shop_recommended", "blocked"
+    ] = "unknown"
 
 
 class AlternateHypothesis(APIBaseModel):
@@ -89,6 +88,10 @@ class CostEstimateSource(StrEnum):
 
 class CostEstimate(APIBaseModel):
     """Public price estimate range."""
+
+    model_config = ConfigDict(
+        json_schema_extra={"required": ["currency", "confidence", "source"]}
+    )
 
     currency: str = "USD"
     min_amount: float | None = Field(default=None, ge=0)
@@ -170,6 +173,50 @@ class DiagnosticRelevance(StrEnum):
 class ObservedFinding(APIBaseModel):
     """A report-local, evidence-backed observation."""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "properties": {
+                        "evidence_source": {"enum": ["other"]},
+                        "evidence_source_detail": {"type": "string", "minLength": 1},
+                        "artifact_ids": {"maxItems": 0},
+                    }
+                },
+                {
+                    "properties": {
+                        "evidence_source": {"enum": ["image"]},
+                        "evidence_source_detail": {"type": "null"},
+                        "artifact_ids": {"minItems": 1},
+                    }
+                },
+                {
+                    "properties": {
+                        "evidence_source": {
+                            "enum": [
+                                "user_report",
+                                "measurement",
+                                "functional_check",
+                                "repair_history",
+                            ]
+                        },
+                        "evidence_source_detail": {"type": "null"},
+                        "artifact_ids": {"maxItems": 0},
+                    }
+                },
+            ],
+            "required": [
+                "finding_id",
+                "component",
+                "finding",
+                "evidence_source",
+                "evidence_source_detail",
+                "relationship_to_symptoms",
+                "artifact_ids",
+            ],
+        }
+    )
+
     finding_id: str = Field(min_length=1)
     component: str
     finding: str = Field(min_length=1)
@@ -248,12 +295,42 @@ class AlternateHypothesisV2(APIBaseModel):
         return value
 
 
+def _describe_diagnostic_outcome(schema: dict[str, Any]) -> None:
+    """Describe outcome validation using Pydantic's own reference namespace."""
+    diagnosis = next(
+        branch
+        for branch in schema["properties"]["primary_diagnosis"]["anyOf"]
+        if branch.get("type") != "null"
+    )
+    schema["oneOf"] = [
+        {
+            "properties": {
+                "diagnostic_outcome": {"enum": ["diagnosis_supported"]},
+                "primary_diagnosis": diagnosis,
+            }
+        },
+        {
+            "properties": {
+                "diagnostic_outcome": {
+                    "enum": [
+                        "user_declined_more_input",
+                        "requested_input_unavailable",
+                        "in_person_assessment_required",
+                    ]
+                }
+            }
+        },
+    ]
+
+
 class DiagnosticReportV2(APIBaseModel):
     """Version two public diagnostic report payload."""
 
+    model_config = ConfigDict(json_schema_extra=_describe_diagnostic_outcome)
+
     schema_version: Literal["diagnostic_report.v2"]
     diagnostic_outcome: DiagnosticOutcome
-    reported_symptoms: list[str] = Field(min_length=1)
+    reported_symptoms: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
     primary_diagnosis: DiagnosisV2 | None
     contributing_factors: list[ContributingFactor]
     observed_findings: list[ObservedFinding] = Field(min_length=1)
@@ -362,6 +439,21 @@ class PriceEstimateStatus(StrEnum):
 
 class PriceListing(APIBaseModel):
     """Observed listing evidence for a required tool or part."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "required": [
+                "title",
+                "retailer",
+                "observed_price",
+                "currency",
+                "url",
+                "observed_at",
+                "match_confidence",
+                "match_rationale",
+            ]
+        }
+    )
 
     title: str = Field(min_length=1)
     retailer: str = Field(min_length=1)
@@ -531,6 +623,65 @@ class PlanReportV1(APIBaseModel):
     safety_concerns: list[SafetyFlag]
 
 
+class ExecutionStepRecord(APIBaseModel):
+    """One recorded execution step in the public report contract."""
+
+    index: int = Field(ge=1)
+    title: str
+    instruction: str | None = None
+    status: Literal[
+        "pending", "active", "awaiting_verification", "verified", "failed", "skipped"
+    ]
+    verification_required: bool
+    verification_artifact_ids: list[str] = Field(default_factory=list)
+    safety_flags: list[SafetyFlag] = Field(default_factory=list)
+
+
+class VerificationCheckpoint(APIBaseModel):
+    """Verification evidence recorded for an execution step."""
+
+    step_index: int = Field(ge=1)
+    status: Literal["pending", "passed", "failed", "inconclusive"]
+    artifact_ids: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class ExecutionReportV1(APIBaseModel):
+    """Public execution report payload."""
+
+    schema_version: Literal["execution_report.v1"]
+    outcome: Literal["in_progress", "completed", "stopped_safety", "stopped_user"]
+    completed_steps: list[ExecutionStepRecord]
+    verification_checkpoints: list[VerificationCheckpoint]
+    unresolved_concerns: list[str]
+    final_repair_summary: str | None = None
+    tools_used: list[str]
+    repair_history_entry_id: str | None = None
+
+
+class ShopServiceNeed(APIBaseModel):
+    """A service requested in a shop referral."""
+
+    component: str
+    requested_service: str
+    notes: str | None = None
+
+
+class ShopReferralReportV1(APIBaseModel):
+    """Public shop referral report payload."""
+
+    schema_version: Literal["shop_referral_report.v1"]
+    reason: str
+    urgency: Literal["stop_riding", "soon", "routine"]
+    service_overview: str
+    services_needed: list[ShopServiceNeed]
+    evidence_summary: str
+    suggested_questions: list[str]
+    loose_price_estimate: CostEstimate | None = None
+    safety_flags: list[SafetyFlag]
+    shareable_summary: str | None = None
+
+
 class PhaseReportEnvelope(APIBaseModel):
     """Public phase report envelope."""
 
@@ -543,16 +694,20 @@ class PhaseReportEnvelope(APIBaseModel):
     safety_flags: list[SafetyFlag]
     source_artifact_ids: list[str]
     created_at: datetime
-    payload: DiagnosticReportV1 | DiagnosticReportV2 | PlanReportV1 | dict[str, Any] = (
-        Field(
-            union_mode="left_to_right",
-        )
-    )
+    payload: (
+        DiagnosticReportV1
+        | DiagnosticReportV2
+        | PlanReportV1
+        | ExecutionReportV1
+        | ShopReferralReportV1
+    ) = Field(discriminator="schema_version")
 
     @model_validator(mode="after")
     def validate_diagnostic_payload(self) -> Self:
         """Validate diagnostic report envelopes against the diagnostic payload."""
 
+        if self.payload.schema_version != self.schema_version:
+            raise ValueError("report payload schema version must match envelope")
         if self.type is PhaseReportType.DIAGNOSTIC or self.schema_version in {
             "diagnostic_report.v1",
             "diagnostic_report.v2",
@@ -609,15 +764,19 @@ class PhaseReportList(APIBaseModel):
 def phase_report_envelope_from_model(report: PhaseReportModel) -> PhaseReportEnvelope:
     """Map a persistence phase report to the public schema."""
 
-    return PhaseReportEnvelope(
-        id=report.id,
-        repair_session_id=report.repair_session_id,
-        type=PhaseReportType(report.type),
-        schema_version=report.schema_version,
-        phase=RepairSessionPhase(report.phase),
-        summary=report.summary,
-        safety_flags=[SafetyFlag.model_validate(flag) for flag in report.safety_flags],
-        source_artifact_ids=report.source_artifact_ids,
-        created_at=report.created_at,
-        payload=report.payload,
+    return PhaseReportEnvelope.model_validate(
+        dict(
+            id=report.id,
+            repair_session_id=report.repair_session_id,
+            type=PhaseReportType(report.type),
+            schema_version=report.schema_version,
+            phase=RepairSessionPhase(report.phase),
+            summary=report.summary,
+            safety_flags=[
+                SafetyFlag.model_validate(flag) for flag in report.safety_flags
+            ],
+            source_artifact_ids=report.source_artifact_ids,
+            created_at=report.created_at,
+            payload=report.payload,
+        )
     )

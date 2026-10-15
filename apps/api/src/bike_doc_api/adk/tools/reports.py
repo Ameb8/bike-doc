@@ -276,8 +276,6 @@ class SaveDiagnosticReportTool:
             report = result.report
             if isinstance(report.payload, (DiagnosticReportV1, DiagnosticReportV2)):
                 diagnostic_session_id = report.payload.diagnostic_session_id
-            elif isinstance(report.payload, dict):
-                diagnostic_session_id = str(report.payload["diagnostic_session_id"])
             else:
                 raise ReportValidationToolError()
             data: dict[str, Any] = {

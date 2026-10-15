@@ -2,6 +2,8 @@
 
 from datetime import datetime
 
+from pydantic import Field
+
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.schemas.common import (
     APIBaseModel,
@@ -28,7 +30,7 @@ class ArtifactRef(APIBaseModel):
     media_type: ArtifactMediaType
     mime_type: str
     filename: str
-    byte_size: int
+    byte_size: int = Field(ge=0)
     width: int | None = None
     height: int | None = None
     duration_seconds: float | None = None

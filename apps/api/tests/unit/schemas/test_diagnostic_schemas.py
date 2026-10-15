@@ -609,3 +609,63 @@ def test_phase_report_mapper_validates_diagnostic_payload() -> None:
 
     assert isinstance(public.payload, DiagnosticReportV1)
     assert public.payload.diagnostic_session_id == "phs_123"
+
+
+@pytest.mark.parametrize(
+    ("report_type", "phase", "payload"),
+    [
+        (
+            "execution",
+            "execution",
+            {
+                "schema_version": "execution_report.v1",
+                "outcome": "completed",
+                "completed_steps": [],
+                "verification_checkpoints": [],
+                "unresolved_concerns": [],
+                "tools_used": [],
+            },
+        ),
+        (
+            "shop_referral",
+            "shop_referred",
+            {
+                "schema_version": "shop_referral_report.v1",
+                "reason": "Shop inspection needed",
+                "urgency": "soon",
+                "service_overview": "Inspect the wheel",
+                "services_needed": [],
+                "evidence_summary": "Wheel damage reported",
+                "suggested_questions": [],
+                "safety_flags": [],
+            },
+        ),
+    ],
+)
+def test_report_payload_variants_validate_and_reject_unstructured_data(
+    report_type: str,
+    phase: str,
+    payload: dict[str, object],
+) -> None:
+    envelope = {
+        "id": "rpt_123",
+        "repair_session_id": "rs_123",
+        "type": report_type,
+        "schema_version": payload["schema_version"],
+        "phase": phase,
+        "summary": "Repair summary",
+        "safety_flags": [],
+        "source_artifact_ids": [],
+        "created_at": NOW,
+        "payload": payload,
+    }
+    public = PhaseReportEnvelope.model_validate(envelope)
+    assert public.model_dump()["payload"]["schema_version"] == payload["schema_version"]
+    with pytest.raises(ValidationError):
+        PhaseReportEnvelope.model_validate(
+            {**envelope, "payload": {"schema_version": payload["schema_version"]}}
+        )
+    with pytest.raises(ValidationError):
+        PhaseReportEnvelope.model_validate(
+            {**envelope, "schema_version": "unsupported.v1"}
+        )

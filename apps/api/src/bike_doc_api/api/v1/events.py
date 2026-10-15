@@ -8,10 +8,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.api.deps import get_current_user, get_db_session
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.repair_sessions import RepairSessionRepository
+from bike_doc_api.schemas.event import RepairSessionEventType
 from bike_doc_api.services.events import DEFAULT_TIMEOUT_SECONDS, EventService
 
 router = APIRouter(tags=["Turns and Events"])
@@ -32,7 +34,19 @@ def get_event_service(
     )
 
 
-@router.get("/repair-sessions/{sessionId}/events")
+@router.get(
+    "/repair-sessions/{sessionId}/events",
+    operation_id="streamRepairSessionEvents",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Server-sent event stream",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+        **error_responses(401, 404, 422),
+    },
+    openapi_extra={"x-sse-events": [event.value for event in RepairSessionEventType]},
+)
 async def stream_repair_session_events(
     current_user: Annotated[UserModel, Depends(get_current_user)],
     service: Annotated[EventService, Depends(get_event_service)],

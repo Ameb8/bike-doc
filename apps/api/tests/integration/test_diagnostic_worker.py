@@ -1363,6 +1363,7 @@ async def test_live_http_sse_with_external_diagnostic_process_and_rollback(
     import signal
     import socket
     import sys
+    from collections import deque
     from contextlib import asynccontextmanager
     from datetime import UTC, datetime
     from unittest.mock import AsyncMock
@@ -1380,10 +1381,13 @@ async def test_live_http_sse_with_external_diagnostic_process_and_rollback(
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 
     settings, sessions, _initial, repair_id, *_ = context
+    # This exercises cold-process execution and restart, not handler timing.
+    # Leave room for ADK/schema preparation on slower hosts; the dedicated
+    # timeout/fencing tests above retain their short deterministic deadlines.
     settings = settings.model_copy(
         update={
-            "diagnostic_worker_handler_seconds": 2,
-            "diagnostic_worker_hard_seconds": 3,
+            "diagnostic_worker_handler_seconds": 10,
+            "diagnostic_worker_hard_seconds": 12,
             "diagnostic_worker_timeout_grace_seconds": 0.2,
             "diagnostic_agent_timeout_seconds": 0.1,
             "observation_extraction_timeout_seconds": 0.1,
@@ -1439,6 +1443,16 @@ async def main():
 asyncio.run(main())
 """
     children = []
+    output_readers = []
+    output = {}
+    markers = {}
+
+    async def read_output(process):
+        async for line in process.stdout:
+            output[process].append(line.decode(errors="replace").rstrip())
+            for marker, reached in markers[process].items():
+                if marker in line:
+                    reached.set()
 
     async def start(point):
         process = await asyncio.create_subprocess_exec(
@@ -1447,9 +1461,15 @@ asyncio.run(main())
             child_code,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.STDOUT,
         )
         children.append(process)
+        output[process] = deque(maxlen=100)
+        markers[process] = {
+            marker: asyncio.Event()
+            for marker in (b"CANARY_READY", b"CANARY_PREPARE", b"CANARY_EFFECT")
+        }
+        output_readers.append(asyncio.create_task(read_output(process)))
         configuration = settings.model_dump(mode="json")
         configuration["nats_url"] = settings.nats_url.get_secret_value()
         process.stdin.write(
@@ -1457,11 +1477,8 @@ asyncio.run(main())
         )
         await process.stdin.drain()
         async with asyncio.timeout(60):
-            while True:
-                line = await process.stdout.readline()
-                assert line, "diagnostic process exited before readiness"
-                if b"CANARY_READY" in line:
-                    return process
+            await markers[process][b"CANARY_READY"].wait()
+        return process
 
     @asynccontextmanager
     async def transaction():
@@ -1503,7 +1520,7 @@ asyncio.run(main())
             while not server.started:  # noqa: ASYNC110 - uvicorn exposes a flag
                 await asyncio.sleep(0.01)
         async with httpx.AsyncClient(
-            base_url=f"http://127.0.0.1:{port}", timeout=45
+            base_url=f"http://127.0.0.1:{port}", timeout=100
         ) as client:
             payload = {
                 "schema_version": "ai_turn.v1",
@@ -1530,7 +1547,7 @@ asyncio.run(main())
                 .with_for_update()
             )
             async with client.stream(
-                "GET", accepted["event_stream_url"] + "&timeout_seconds=30"
+                "GET", accepted["event_stream_url"] + "&timeout_seconds=90"
             ) as stream:
                 assert stream.status_code == 200
                 await host.publish_once()
@@ -1541,8 +1558,7 @@ asyncio.run(main())
                             if crash_point == "pre_boundary"
                             else b"CANARY_EFFECT"
                         )
-                        while marker not in await process.stdout.readline():
-                            assert process.returncode is None
+                        await markers[process][marker].wait()
                     async with sessions() as session:
                         running = await session.get(BackgroundJob, job.id)
                         assert running.state == "running" and running.execution_token
@@ -1580,7 +1596,9 @@ asyncio.run(main())
                         frames.append(event)
                         if event["type"] == "turn.completed":
                             break
-                assert frames and frames[-1]["type"] == "turn.completed"
+                assert frames and frames[-1]["type"] == "turn.completed", "\n".join(
+                    output[process]
+                )
                 sequences = [int(event["id"]) for event in frames]
                 assert sequences == sorted(set(sequences))
                 encoded = json.dumps(frames)
@@ -1624,6 +1642,7 @@ asyncio.run(main())
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+        await asyncio.gather(*output_readers)
         server.should_exit = True
         await asyncio.wait_for(serving, 5)
         listener.close()

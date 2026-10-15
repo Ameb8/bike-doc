@@ -10,6 +10,7 @@ from bike_doc_api.api.deps import (
     get_db_session,
     get_storage_provider,
 )
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.providers.storage import StorageProvider
@@ -41,6 +42,8 @@ def get_artifact_service(
 
 @router.post(
     "/artifacts",
+    operation_id="uploadArtifact",
+    responses=error_responses(401, 404, 409, 413, 422),
     response_model=ArtifactUploadResponse,
     status_code=status.HTTP_201_CREATED,
 )

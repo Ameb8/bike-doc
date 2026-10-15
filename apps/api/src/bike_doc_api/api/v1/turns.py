@@ -16,6 +16,7 @@ from bike_doc_api.api.deps import (
     get_current_user,
     get_db_session,
 )
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
@@ -70,6 +71,8 @@ def get_turn_service(
 
 @router.post(
     "/repair-sessions/{sessionId}/turns",
+    operation_id="createRepairSessionTurn",
+    responses=error_responses(401, 404, 409, 422),
     response_model=TurnAccepted,
     status_code=status.HTTP_202_ACCEPTED,
 )

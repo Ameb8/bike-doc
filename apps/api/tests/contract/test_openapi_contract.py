@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ DIAGNOSTIC_OPERATIONS = {
 OPENAPI_PATH = Path(__file__).resolve().parents[4] / "docs/specs/openapi.yaml"
 
 
+@cache
 def _load_canonical_openapi() -> dict[str, Any]:
     return yaml.safe_load(OPENAPI_PATH.read_text())
 
@@ -53,43 +56,110 @@ def _validate_canonical_schema(schema_name: str, value: object) -> list[str]:
     return sorted(error.message for error in validator.iter_errors(value))
 
 
-def _schema_refs(value: Any) -> list[str]:
-    refs: list[str] = []
-    if isinstance(value, dict):
-        ref = value.get("$ref")
-        if isinstance(ref, str):
-            refs.append(ref)
-        for child in value.values():
-            refs.extend(_schema_refs(child))
-    elif isinstance(value, list):
-        for child in value:
-            refs.extend(_schema_refs(child))
-    return sorted(set(refs))
+def _resolve(value: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
+    """Resolve local references, including response and parameter components."""
+    while "$ref" in value:
+        target = document
+        for part in value["$ref"].removeprefix("#/").split("/"):
+            target = target[part]
+        value = {
+            **target,
+            **{key: item for key, item in value.items() if key != "$ref"},
+        }
+    return value
 
 
-def _operation_summary(operation: dict[str, Any]) -> dict[str, Any]:
-    request_body = operation.get("requestBody", {})
-    responses = operation.get("responses", {})
+def _public_schema(value: Any, document: dict[str, Any]) -> Any:
+    """Normalize OpenAPI 3.0/3.1 representation without dropping constraints."""
+    if isinstance(value, list):
+        return [_public_schema(item, document) for item in value]
+    if not isinstance(value, dict):
+        return value
+    value = _resolve(value, document)
+    normalized = {
+        key: (
+            {name: _public_schema(schema, document) for name, schema in item.items()}
+            if key == "properties"
+            else _public_schema(item, document)
+        )
+        for key, item in value.items()
+        if key
+        not in {"title", "description", "example", "examples", "default", "nullable"}
+    }
+    if normalized.get("contentMediaType") == "application/octet-stream":
+        normalized.pop("contentMediaType")
+        normalized["format"] = "binary"
+    if "const" in normalized:
+        normalized["enum"] = [normalized.pop("const")]
+    for key in ("required", "enum"):
+        if key in normalized:
+            normalized[key] = sorted(normalized[key])
+    if list(normalized) == ["allOf"] and len(normalized["allOf"]) == 1:
+        normalized = normalized["allOf"][0]
+    if normalized.get("enum") == [None]:
+        normalized = {"type": "null"}
+    elif value.get("nullable"):
+        normalized = {"anyOf": [normalized, {"type": "null"}]}
+    for key in ("anyOf", "oneOf"):
+        if key in normalized:
+            normalized[key] = sorted(
+                normalized[key], key=lambda item: json.dumps(item, sort_keys=True)
+            )
+    return normalized
+
+
+def _content(value: dict[str, Any], document: dict[str, Any]) -> dict[str, Any]:
+    value = _resolve(value, document)
     return {
-        "operationId": operation.get("operationId"),
-        "status_codes": sorted(responses),
-        "request_schema_refs": _schema_refs(request_body),
-        "response_schema_refs": {
-            status: _schema_refs(response) for status, response in responses.items()
-        },
+        media: _public_schema(body.get("schema", {}), document)
+        for media, body in value.get("content", {}).items()
     }
 
 
 def _diagnostic_contract(openapi: dict[str, Any]) -> dict[str, Any]:
-    paths = openapi["paths"]
     contract: dict[str, Any] = {}
     for path, methods in DIAGNOSTIC_OPERATIONS.items():
+        path_item = openapi["paths"][path]
         contract[path] = {}
         for method in methods:
-            if path not in paths or method not in paths[path]:
-                contract[path][method] = {"missing": True}
-                continue
-            contract[path][method] = _operation_summary(paths[path][method])
+            operation = path_item[method]
+            parameters = {}
+            for raw in [
+                *path_item.get("parameters", []),
+                *operation.get("parameters", []),
+            ]:
+                parameter = _resolve(raw, openapi)
+                schema = parameter["schema"]
+                if parameter["name"] == "Authorization":
+                    # Auth uses a header dependency; canonical auth uses a
+                    # security scheme instead of an ordinary parameter.
+                    continue
+                public_schema = _public_schema(schema, openapi)
+                if not parameter.get("required", False) and "anyOf" in public_schema:
+                    branches = [
+                        branch
+                        for branch in public_schema["anyOf"]
+                        if branch != {"type": "null"}
+                    ]
+                    if len(branches) == 1:
+                        public_schema = branches[0]
+                parameters[(parameter["in"], parameter["name"])] = {
+                    "required": parameter.get("required", False),
+                    "schema": public_schema,
+                    "default": schema.get("default"),
+                }
+            body = operation.get("requestBody", {})
+            contract[path][method] = {
+                "operationId": operation["operationId"],
+                "parameters": parameters,
+                "request_required": body.get("required", False),
+                "request_content": _content(body, openapi),
+                "responses": {
+                    status: _content(response, openapi)
+                    for status, response in operation["responses"].items()
+                },
+                "sse_events": sorted(operation.get("x-sse-events", [])),
+            }
     return contract
 
 
@@ -199,13 +269,181 @@ def test_diagnostic_report_v2_contract_rejects_mixed_fields() -> None:
     assert _validate_canonical_schema("DiagnosticReportV2", non_image_with_artifact)
 
 
-@pytest.mark.xfail(
-    reason="Stage 5 diagnostic routes are specified before implementation.",
+# Existing listing/read routes additionally reject invalid pagination/path input.
+# Listing is owner-scoped to a required bike, as implemented by the session service.
+ADDITIONAL_ERRORS = {
+    ("/v1/repair-sessions", "get"): {"404", "422"},
+    ("/v1/repair-sessions/{sessionId}", "get"): {"422"},
+    ("/v1/repair-sessions/{sessionId}/reports", "get"): {"422"},
+    ("/v1/repair-sessions/{sessionId}/reports/{reportId}", "get"): {"422"},
+}
+
+
+def _assert_public_schema(actual: Any, canonical: Any, location: str) -> None:
+    """Check declared shapes and canonical constraints, permitting stricter guarantees.
+
+    App models forbid extra properties and reject blank identifiers/negative costs.
+    These existing refinements do not excuse dropping a canonical constraint, a
+    field, an enum value, or a required field. Optional JSON idempotency keys also
+    accept null as omission; HTTP behavior is covered by the route tests.
+    """
+    if isinstance(actual, dict) and isinstance(canonical, dict):
+        if (
+            "anyOf" in actual
+            and "anyOf" not in canonical
+            and location.endswith(("client_session_id", "client_artifact_id"))
+        ):
+            actual = next(
+                branch for branch in actual["anyOf"] if branch != {"type": "null"}
+            )
+        extra = actual.keys() - canonical.keys()
+        for key in extra:
+            refinements = {"additionalProperties": False, "minLength": 1, "minimum": 0}
+            assert key in refinements and actual[key] == refinements[key], (
+                f"{location}: unexpected {key}"
+            )
+        for key, value in canonical.items():
+            assert key in actual, f"{location}: missing {key}"
+            _assert_public_schema(actual[key], value, f"{location}/{key}")
+    elif (
+        isinstance(actual, list)
+        and isinstance(canonical, list)
+        and location.endswith(("/anyOf", "/oneOf"))
+    ):
+        assert len(actual) == len(canonical), location
+        unmatched = list(actual)
+        for branch in canonical:
+            for index, candidate in enumerate(unmatched):
+                try:
+                    _assert_public_schema(candidate, branch, location + "/branch")
+                except AssertionError:
+                    continue
+                unmatched.pop(index)
+                break
+            else:
+                raise AssertionError(f"{location}: no matching branch for {branch}")
+    else:
+        assert actual == canonical, f"{location}: {actual!r} != {canonical!r}"
+
+
+def _assert_diagnostic_contract(
+    actual_document: dict[str, Any], canonical_document: dict[str, Any]
+) -> None:
+    canonical = _diagnostic_contract(canonical_document)
+    actual = _diagnostic_contract(actual_document)
+    error = _public_schema(
+        canonical_document["components"]["schemas"]["ErrorResponse"], canonical_document
+    )
+    for path, operations in canonical.items():
+        for method, expected in operations.items():
+            observed = actual[path][method]
+            assert observed["operationId"] == expected["operationId"]
+            assert observed["sse_events"] == expected["sse_events"]
+            expected_responses = deepcopy(expected["responses"])
+            for status in ADDITIONAL_ERRORS.get((path, method), set()):
+                expected_responses[status] = {"application/json": error}
+            assert observed["responses"].keys() == expected_responses.keys()
+            _assert_public_schema(
+                observed["responses"], expected_responses, f"{method} {path}/responses"
+            )
+            expected_parameters = deepcopy(expected["parameters"])
+            if (path, method) == ("/v1/repair-sessions", "get"):
+                expected_parameters[("query", "bike_id")]["required"] = True
+            _assert_public_schema(
+                observed["parameters"],
+                expected_parameters,
+                f"{method} {path}/parameters",
+            )
+            assert observed["request_required"] == expected["request_required"]
+            _assert_public_schema(
+                observed["request_content"],
+                expected["request_content"],
+                f"{method} {path}/request",
+            )
+
+
+def test_diagnostic_openapi_operations_match_canonical_contract(app: FastAPI) -> None:
+    _assert_diagnostic_contract(app.openapi(), _load_canonical_openapi())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "operation_id",
+        "sse_media",
+        "sse_schema",
+        "missing_error",
+        "error_shape",
+        "acceptance_field",
+        "required_field",
+        "request_enum",
+        "artifact_limit",
+        "timeout_default",
+        "timeout_bound",
+        "event_vocabulary",
+        "report_schema",
+    ],
 )
-def test_diagnostic_openapi_operations_match_canonical_contract(
+def test_diagnostic_contract_gate_rejects_public_drift(
+    app: FastAPI,
+    mutation: str,
+) -> None:
+    document = deepcopy(app.openapi())
+    turns = document["paths"]["/v1/repair-sessions/{sessionId}/turns"]["post"]
+    events = document["paths"]["/v1/repair-sessions/{sessionId}/events"]["get"]
+    schemas = document["components"]["schemas"]
+    if mutation == "operation_id":
+        document["paths"]["/v1/artifacts"]["post"]["operationId"] = "uploadChanged"
+    elif mutation == "sse_media":
+        content = events["responses"]["200"]["content"]
+        content["application/json"] = content.pop("text/event-stream")
+    elif mutation == "sse_schema":
+        events["responses"]["200"]["content"]["text/event-stream"]["schema"] = {
+            "type": "object"
+        }
+    elif mutation == "missing_error":
+        turns["responses"].pop("409")
+    elif mutation == "error_shape":
+        schemas["ErrorBody"]["properties"]["code"] = {"type": "integer"}
+    elif mutation == "acceptance_field":
+        schemas["TurnAccepted"]["properties"]["start_event_id"] = {"type": "integer"}
+    elif mutation == "required_field":
+        schemas["TurnAccepted"]["required"].remove("event_stream_url")
+    elif mutation == "request_enum":
+        schemas["TurnCreate"]["properties"]["schema_version"]["const"] = "ai_turn.v2"
+    elif mutation == "artifact_limit":
+        schemas["UserTurnMessage"]["properties"]["artifact_ids"]["maxItems"] = 4
+    elif mutation in {"timeout_default", "timeout_bound"}:
+        timeout = next(
+            parameter
+            for parameter in events["parameters"]
+            if parameter["name"] == "timeout_seconds"
+        )
+        timeout["schema"]["default" if mutation == "timeout_default" else "maximum"] = (
+            121
+        )
+    elif mutation == "event_vocabulary":
+        events["x-sse-events"].append("internal.job.started")
+    elif mutation == "report_schema":
+        schemas["PhaseReportEnvelope"]["properties"]["payload"] = {"type": "object"}
+    with pytest.raises(AssertionError):
+        _assert_diagnostic_contract(document, _load_canonical_openapi())
+
+
+def test_diagnostic_contract_gate_accepts_inline_response_references(
     app: FastAPI,
 ) -> None:
-    canonical = _diagnostic_contract(_load_canonical_openapi())
-    actual = _diagnostic_contract(app.openapi())
-
-    assert actual == canonical
+    document = deepcopy(app.openapi())
+    operation = document["paths"]["/v1/repair-sessions/{sessionId}/turns"]["post"]
+    operation["responses"]["401"] = {
+        "description": "Authentication required",
+        "content": {
+            "application/json": {
+                "schema": _public_schema(
+                    document["components"]["schemas"]["ErrorResponse"],
+                    document,
+                )
+            }
+        },
+    }
+    _assert_diagnostic_contract(document, _load_canonical_openapi())
