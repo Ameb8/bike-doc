@@ -103,24 +103,3 @@ class NatsPullTransport:
         # The process host still closes its connection context after this drain.
         await self.subscription.unsubscribe()
         await self.client.drain()
-
-
-async def subscribe_work_advisories(client: Client, stream: str, consumer: str) -> None:
-    """Process-owned observation only. No job-store access or payload logging."""
-    import structlog
-
-    logger = structlog.get_logger(__name__)
-
-    async def maximum_delivery(_message: Msg) -> None:
-        logger.warning("job_transport_advisory", advisory="maximum_delivery")
-
-    async def terminated(_message: Msg) -> None:
-        logger.warning("job_transport_advisory", advisory="terminated")
-
-    await client.subscribe(
-        f"$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.{stream}.{consumer}",
-        cb=maximum_delivery,
-    )
-    await client.subscribe(
-        f"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{stream}.{consumer}", cb=terminated
-    )

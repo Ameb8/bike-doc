@@ -1061,11 +1061,12 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
     )
     async with sessions() as session, session.begin():
         repo = DiagnosticJobRepository(session)
-        assert await repo.recover_expired(
+        recovered = await repo.recover_expired_and_load(
             job_id=job.id,
             execution_token=execution.token,
             outcome=DiagnosticRecoveryPolicy().expired_outcome(row),
         )
+        assert recovered is not None and recovered.state == "succeeded"
     after, _, _ = await _terminal_events(context)
     assert after.state == "succeeded" and after.latest_error_category is None
     assert await _product_snapshot(sessions, repair_id) == before

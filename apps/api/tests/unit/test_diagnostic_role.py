@@ -509,7 +509,8 @@ async def test_worker_host_disposes_pool_and_nats_on_failure(
         "ensure_work_topology",
         AsyncMock(side_effect=RuntimeError("private") if fail_topology else None),
     )
-    monkeypatch.setattr(diagnostic_role, "subscribe_work_advisories", AsyncMock())
+    monkeypatch.setattr(diagnostic_role.QueueMonitor, "subscribe", AsyncMock())
+    monkeypatch.setattr(diagnostic_role, "observe_pool", Mock())
     monkeypatch.setattr(
         diagnostic_role, "NatsPullTransport", lambda *args, **kwargs: object()
     )

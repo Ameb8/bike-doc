@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+import sys
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +22,7 @@ from bike_doc_api.core.config import Settings
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.repositories.background_jobs import (
     BackgroundJobRepository,
     JobError,
@@ -32,7 +35,6 @@ from bike_doc_api.workers.adapters import (
     NatsDelivery,
     NatsPullTransport,
     PostgresJobStore,
-    subscribe_work_advisories,
 )
 from bike_doc_api.workers.registry import (
     ClaimedJob,
@@ -202,9 +204,7 @@ async def harness() -> AsyncIterator[Harness]:
                 durable=settings.nats_profile_consumer,
                 stream=settings.nats_work_stream,
             )
-            await subscribe_work_advisories(
-                client, settings.nats_work_stream, settings.nats_profile_consumer
-            )
+            await QueueMonitor(settings).subscribe(client)
             harness = Harness(sessions, settings, client, js, sub)
             try:
                 yield harness
@@ -491,7 +491,7 @@ async def test_real_advisories_do_not_mutate_durable_job_state(
 ) -> None:
     runtime = harness.worker(succeed)
     poisoned = await harness.create()
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"):
         await harness.publish(poisoned, extra="not permitted")
         await runtime.process(NatsDelivery(await harness.message()))
         limited = await harness.create()
@@ -503,7 +503,163 @@ async def test_real_advisories_do_not_mutate_durable_job_state(
             await harness.subscription.fetch(1, timeout=0.5)
         await harness.client.flush()
         await asyncio.sleep(0.05)
-    assert "terminated" in caplog.text and "maximum_delivery" in caplog.text
+    assert "terminated" in caplog.text and "max_deliver" in caplog.text
     for job in (poisoned, limited):
         row = await harness.row(job)
         assert row.state == "queued" and row.attempt_count == 0
+
+
+async def test_observability_real_transport_execution_recovery_and_privacy(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bike_doc_api.core.queue_telemetry import (
+        RecordingQueueTelemetry,
+        queue_telemetry,
+    )
+    from bike_doc_api.db.pool_observation import observe_pool
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.operations.inspection import inspect_jobs
+    from bike_doc_api.operations.monitoring import QueueMonitor
+    from bike_doc_api.repositories.job_inspection import (
+        InspectionFilter,
+        JobInspectionRepository,
+    )
+
+    sentinel = "PRIVATE_SENTINEL_EMAIL_prompt_artifact_credentials"
+    recorder = RecordingQueueTelemetry()
+    monkeypatch.setattr(queue_telemetry, "_sink", recorder.observations.append)
+    job = await harness.create(input={"private": sentinel})
+    before = await harness.row(job)
+    settings = harness.settings
+    monitor = QueueMonitor(settings, recorder)
+    await monitor.subscribe(harness.client)
+    bind = harness.sessions.kw["bind"]
+    observe_pool(bind, "worker", recorder)
+    async with bind.connect(), bind.connect():
+        assert any(
+            o.metric == "pool"
+            and o.attributes == {"role": "worker", "pool": "checked_out"}
+            and o.value >= 2
+            for o in recorder.observations
+        )
+    async with harness.sessions() as session:
+        count, oldest = await JobInspectionRepository(session).publication_pressure()
+    recorder.observe("publication_pending", count)
+    recorder.observe("publication_oldest", oldest)
+    assert count >= 1
+    snapshot = await inspect_jobs(
+        InspectionFilter(kind="profile_inference"), transport=True, settings=settings
+    )
+    assert sentinel not in json.dumps(snapshot, default=str)
+    assert snapshot["jetstream_transport_observations"]["status"] == "available"
+    assert (await harness.row(job)).input == before.input
+    assert (await harness.row(job)).attempt_count == 0
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "bike_doc_api.operations.inspection",
+        "--filters",
+        '{"kind":"profile_inference","limit":200}',
+        env={**os.environ, "BIKE_DOC_API_DATABASE_URL": settings.database_url},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), 15)
+    assert process.returncode == 0
+    assert sentinel.encode() not in stdout + stderr
+    assert settings.database_url.encode() not in stdout + stderr
+    assert json.loads(stdout)["postgresql_truth"]["jobs"]
+
+    # Real redelivery exhaustion produces a monitoring-only advisory, without
+    # resolving the intentionally invalid authoritative input or mutating a job.
+    await harness.publish(job)
+    transport_view = await monitor.snapshot()
+    assert any(
+        c["consumer"] == "profile_inference" and c["pending"] >= 1 and c["waiting"] == 0
+        for c in transport_view["consumers"]
+    )
+    # Pending transport notifications with no recent worker heartbeat expose an
+    # unavailable pool without changing PostgreSQL application state.
+    assert not any(
+        o.metric == "worker_health" and o.attributes["health"] == "ready"
+        for o in recorder.observations
+    )
+    for _ in range(3):
+        message = await harness.message()
+        assert message.metadata.num_delivered >= 1
+        assert sentinel not in repr((message.data, message.headers))
+        await asyncio.sleep(0.35)
+    with pytest.raises(TimeoutError):
+        await harness.subscription.fetch(1, timeout=0.5)
+    await asyncio.sleep(0.1)
+    assert any(
+        o.metric == "advisory" and o.attributes["advisory"] == "max_deliver"
+        for o in recorder.observations
+    )
+    assert (await harness.row(job)).attempt_count == 0
+    # A second physical notification can be terminated; this too is observation only.
+    await harness.publish(job)
+    await (await harness.message()).term()
+    await asyncio.sleep(0.1)
+    assert any(
+        o.metric == "advisory" and o.attributes["advisory"] == "terminated"
+        for o in recorder.observations
+    )
+    assert (await harness.row(job)).state == "queued"
+
+    async def succeed(_job: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        return JobOutcome("succeeded")
+
+    executable = await harness.create()
+    runtime = harness.worker(succeed)
+    await harness.publish(executable)
+    await runtime.process(NatsDelivery(await harness.message()))
+    assert (await harness.row(executable)).state == "succeeded"
+    assert {
+        "queue_latency",
+        "execution_duration",
+        "active",
+        "outcome",
+        "resolution",
+        "pool",
+    } <= {o.metric for o in recorder.observations}
+
+    # Leave another claim past its deadline and let maintenance recover it.
+    expired = await harness.create()
+    async with harness.sessions() as session, session.begin():
+        await BackgroundJobRepository(session).resolve_delivery(
+            job_id=expired.id,
+            generation=1,
+            workload_class="profile_inference",
+            validate_definition=runtime.registry.validate,
+        )
+    await asyncio.sleep(4.5)
+
+    @asynccontextmanager
+    async def transaction() -> AsyncIterator[BackgroundJobRepository]:
+        async with harness.sessions() as session, session.begin():
+            yield BackgroundJobRepository(session)
+
+    class NoPublisher:
+        async def publish(self, subject: str, payload: bytes, message_id: str) -> None:
+            raise AssertionError("recovery must only advance PostgreSQL intent")
+
+        async def close(self) -> None:
+            pass
+
+    maintenance = JobMaintenance(
+        settings,
+        transaction,
+        NoPublisher(),
+        runtime.registry.reconciliation_policies(),
+        telemetry=recorder,
+    )
+    await maintenance.reconcile_once()
+    assert (await harness.row(expired)).state == "dead"
+    assert any(
+        o.metric == "recovery" and o.attributes["outcome"] == "dead"
+        for o in recorder.observations
+    )
+    await monitor.snapshot()
+    assert sentinel not in repr(recorder.observations)
+    assert all("id" not in key for o in recorder.observations for key in o.attributes)

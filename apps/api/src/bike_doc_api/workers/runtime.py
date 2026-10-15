@@ -5,12 +5,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import isfinite
+from time import monotonic
 from typing import Protocol
 
 import structlog
 from pydantic import ValidationError
 
 from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+from bike_doc_api.core.queue_telemetry import QueueTelemetry, queue_telemetry
 from bike_doc_api.repositories.background_jobs import (
     DeliveryResolution,
     ExecutionPolicy,
@@ -113,7 +115,9 @@ class PullWorker:
         options: RuntimeOptions,
         *,
         clock: Clock | None = None,
+        telemetry: QueueTelemetry = queue_telemetry,
     ) -> None:
+        self.telemetry = telemetry
         self.registry = registry
         self.store = store
         self.transport = transport
@@ -150,9 +154,23 @@ class PullWorker:
                     min(capacity, self.options.fetch_batch), self.options.fetch_timeout
                 )
             except Exception:
+                self.telemetry.observe(
+                    "worker_available", 0, workload=self.registry.workload
+                )
+                self.telemetry.observe(
+                    "worker_health",
+                    workload=self.registry.workload,
+                    health="fetch_failed",
+                )
                 logger.warning("job_worker_fetch_failed")
                 await self.clock.sleep(self.options.fetch_timeout)
                 continue
+            self.telemetry.observe(
+                "worker_available", 1, workload=self.registry.workload
+            )
+            self.telemetry.observe(
+                "worker_health", workload=self.registry.workload, health="ready"
+            )
             if self._closed:
                 return
             for message in messages:
@@ -183,6 +201,11 @@ class PullWorker:
                     resolution=resolution.kind.value,
                     workload=self.registry.workload,
                 )
+                self.telemetry.observe(
+                    "resolution",
+                    workload=self.registry.workload,
+                    resolution=resolution.kind.value,
+                )
                 await self._resolved(delivery, resolution)
             finally:
                 progress.cancel()
@@ -190,11 +213,17 @@ class PullWorker:
         except StaleDiagnosticExecutionError:
             # Recovery owns the terminal product transaction. Do not apply an
             # outcome or acknowledge on behalf of the rejected execution.
+            self.telemetry.observe(
+                "resolution", workload=self.registry.workload, resolution="stale_token"
+            )
             logger.warning(
                 "job_worker_execution_stale", workload=self.registry.workload
             )
         except Exception:
             # Never log exception strings, payloads, or transport URLs.
+            self.telemetry.observe(
+                "worker_health", workload=self.registry.workload, health="unsettled"
+            )
             logger.warning(
                 "job_worker_delivery_unsettled", workload=self.registry.workload
             )
@@ -211,6 +240,18 @@ class PullWorker:
         self, delivery: Delivery, resolution: DeliveryResolution
     ) -> None:
         kind = resolution.kind
+        if (
+            kind in {ResolutionKind.EXHAUSTED, ResolutionKind.DEFINITION_FAILURE}
+            and resolution.job is not None
+        ):
+            job = resolution.job
+            self.telemetry.observe(
+                "outcome",
+                kind=job.job_kind,
+                version=str(job.input_version),
+                workload=self.registry.workload,
+                outcome=job.state,
+            )
         if kind in {
             ResolutionKind.TERMINAL,
             ResolutionKind.STALE,
@@ -236,6 +277,22 @@ class PullWorker:
             raise ValueError("unrecognized resolution")
 
     async def _execute(self, delivery: Delivery, job: JobSnapshot) -> None:
+        started = monotonic()
+        dimensions = {
+            "kind": job.job_kind,
+            "version": str(job.input_version),
+            "workload": self.registry.workload,
+        }
+        self.telemetry.observe(
+            "queue_latency",
+            max(
+                0,
+                (
+                    self.clock.now() - (job.created_at or job.eligible_at)
+                ).total_seconds(),
+            ),
+            **dimensions,
+        )
         definition = self.registry.select(job)
         policy = definition.policy
         assert job.execution_deadline is not None
@@ -252,6 +309,7 @@ class PullWorker:
         handler = asyncio.create_task(definition.invoke(job), name="job-handler")
         self._handlers.add(handler)
         handler.add_done_callback(self._handler_done)
+        self.telemetry.observe("active", 1, workload=self.registry.workload)
         try:
             done, _ = await asyncio.wait({handler}, timeout=timeout)
             if not done:
@@ -279,7 +337,13 @@ class PullWorker:
             async with asyncio.timeout(budget):
                 persisted = await self.store.finish(job, outcome)
             if persisted is None:
+                self.telemetry.observe(
+                    "resolution",
+                    workload=self.registry.workload,
+                    resolution="stale_token",
+                )
                 return
+            self.telemetry.observe("outcome", outcome=persisted.state, **dimensions)
             logger.info(
                 "job_worker_outcome",
                 state=persisted.state,
@@ -291,12 +355,16 @@ class PullWorker:
             else:
                 await delivery.ack()
         finally:
+            self.telemetry.observe(
+                "execution_duration", monotonic() - started, **dimensions
+            )
             if not handler.done():
                 # Keep its local capacity reserved until cancellation really completes.
                 self._orphaned.add(handler)
                 handler.cancel()
 
     def _handler_done(self, task: asyncio.Task[JobOutcome]) -> None:
+        self.telemetry.observe("active", -1, workload=self.registry.workload)
         self._handlers.discard(task)
         self._orphaned.discard(task)
         if not task.cancelled():
@@ -309,11 +377,13 @@ class PullWorker:
         if self._fetcher:
             self._fetcher.cancel()
             await asyncio.wait({self._fetcher}, timeout=self.options.cancellation_grace)
+        forced = False
         active = set(self._active)
         if active:
             _, pending = await asyncio.wait(
                 active, timeout=self.options.shutdown_timeout
             )
+            forced = bool(pending)
             for task in pending:
                 task.cancel()
             if pending:
@@ -322,5 +392,11 @@ class PullWorker:
             handler.cancel()
         if self._handlers:
             await asyncio.wait(self._handlers, timeout=self.options.cancellation_grace)
+        self.telemetry.observe("worker_available", 0, workload=self.registry.workload)
+        self.telemetry.observe(
+            "worker_health",
+            workload=self.registry.workload,
+            health="forced" if forced else "graceful",
+        )
         async with asyncio.timeout(self.options.cancellation_grace + 8):
             await self.transport.close()

@@ -18,7 +18,7 @@ class NatsJobPublisher:
         self._js: JetStreamContext | None = None
         self._lock = asyncio.Lock()
 
-    async def publish(self, subject: str, payload: bytes, message_id: str) -> None:
+    async def publish(self, subject: str, payload: bytes, message_id: str) -> bool:
         async with self._lock:
             if self._js is None:
                 # Keep partially initialized resources owned for cancellation.
@@ -41,6 +41,8 @@ class NatsJobPublisher:
         )
         if ack.stream != self._settings.nats_work_stream or ack.seq < 1:
             raise ValueError("unexpected publication acknowledgement")
+
+        return bool(ack.duplicate)
 
     async def close(self) -> None:
         await self._stack.aclose()

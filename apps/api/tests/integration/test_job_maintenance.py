@@ -375,7 +375,17 @@ async def test_reconciliation_preserves_eligibility_deadlines_attempts_and_polic
 
 async def test_broker_outage_does_not_gate_commits_and_polling_resumes(
     harness: Harness,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from bike_doc_api.core.queue_telemetry import (
+        RecordingQueueTelemetry,
+        queue_telemetry,
+    )
+    from bike_doc_api.operations.inspection import inspect_jobs
+    from bike_doc_api.repositories.job_inspection import InspectionFilter
+
+    recorder = RecordingQueueTelemetry()
+    monkeypatch.setattr(queue_telemetry, "_sink", recorder.observations.append)
     container = os.getenv("BIKE_DOC_API_MAINTENANCE_TEST_NATS_CONTAINER")
     if not container:
         pytest.skip("requires disposable broker container for stop/start injection")
@@ -405,6 +415,16 @@ async def test_broker_outage_does_not_gate_commits_and_polling_resumes(
             await asyncio.sleep(0.1)
         assert row.confirmed_generation == 0 and row.desired_generation == 1
         assert row.transport_error in {"unavailable", "timeout"}
+        snapshot = await inspect_jobs(
+            InspectionFilter(), transport=True, settings=harness.settings
+        )
+        assert snapshot["postgresql_truth"]["jobs"]
+        assert snapshot["jetstream_transport_observations"] == {"status": "unavailable"}
+        assert any(
+            o.metric == "publication"
+            and o.attributes["publication"] in {"unavailable", "timeout"}
+            for o in recorder.observations
+        )
         await broker_action("start")
         for _ in range(150):
             if (await harness.row(job.id)).confirmed_generation == 1:
@@ -422,6 +442,7 @@ async def test_broker_outage_does_not_gate_commits_and_polling_resumes(
                 break
             await asyncio.sleep(0.1)
         assert (await harness.row(next_job.id)).confirmed_generation == 1
+        assert any(o.metric == "publication_ack" for o in recorder.observations)
         async with nats_connection(harness.settings) as client:
             # Both acknowledgements survive the broker's persistent restart.
             assert (

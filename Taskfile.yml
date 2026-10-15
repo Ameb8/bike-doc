@@ -75,6 +75,16 @@ tasks:
     cmds:
       - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.maintenance.reconstruction
 
+  jobs:inspect:
+    desc: Read-only PostgreSQL job truth with optional JetStream transport observations.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.operations.inspection {{.CLI_ARGS}}
+
+  test:observability:
+    desc: Verify queue observations with disposable PostgreSQL/JetStream and failure injection.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh observability
+
   test:recovery:
     desc: Verify recovery, retention and reconstruction with disposable PostgreSQL/JetStream.
     cmds:

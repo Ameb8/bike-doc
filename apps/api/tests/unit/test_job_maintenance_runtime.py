@@ -129,9 +129,11 @@ class FakeRepository:
     async def claim_scan(self, *, purpose: str, **kwargs: object) -> list[JobSnapshot]:
         return self.scans[purpose]
 
-    async def recover_expired(self, **kwargs: object) -> bool:
+    async def recover_expired_and_load(self, **kwargs: object) -> JobSnapshot:
         self.recovered.append(kwargs)
-        return True
+        outcome = kwargs["outcome"]
+        assert isinstance(outcome, JobOutcome)
+        return replace(self.scans["expired"][0], state=outcome.state)
 
     async def delete_retained(self, **kwargs: object) -> bool:
         return True
@@ -369,3 +371,25 @@ def test_maintenance_settings_load_prefixed_environment(
     settings = Settings()
     assert settings.job_maintenance_enabled is False
     assert settings.job_publication_batch_limit == 8
+
+
+async def test_recovery_observes_final_state_after_product_normalization() -> None:
+    from bike_doc_api.core.queue_telemetry import RecordingQueueTelemetry
+
+    repository, publisher = FakeRepository(), FakePublisher()
+    job = snapshot(state="running", execution_token="execution")
+    repository.scans["expired"] = [job]
+    repository.recover_expired_and_load = AsyncMock(
+        return_value=replace(job, state="succeeded")
+    )
+    host = maintenance(repository, publisher)
+    recorder = RecordingQueueTelemetry()
+    host._telemetry = recorder
+    await host.reconcile_once()
+    assert any(
+        o.metric == "recovery" and o.attributes["outcome"] == "succeeded"
+        for o in recorder.observations
+    )
+    assert not any(
+        o.attributes.get("outcome") == "retrying" for o in recorder.observations
+    )

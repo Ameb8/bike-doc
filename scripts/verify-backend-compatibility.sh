@@ -57,6 +57,10 @@ export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL
 
 cd apps/api
 uv run alembic upgrade head
+if [[ "${1:-}" == observability ]]; then
+  uv run pytest -vv -m nats tests/integration/test_worker_runtime.py tests/integration/test_job_maintenance.py tests/integration/test_diagnostic_worker.py tests/integration/test_cross_process_event_wakeups.py
+  exit 0
+fi
 if [[ "${1:-}" == recovery ]]; then
   uv run pytest -vv -m nats tests/integration/test_job_maintenance.py tests/integration/test_diagnostic_worker.py tests/integration/test_profile_worker.py tests/integration/test_nats_compatibility.py
   BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL" \

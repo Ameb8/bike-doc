@@ -895,3 +895,25 @@ See [QUEUE_RECOVERY.md](QUEUE_RECOVERY.md) for the operator procedure,
 configuration relationships, compatibility migration and acceptance evidence.
 `task test:recovery` runs real maintenance, both workload suites, pinned topology
 contracts and persistence races in disposable PostgreSQL/JetStream.
+
+### Queue inspection and observation (#154)
+
+`operations/inspection.py` composes a finite read-only PostgreSQL projection from
+`repositories/job_inspection.py` and optional NATS observations. It is an internal
+command, not a product endpoint. Projection excludes job input and tokens; a
+read-only transaction protects every command path. PostgreSQL truth is always
+separate from optional transport observations.
+
+`core/queue_contract.py` defines stable names and exact finite dimension sets.
+`core/queue_telemetry.py` implements the failure-isolated OpenTelemetry adapter
+and deterministic recorder. Maintenance, shared workers and SSE use narrow
+observation hooks; handlers and mutation repositories do not import exporters.
+`db/pool_observation.py` samples safe driver-exposed pool counts. Both independent
+workload programs use the process-wide telemetry lifecycle.
+
+`operations/monitoring.py` owns read-only NATS administration and advisory
+subscriptions, with no job transition or product-repair dependencies. API
+maintenance owns its lifecycle; worker hosts reuse the adapter. No advisory can
+feed authoritative recovery. See [QUEUE_OBSERVABILITY.md](QUEUE_OBSERVABILITY.md)
+for commands, metric semantics, cardinality/privacy policy and real-infrastructure
+verification via `task test:observability`.

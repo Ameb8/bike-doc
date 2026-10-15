@@ -86,6 +86,7 @@ class JobSnapshot:
     execution_deadline: datetime | None
     effect_boundary_at: datetime | None
     latest_error_category: str | None
+    created_at: datetime | None = None
 
     @classmethod
     def from_row(cls, row: BackgroundJob) -> "JobSnapshot":
@@ -538,6 +539,22 @@ class BackgroundJobRepository:
             row.publication_eligible_at = row.eligible_at
         await self._persist_transition(row)
         return True
+
+    async def recover_expired_and_load(
+        self, *, job_id: str, execution_token: str, outcome: JobOutcome
+    ) -> JobSnapshot | None:
+        """Return the final recovery result after any kind-specific product hook.
+
+        As with worker outcome persistence, the caller commits before observation.
+        A diagnostic completion can normalize requested interruption to success.
+        """
+        if not await self.recover_expired(
+            job_id=job_id, execution_token=execution_token, outcome=outcome
+        ):
+            return None
+        row = await self._lock(job_id)
+        assert row is not None
+        return JobSnapshot.from_row(row)
 
     async def reconstruction_page(
         self,

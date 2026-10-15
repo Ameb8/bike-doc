@@ -21,12 +21,13 @@ from bike_doc_api.core.event_wakeups import (
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.core.telemetry import initialize_telemetry
+from bike_doc_api.db.pool_observation import observe_pool
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
 from bike_doc_api.workers.adapters import (
     NatsPullTransport,
     PostgresJobStore,
-    subscribe_work_advisories,
 )
 from bike_doc_api.workers.diagnostic import (
     DiagnosticTurnHandler,
@@ -53,6 +54,7 @@ async def diagnostic_worker(
         max_overflow=0,
     )
     try:
+        observe_pool(engine, "worker")
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         application = DiagnosticExecutionApplication(sessions, settings, resources)
         registry = diagnostic_registry(
@@ -71,9 +73,7 @@ async def diagnostic_worker(
                 durable=settings.nats_diagnostic_consumer,
                 stream=settings.nats_work_stream,
             )
-            await subscribe_work_advisories(
-                client, settings.nats_work_stream, settings.nats_diagnostic_consumer
-            )
+            await QueueMonitor(settings).subscribe(client)
             runtime = create_workload_worker(
                 settings,
                 registry,

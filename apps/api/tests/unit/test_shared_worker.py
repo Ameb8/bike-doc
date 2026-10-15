@@ -637,10 +637,12 @@ async def test_role_configuration_and_reconciliation_seam() -> None:
         )
 
 
-async def test_advisories_observe_fixed_categories_only(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    from bike_doc_api.workers.adapters import subscribe_work_advisories
+async def test_advisories_observe_fixed_categories_only() -> None:
+    from types import SimpleNamespace
+
+    from bike_doc_api.core.config import Settings
+    from bike_doc_api.core.queue_telemetry import RecordingQueueTelemetry
+    from bike_doc_api.operations.monitoring import QueueMonitor
 
     callbacks = {}
 
@@ -650,12 +652,30 @@ async def test_advisories_observe_fixed_categories_only(
         ) -> None:
             callbacks[subject] = cb
 
-    await subscribe_work_advisories(Client(), "WORK", "profile")
-    with caplog.at_level("WARNING"):
-        for callback in callbacks.values():
-            await callback(object())  # No message fields or database needed.
-    assert len(callbacks) == 2
-    assert "maximum_delivery" in caplog.text and "terminated" in caplog.text
+    settings = Settings(environment="test")
+    recorder = RecordingQueueTelemetry()
+    await QueueMonitor(settings, recorder).subscribe(Client())
+    for subject, callback in callbacks.items():
+        consumer = subject.split(".")[-1]
+        await callback(
+            SimpleNamespace(
+                subject=subject,
+                data=json.dumps(
+                    {
+                        "stream": settings.nats_work_stream,
+                        "consumer": consumer,
+                        "reason": "PRIVATE_SENTINEL",
+                    }
+                ).encode(),
+            )
+        )
+    assert len(callbacks) == 4
+    assert len(recorder.observations) == 4
+    assert {o.attributes["advisory"] for o in recorder.observations} == {
+        "max_deliver",
+        "terminated",
+    }
+    assert "PRIVATE_SENTINEL" not in repr(recorder.observations)
 
 
 async def test_resistant_handlers_retain_local_capacity_after_deadline() -> None:
@@ -697,3 +717,49 @@ async def test_resistant_handlers_retain_local_capacity_after_deadline() -> None
     assert runtime._orphaned
     release.set()
     await runtime.close()
+
+
+async def test_telemetry_failure_never_changes_durable_outcome_or_ack() -> None:
+    from bike_doc_api.core.queue_telemetry import QueueTelemetry
+
+    def fail(_observation: object) -> None:
+        raise RuntimeError("private_credentials")
+
+    runtime, store, events = worker(
+        DeliveryResolution(ResolutionKind.EXECUTABLE, snapshot())
+    )
+    runtime.telemetry = QueueTelemetry(fail)
+    await runtime.process(FakeDelivery(events=events))
+    assert ("outcome_commit", "succeeded") in events
+    assert events[-1] == "ack"
+    assert store.resolution.kind == ResolutionKind.TERMINAL
+
+
+async def test_worker_fetch_failure_and_shutdown_emit_availability() -> None:
+    from bike_doc_api.core.queue_telemetry import RecordingQueueTelemetry
+
+    recorder = RecordingQueueTelemetry()
+    runtime, _, _ = worker(
+        DeliveryResolution(ResolutionKind.MISSING), fetch_timeout=0.01
+    )
+    runtime.telemetry = recorder
+
+    class FailedTransport(FakeTransport):
+        async def fetch(
+            self, batch: int, wait_seconds: float
+        ) -> Sequence[FakeDelivery]:
+            raise ConnectionError("PRIVATE_CREDENTIALS")
+
+    runtime.transport = FailedTransport()
+    runtime.start()
+    await asyncio.sleep(0.02)
+    await runtime.close()
+    assert any(
+        o.metric == "worker_available" and o.value == 0 for o in recorder.observations
+    )
+    assert {
+        o.attributes["health"]
+        for o in recorder.observations
+        if o.metric == "worker_health"
+    } == {"fetch_failed", "graceful"}
+    assert "PRIVATE_CREDENTIALS" not in repr(recorder.observations)
