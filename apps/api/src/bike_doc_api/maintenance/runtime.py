@@ -47,8 +47,8 @@ class SystemClock:
 class ReconciliationPolicy(Protocol):
     """Pure bounded decisions on locked state; absent policies prohibit recovery.
 
-    Product-specific terminalization is deliberately not registered here. A
-    profile adapter may supply its safe replay policy without provider imports.
+    Registered workload policies supply decisions without provider imports;
+    the transaction repository owns any required atomic product repair.
     """
 
     def expired_outcome(self, job: JobSnapshot) -> JobOutcome | None: ...

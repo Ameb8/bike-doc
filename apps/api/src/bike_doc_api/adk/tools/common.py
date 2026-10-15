@@ -6,8 +6,12 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, TypeVar, overload
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, PrivateAttr, ValidationError
 
+from bike_doc_api.core.diagnostic_execution import (
+    DiagnosticExecution,
+    StaleDiagnosticExecutionError,
+)
 from bike_doc_api.core.errors import (
     AppError,
     NotFoundError,
@@ -40,6 +44,8 @@ class DiagnosticToolContext(BaseModel):
     """Server-owned context provided by orchestration to diagnostic tools."""
 
     model_config = ConfigDict(extra="forbid")
+
+    _execution: DiagnosticExecution | None = PrivateAttr(default=None)
 
     user_id: str
     user_skill_level: str = "unknown"
@@ -275,6 +281,8 @@ async def normalize_tool_errors(
         return tool_error("internal_error", _default_message("internal_error"))
     except AppError:
         return tool_error("internal_error", _default_message("internal_error"))
+    except StaleDiagnosticExecutionError:
+        raise
     except Exception:
         return tool_error("internal_error", _default_message("internal_error"))
 

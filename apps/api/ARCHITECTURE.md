@@ -31,7 +31,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | --- | --- | --- |
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
-| `workers/` | Shared pull execution and typed registry; independently runnable profile process resources and application composition | `PullWorker`, `profile_registry`, `profile_role` |
+| `workers/` | Shared pull execution and typed registry; independently runnable profile and diagnostic process resources and application composition | `PullWorker`, `profile_registry`, `diagnostic_registry`, workload roles |
 | `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
@@ -72,7 +72,9 @@ for ADK code to depend on FastAPI transport concerns.
   sessions and authenticated users, configured providers, and the lifespan-owned
   PostgreSQL ADK session service.
 - [`adk/background.py`](src/bike_doc_api/adk/background.py) is the diagnostic
-  background composition root invoked after a new turn is accepted.
+  legacy composition root invoked after a legacy-selected turn is accepted.
+  [`workers/diagnostic_role.py`](src/bike_doc_api/workers/diagnostic_role.py)
+  hosts external execution for queue-selected turns.
 - [`db/migrations/`](src/bike_doc_api/db/migrations/) owns durable-schema
   evolution; models alone do not change deployed databases.
 
@@ -120,8 +122,9 @@ durable acceptance from model execution:
 ```text
 turn route
   -> TurnService accepts, locks, validates, and persists turn.started
-  -> FastAPI BackgroundTasks
-  -> adk/background builds a fresh service/repository graph
+  -> durable_queue: atomically record diagnostic and eligible profile jobs
+     -> API maintenance publishes -> separate workload workers
+  -> legacy: FastAPI BackgroundTasks -> adk/background
   -> DiagnosticTurnOrchestrator prepares current-turn visual context, seeds durable context, and streams DiagnosticRunner
   -> ADK tools call services; runner events become public events
   -> EventService persists/commits events, then local and Core NATS wake-ups
@@ -132,12 +135,21 @@ referenced artifacts, and enforces client-turn idempotency using a canonical
 request hash. It creates or resumes one diagnostic phase session, persists the
 turn and its `turn.started` event together, changes the repair session to
 running, and commits before returning `202 Accepted`. An idempotent replay does
-not start a second background execution.
+not start a second execution, even after a deployment selection changes. Its
+acceptance cursor and timestamp remain anchored to the immutable turn rather
+than subsequent worker or heartbeat updates.
+`Settings.diagnostic_execution` defaults to `legacy`; `durable_queue` commits a
+strict turn-ID-only diagnostic job and, for validated image evidence, an
+independent pinned profile job in that same transaction. Job presence preserves
+the executor selection. The route schedules neither legacy function for those
+turns, including when `profile_inference_execution=legacy`. No route publishes
+JetStream messages or calls ADK session storage.
 
-Today turn acceptance can create or resume the durable ADK session binding;
-`repair_phase_sessions.adk_session_id` remains non-null. Chunk #137 will move
-initialization to the worker with a nullable, idempotent ensure-and-bind step
-and diagnostic effect fencing. The ADK session service is lifespan-owned and
+Turn acceptance creates or reuses only the app-owned phase reference, with a
+null ADK binding for new rows. The executor ensures and binds durable ADK state
+before orchestration; bound identities are resumed exactly. The external queue
+executor persists its fenced effect boundary afterward, as described below.
+The ADK session service is lifespan-owned and
 PostgreSQL-backed; see the [ADK architecture](src/bike_doc_api/adk/ARCHITECTURE.md)
 for migration, startup validation, missing-session, and retention rules.
 
@@ -157,8 +169,10 @@ the agent cannot be invoked persists its safe recoverable error and terminal
 awaiting-user event without invoking the runner. `DiagnosticRunner` translates
 Google ADK output into app-owned event objects; no raw ADK event, prompt, tool
 trace, model setting, or ADK session ID crosses that boundary. Profile
-inference is separately scheduled after diagnostic processing and does not
-delay it.
+inference uses a separate workload consumer for queue-selected turns and may
+commit before or after diagnostics. Diagnostic context includes inferred facts
+only when already committed; profile state never gates diagnostic eligibility.
+Legacy profile inference remains scheduled after legacy diagnostics.
 
 The visual-context service seam is verified with deterministic storage and
 extractor fakes plus real encoded image fixtures for one through three current
@@ -198,6 +212,14 @@ resolve dependencies, call a service, and map its result. Add reusable wiring
 to `deps.py`; do not parse bearer tokens in individual routes or create ad hoc
 database sessions.
 
+Route decorators publish stable canonical operation IDs and use
+`api/responses.py` for the shared `ErrorResponse` descriptions. The event route
+advertises `text/event-stream` and the public event vocabulary. Contract tests
+resolve local schema/response references and check media types, request
+constraints, required fields, and permitted values across the diagnostic slice;
+implemented routes have no expected-failure exemption. Existing owner-scoped
+listing and pagination errors are recorded explicitly in that gate.
+
 ### `schemas/`
 
 This package defines the public Pydantic V2 contract independently from
@@ -205,6 +227,12 @@ SQLAlchemy and ADK. It contains the client-visible IDs, status/phase enums,
 event payload validation, report envelope, and model-to-schema conversion
 helpers. Public API changes begin here and in
 [`docs/specs/openapi.yaml`](../../docs/specs/openapi.yaml), not in an ORM model.
+Report payloads use a discriminator on `schema_version` with typed diagnostic,
+planning, execution, and shop referral variants. Report schema annotations also
+describe the existing conditional evidence/outcome validation and required
+serialized currency fields. There is no unrestricted dictionary payload in the
+public report schema.
+
 `schemas/background_jobs.py` is a separate internal contract: strict immutable
 profile-inference instructions pin only turn ID and behavior versions. These
 models are never exposed in the public API.
@@ -407,8 +435,8 @@ Reconciliation uses bounded `SKIP LOCKED` scans and conditional updates inside
 short transactions. Its policy registry is keyed by stored `(job_kind,
 input_version)`; absent definitions are omitted at the database scan. Policies
 make pure decisions about expired outcomes and safe no-progress notification
-recovery. The API host registers the profile safe-replay policy; diagnostic product
-terminalization belongs to its cutover task. `ProfileJobRepository` couples
+recovery. The API host registers profile safe replay and diagnostic boundary-aware
+recovery, with atomic product terminalization described under #151. `ProfileJobRepository` couples
 job transitions to existing inference-run audit state in that same transaction. Recovery of a retryable expired execution preserves attempts,
 clears the expired token, advances durable generation, and schedules publication
 at the policy's `eligible_at`. Exhaustion terminalizes as dead. No-progress
@@ -459,13 +487,13 @@ only, with no access to job state or message content.
 `workers/role.py:create_workload_worker` is the thin workload-role seam. The
 process host constructs and owns the database pool, NATS connection and durable
 pull subscription, providers, and any ADK resources, then supplies its complete
-registry and adapters. Both profile and later diagnostic roles reuse this same
+registry and adapters. Both profile and diagnostic roles reuse this same
 runtime. Dependency direction is `worker role -> registry/runtime/adapters`,
 `runtime -> typed job store/transport protocols`, `database adapter -> job
 repository`, and `NATS adapter -> core/nats + official client`. Registry and
 handler interfaces import no NATS, FastAPI, providers, or ADK. A diagnostic
-store/handler must add atomic product terminalization and effect fencing in
-Chunk #137. The profile role supplies its own isolated extractor and storage.
+store/handler uses the fencing described below; atomic failure terminalization
+remains #151 work. The profile role supplies its own isolated extractor and storage.
 
 The initial role defaults are concurrency/fetch batch 4 (bounded by the
 consumer's 128 pending acknowledgements), one-second fetches, ten-second
@@ -512,7 +540,7 @@ Issue #145 acceptance evidence (unit tests are in
 artifact storage, signal handling, and resource shutdown. It constructs the
 complete `profile_inference` workload registry in `workers/profile_inference.py`
 and runs the shared `PullWorker`. No handler publishes or settles messages.
-The API maintenance composition imports only the pure profile recovery policy;
+The API maintenance composition imports pure workload recovery policies;
 it does not construct worker/provider resources.
 
 `profile_inference.v1` resolves accepted turn/artifact references through the
@@ -569,13 +597,31 @@ it schedules the existing diagnostic function independently. Idempotent replay
 exits before selecting any executor, including after configuration changes.
 Neither acceptance nor route constructs broker messages or opens NATS.
 
-Queue-mode phase creation avoids ADK I/O and preliminary commits. The existing
-diagnostic background host binds an unbound reference under the repair-session
-lock after acceptance, using a deterministic ADK ID derived from the phase ID.
-An initialization crash before binding resumes that ID; bound sessions retain
-the existing missing-session policy. Legacy acceptance retains its existing ADK
-phase-manager behavior during this canary. Diagnostic effect fencing and queue
-execution remain Chunk #137 work.
+All turn acceptance modes use `DiagnosticPhaseSessionManager` under the
+repair-session lock to create or reuse an app-owned phase reference. Its ID,
+phase uniqueness, status, and report-schema snapshot belong to the acceptance
+transaction; a new reference has null `adk_session_id`. The manager performs
+no ADK I/O or commit, and the route no longer resolves an ADK client.
+
+Before orchestration, the legacy diagnostic background executor invokes
+`DiagnosticADKSessionClient.ensure_or_resume` in its own product transaction.
+For null references it ensures `adk_diagnostic_{phase_session_id}` in the fixed
+`bike_doc_diagnostic` / `backend_system` namespace, then uses the repository's
+null-only compare-and-set. ADK commits independently of the product transaction.
+Concurrent creators confirm the durable winning identity; concurrent binding
+resumes the winner without replacement. A crash before the binding commit
+repeats the same deterministic ensure. Non-null bindings always resume exactly
+and confirmed missing state raises the pre-orchestration failure seam, never
+recreates conversation state. The legacy host rolls back failed initialization
+and emits its existing safe setup-failure events. Neither ADK IDs nor stored
+state enter public responses/events or routine telemetry.
+
+Migration `0011` indexes only non-null bindings, preserving the nonblank CHECK.
+Its downgrade restores `0010`'s nullable full unique index; downgrading `0010`
+with retained uninitialized references fails rather than discarding data.
+`DiagnosticTurnInputV1` extends the existing internal job-input module with
+exactly one strict ULID `turn_id`. No diagnostic producer, handler registration,
+effect fencing, or executor selection is enabled by this change.
 
 `task test:profile-canary` runs the integrated real PostgreSQL/JetStream matrix
 with fake extraction. Profile tests now create their jobs through turn acceptance,
@@ -605,3 +651,215 @@ This canary creates no `diagnostic_turn` job, introduces no profile dependency
 for diagnostic eligibility, and retains the diagnostic background executor.
 Monitoring, broker reconstruction, cleanup and load certification remain outside
 this Task's scope.
+
+### Deferred diagnostic sessions (#148)
+
+The task's acceptance evidence is mapped below. `task test:sessions` runs the
+real PostgreSQL tests, durable ADK compatibility tests, and phase persistence
+repository tests in disposable storage. Model/provider work is faked; ADK
+storage, SQL constraints, binding transactions, migrations, and child-process
+resume are real.
+
+| Acceptance criterion | Implementation and evidence |
+| --- | --- |
+| Strict `diagnostic_turn.v1` input | `DiagnosticTurnInputV1` in the existing internal `schemas/background_jobs.py`; strict-input tests accept one ULID and reject missing, blank, malformed, non-string, and additional fields |
+| Nullable binding, partial uniqueness, nonblank validation, safe downgrade | Existing migration `0010` plus `0011` and matching model index; model metadata test and real migration roundtrip test cover multiple nulls, duplicate non-null rejection, blank rejection, restoration of `0010`, refusal to discard null references, and upgrade/downgrade/upgrade through `0009` |
+| App identity and report snapshot without ADK | Manager unit tests and real acceptance tests preserve the phase ID, selected report schema, and existing phase row; new rows remain null |
+| Acceptance independent of unavailable ADK and atomic phase creation | Route composition has no ADK dependency; real acceptance tests reject any attempted ADK access in both profile modes, and commit-loss tests prove no phase, turn, event, or running-state change survives rollback |
+| Concurrent deterministic ensure and null-only stable binding | Independently constructed PostgreSQL ADK clients and product sessions initialize concurrently; repository winner test proves an existing binding cannot be replaced |
+| Crash after ADK creation before binding/commit | Failure injection at both points followed by initialization in a child process derives the same identity and leaves exactly one durable ADK session |
+| Exact bound resume across processes | A second independently constructed child process resumes the committed binding; existing ADK compatibility tests also verify durable state and event preservation |
+| Missing binding fails closed before effects | Repository/client tests leave a confirmed missing identity unchanged with no replacement state; legacy integration test verifies orchestration is not invoked again and existing safe setup-failure events restore `awaiting_user` |
+| Runnable legacy executor and unchanged public contracts | Background composition uses the shared ensure-or-resume; unit/API/contract tests and real legacy integration cover scheduling, orchestration, public `202`, and ordered persisted events; the profile canary's diagnostic compatibility test covers its existing deferred reference |
+| Private ADK IDs/state and safe telemetry | Public response/event assertions and existing ADK storage/runner privacy tests cover internal identity, stored state, model content, and routine telemetry; the new failure path logs only the existing bounded event name |
+| Focused and standard verification | Strict-input, model, session-manager, background, turn-service, API, real migration/repository/cross-process suites, `task format`, and `task check` |
+
+This task does not record or register diagnostic jobs, change diagnostic executor
+selection, start a diagnostic worker, or implement effect fencing/retry policy.
+
+## Diagnostic worker composition (#149)
+
+`adk/execution.py:build_diagnostic_orchestrator` is the single diagnostic graph.
+The legacy `adk/background.py` host and `workers/diagnostic_application.py` both
+compose it with a fresh executor-owned product session. `DiagnosticResources`
+contains only process transports: durable ADK sessions, storage, observation
+extraction, optional cost estimation, and an optional model. Neither worker
+composition nor the graph imports route handlers or FastAPI dependency objects.
+The legacy host adapts its existing API-lifespan resources to this same graph.
+
+`workers/diagnostic.py` registers exactly `diagnostic_turn` / input version 1
+(`diagnostic_turn.v1`) in the complete `diagnostic` workload allowlist. Its typed
+handler receives `ClaimedJob[DiagnosticTurnInputV1]`, including identity, attempt,
+execution token and deadline; transport settlement stays in the shared runtime.
+The input contains only `turn_id`. At execution, the application loads the turn,
+its repair/phase references and owner from PostgreSQL, ensures/resumes the exact
+durable ADK binding, commits it, then calls the shared orchestrator. Accepted
+text/artifact references come from the turn row. The orchestrator snapshots them
+and reads current resolved bike profile and the existing repair-history service
+at execution, preserving independent profile-inference timing.
+
+Known transient preparation failures alone return bounded retry categories.
+Confirmed missing bound ADK state returns a permanent pre-effect failure without
+orchestration. Handled runner errors return job success after the existing
+orchestrator durably settles the public turn; cancellation and stale execution
+propagate. Unknown failures request a permanent outcome; the repository uses the
+authoritative boundary to classify unhandled reserved execution as interrupted. Model errors are redacted before entering dependency telemetry. Optional pricing
+lifecycle summaries omit requirement/search/listing text and raw exception traces, and
+all completion logs/metrics reuse the bounded diagnostic telemetry contract.
+
+`workers/diagnostic_role.py` owns the product pool (no overflow), NATS connection,
+diagnostic durable subscription, advisory observation, complete registry and
+shared runtime. `adk/resources.py` owns a separately bounded PostgreSQL ADK pool,
+SDK model, storage and optional provider clients. It closes partial startup
+resources and uses bounded shutdown after runtime drain. Committed event hints
+reuse that same NATS connection via `NatsEventPublisher`; polling remains the
+fallback. Dependency direction is `diagnostic role -> resources/application ->
+shared diagnostic composition -> orchestration/services`, and `role -> shared
+registry/runtime/adapters`. No worker copies pull/claim/progress/retry/settlement
+or shutdown algorithms.
+
+Effect-token enforcement is provided by #150 below, and #151 supplies atomic
+product repair and registers expired-execution recovery. Runtime timeouts
+request a classified pre-boundary retry; persistence rejects that outcome after
+the boundary so deadline recovery terminalizes the reserved execution without
+replay. The #152 producer canary
+uses `Settings.diagnostic_execution` to select this role for newly accepted
+turns, as described in the diagnostic turn path above.
+
+| #149 acceptance | Evidence |
+| --- | --- |
+| Exact allowlist and complete policy | `diagnostic_registry`, `diagnostic_policy`; exact dispatch, duplicate/workload/missing-policy and invalid input/attempt tests |
+| Claimed typed input and immutable instruction | Handler tests inspect all claimed fields; real seeded role loads accepted text/artifacts through the turn |
+| Current supporting context | Shared orchestrator seed lookups; real test changes the bike after acceptance and verifies current ADK context |
+| Durable precondition before orchestration | Preparation-order tests; real deterministic binding and confirmed missing-binding rejection |
+| Shared legacy/queue graph | Existing background composition test now spies on `execution.py`; real role uses that graph and actual normalized ADK runner |
+| No handler transport authority | `diagnostic.py` imports only typed registry/application contracts and bounded outcomes |
+| Complete thin resource-owning role | Fake process/pool/NATS lifecycle tests and real PostgreSQL/JetStream diagnostic durable consumer |
+| Typed timing/concurrency/pool validation | Invalid provider/handler/hard/grace/shutdown/fetch/pool/progress/attempt configuration tests; `.env.example` and Compose invocation |
+| Cancellation propagation | Handler cancellation/unknown-error tests; shared runtime timeout/shutdown tests remain active |
+| Bounded content-safe outcomes and telemetry | Model error redaction and provider failure tests; real test checks accepted content, provider exception text and artifact paths are absent from logs |
+| Verification | `task format`, `task check`, `task test:diagnostic`; existing ADK orchestration/runner/service suites stay active |
+
+## Diagnostic execution fencing (#150)
+
+`core/diagnostic_execution.py` defines the frozen, transport-neutral
+`DiagnosticExecution(job_id, token, deadline)` and the bounded
+`StaleDiagnosticExecutionError`. Tokens are excluded from representations. The
+claimed worker constructs this context after authoritative preparation and
+ADK ensure/resume. Immediately before composing/invoking orchestration,
+`repositories/diagnostic_execution.py:DiagnosticExecutionFence.cross_boundary`
+locks the job, checks the current token and database wall-clock deadline, and
+conditionally persists the irreversible boundary. Migration `0012` retains
+`effect_boundary_token`, so a new current token cannot inherit an earlier
+reservation. Repeating the crossing for its original current token is
+idempotent; neither crossing nor subsequent checks changes the deadline.
+Existing boundaries without a recorded owner fail closed.
+
+The shared graph binds this authority to its executor-owned product session.
+Every service and repository in that graph uses this same session, including
+input-request, safety, report, event, session-completion and visual-extraction
+operations. Session-local SQLAlchemy hooks lock/check the job before ORM SQL
+(including direct DML), before autoflush/flush, after flush, and before commit.
+This is a transactional compare-and-write: the job lock is held through the
+product mutation and commit, so replacement cannot interleave. Clock checks
+happen after lock acquisition, use `clock_timestamp()` rather than transaction
+start time, and run again at commit to roll back writes flushed before expiry.
+The lock order is job then product rows. A rejection remains sticky for the
+execution, and service rollback discards its pending mutations and SSE hints.
+Any future diagnostic service must reuse this fenced session; creating an
+independent product session would bypass its authority and is prohibited.
+
+```text
+claimed handler -> DiagnosticExecutionApplication -> DiagnosticExecutionFence
+                                                      -> product session hooks
+                -> shared diagnostic graph -> orchestrator / runner / tools
+                                           -> services -> repositories
+                                                        -> same fenced session
+```
+
+Services and tools import no JetStream or worker types. Orchestration, the
+runner request, and tool composition carry the same private execution context;
+tool context uses a Pydantic private attribute. Explicit runner content/state
+mapping omits it. It never enters public schemas, ADK state/model input, or
+broker envelopes. Ordinary HTTP and legacy graph sessions are not bound to a
+queue token. The route uses acceptance's committed job selection to schedule
+exactly one executor; an idempotent replay schedules neither executor.
+
+The committed whole-turn boundary is the durable fenced reservation for
+external work: ADK invocation and its independent session writes, model calls,
+observation extraction, storage reads, and optional report pricing. No recovered
+execution may repeat this reservation. Before runner/model/extraction
+invocation, the graph rechecks authority and commits pending visual attempt or
+agent-start markers. Report pricing checks authority while retaining its
+existing product-row locks and validated state. Storage reads are bounded,
+read-only operations under the already-committed reservation. The boundary
+does not promise exactly-once calls: an in-flight external call may continue
+after cancellation/expiry, but its late product result is transactionally
+rejected. No cancellation assumption or renewable lease underpins safety.
+JetStream progress continues to extend acknowledgement time only.
+
+Stale authority propagates through services, tool normalization, model adapter,
+runner and orchestration without generating a public error/completion pair.
+The shared runtime emits only `job_worker_execution_stale` and leaves delivery
+unsettled; #151 owns the recovery/product-terminalization transaction.
+
+| #150 acceptance | Implementation and evidence |
+| --- | --- |
+| Valid, unexpired boundary after phase initialization | Worker preparation-order unit test; real missing-binding test; locked conditional crossing |
+| Single boundary, same-owner idempotence, immutable deadline | Independent-session boundary race, repeat-crossing and replacement-owner tests |
+| Every protected write family | Session SQL/flush/commit hook unit tests; service stale-error unit tests; PostgreSQL replacement/expiry matrix for events, input, safety, report, session DML, completion, visual run/manifest/attempt/result/failure/start/redaction |
+| Expiry despite a live process | Real wall-clock lock-wait test and rollback of a previously flushed event; no replacement needed |
+| Safe stale rejection and external reservation | Private-context unit test; real in-flight model loses token, progress cannot renew deadline, product snapshot remains unchanged and delivery remains unacknowledged |
+| Existing product contracts | Existing orchestration, tool, event, safety, report, visual and public-contract suites; real seeded valid/handled-error role paths |
+| Required verification | `task format`, `task check`, `task test:diagnostic` |
+
+### Diagnostic terminal outcomes (#151)
+
+`repositories/diagnostic_terminalization.py:append_diagnostic_completion` owns
+the validated completion/error writes shared by legacy setup, orchestration, and
+job recovery. `repositories/diagnostic_jobs.py:DiagnosticJobRepository` composes the generic
+transition hook with diagnostic product terminalization and the existing profile
+lifecycle hook. The diagnostic worker uses it for outcome and permanent-definition
+resolution; API maintenance uses it for both registered workloads. Every terminal
+repair holds the job lock before the repair-session lock, validates the stored
+turn reference, and commits the job, `awaiting_user` state, validated error, and
+immediately following completion snapshot together. Terminal job state guards
+repeated delivery/reconciliation. Malformed or missing references cannot authorize
+product mutation.
+
+`DiagnosticRecoveryPolicy` retries lost pre-boundary execution within the persisted
+attempt budget, exhausting to `dead`; reserved execution becomes `interrupted`
+without advancing publication. The generic scan and publication CAS preserve
+eligibility, attempts, and active deadlines. Preparation classifies only explicit
+connection/timeout and transient PostgreSQL failures as retryable; other preparation
+exceptions are permanent. Unknown handler failures never retry: the repository
+maps them to dead before the boundary and interrupted after it. Handled
+orchestration errors commit their public pair
+together and return job success. If product completion committed before job
+settlement was lost, the hook recognizes it as success and preserves the current
+session snapshot, including a newer accepted turn. Post-commit event notification
+hooks remain the only cross-process wake-up path. Public retryability authorizes a
+new user turn; it cannot revive the terminal job.
+
+Real PostgreSQL/JetStream diagnostic tests cover rollback after completion flush,
+competing and repeated recovery, exhaustion, invalid definitions, handled model
+errors, completion-before-settlement loss, and terminal delivery without another
+attempt or model invocation. The #152 canary composes these contracts with
+atomic acceptance and route executor selection.
+
+| #151 contract | Implementation and verification |
+| --- | --- |
+| Only classified pre-boundary retries, durable before delayed NAK | Preparation classifier, handler and generic outcome contract; unit classification tests and real `test_classified_retry_is_durable_before_real_delayed_nak` |
+| Exhaustion/permanent failure repairs product and emits one ordered pair | `DiagnosticJobRepository` plus shared `append_diagnostic_completion`; pre-boundary outcomes and expired-attempt-budget integration tests |
+| Trusted definition failure consumes no attempt; malformed identities do not mutate product | Transition hook validates a minimal turn reference from the trusted row; version/extra/malformed/missing definition integration matrix |
+| Handled error succeeds, including loss after product commit | Atomic orchestration pair; seeded model-error and completion-before-settlement integration tests preserve newer session state |
+| Expired post-boundary execution interrupts without replay | Recovery policy and conditional generic persistence; expired-boundary race test asserts unchanged generation and no model calls |
+| Concurrent/repeated recovery cannot duplicate or reverse results | Job/session lock order, terminal-state guard and completion identity; rollback-after-flush, competing recovery and repeated maintenance tests |
+| Notification recovery respects boundary, eligibility, attempts and active deadlines | Generic scan/CAS plus conservative diagnostic policy; diagnostic recovery tests and existing maintenance timing matrix |
+| Succeeded/dead/interrupted deliveries acknowledge without attempts | Existing terminal resolution/ACK mapping; real broker terminal-redelivery and completion-before-settlement tests |
+| Public retryability creates new work only | Terminal outcomes remain immutable under the existing database trigger; terminal-redelivery tests prove the original is never revived |
+| Content-safe errors/telemetry and unchanged event validation/wake-ups | Fixed `JobError` values and public error text, shared schema validation and event repository commit hooks; privacy, public event and cross-process SSE compatibility suites |
+
+The integrated diagnostic canary and worker-first enablement/drain/rollback
+procedure are documented in [README.md](README.md#diagnostic-queue-canary).
+Final removal of legacy background composition remains a later completion gate.

@@ -3,7 +3,10 @@
 from typing import Protocol
 
 from bike_doc_api.repositories.background_jobs import JobRecord, JobSnapshot
-from bike_doc_api.schemas.background_jobs import ProfileInferenceInputV1
+from bike_doc_api.schemas.background_jobs import (
+    DiagnosticTurnInputV1,
+    ProfileInferenceInputV1,
+)
 
 PROFILE_INFERENCE_KIND = "profile_inference"
 PROFILE_INFERENCE_WORKLOAD = "profile_inference"
@@ -18,6 +21,27 @@ class BackgroundJobService:
 
     def __init__(self, repository: JobRecorder) -> None:
         self._repository = repository
+
+    async def record_diagnostic_turn(
+        self,
+        input: DiagnosticTurnInputV1,
+        *,
+        attempt_limit: int,
+    ) -> JobSnapshot:
+        """Use the accepted turn itself as the logical diagnostic identity."""
+        if type(attempt_limit) is not int or not 1 <= attempt_limit <= 100:
+            raise ValueError("diagnostic attempt limit must be between 1 and 100")
+        validated = DiagnosticTurnInputV1.model_validate(input.model_dump())
+        return await self._repository.record(
+            JobRecord(
+                job_kind="diagnostic_turn",
+                workload_class="diagnostic",
+                input_version=1,
+                input=validated.model_dump(mode="json"),
+                deduplication_key=validated.turn_id,
+                attempt_limit=attempt_limit,
+            )
+        )
 
     async def record_profile_inference(
         self,

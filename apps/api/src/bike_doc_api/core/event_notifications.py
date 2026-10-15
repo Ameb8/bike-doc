@@ -16,6 +16,26 @@ SUBJECT = "bikedoc.events.wakeup.v1"
 logger = structlog.get_logger(__name__)
 
 
+class NatsEventPublisher:
+    """Best-effort committed hints over a host-owned connection."""
+
+    def __init__(self, client: Client) -> None:
+        self.client = client
+
+    async def publish(self, repair_session_id: str, sequence: int) -> None:
+        client = self.client
+        if not client.is_connected:
+            return
+        payload = json.dumps(
+            {"v": 1, "repair_session_id": repair_session_id, "sequence": sequence},
+            separators=(",", ":"),
+        ).encode()
+        try:
+            await client.publish(SUBJECT, payload)
+        except Exception:
+            logger.warning("event_wakeup_publish_failed")
+
+
 class NatsEventNotifications:
     """One reconnecting connection and subscription for all local streams."""
 
@@ -35,17 +55,8 @@ class NatsEventNotifications:
                 await self._task
 
     async def publish(self, repair_session_id: str, sequence: int) -> None:
-        client = self._client
-        if client is None or not client.is_connected:
-            return
-        payload = json.dumps(
-            {"v": 1, "repair_session_id": repair_session_id, "sequence": sequence},
-            separators=(",", ":"),
-        ).encode()
-        try:
-            await client.publish(SUBJECT, payload)
-        except Exception:
-            logger.warning("event_wakeup_publish_failed")
+        if self._client is not None:
+            await NatsEventPublisher(self._client).publish(repair_session_id, sequence)
 
     async def _receive(self, message: Msg) -> None:
         try:

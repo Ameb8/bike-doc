@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import (
     NotFoundError,
     SafetyPolicyViolationError,
@@ -351,6 +352,9 @@ class DiagnosticSafetyService:
             SessionStateConflictError,
             ValidationAppError,
         ):
+            await self._rollback_if_configured()
+            raise
+        except StaleDiagnosticExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception as exc:

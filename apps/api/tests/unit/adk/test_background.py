@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from bike_doc_api.adk import background
+from bike_doc_api.adk import background, execution
 from bike_doc_api.core.config import Settings
 from bike_doc_api.models.repair_session import RepairSession, RepairTurn
 from bike_doc_api.models.user import User
@@ -24,6 +24,9 @@ class _FakeSession:
 
     async def commit(self) -> None:
         self.commits += 1
+
+    async def refresh(self, _row: object) -> None:
+        pass
 
     async def rollback(self) -> None:
         self.rollbacks += 1
@@ -140,7 +143,11 @@ class _PhaseSessionRepository:
 
 class _EventRepository:
     def __init__(self, _session: _FakeSession, _store: _Store) -> None:
-        pass
+        self.store = _store
+
+    async def add(self, event: Any) -> Any:
+        self.store.events.append((event.type, event.turn_id, event.data))
+        return event
 
 
 class _EventService:
@@ -189,6 +196,16 @@ def _patch_background_repositories(
     *,
     store: _Store,
 ) -> None:
+    class SessionClient:
+        def __init__(self, _service: object) -> None:
+            pass
+
+        async def ensure_or_resume(self, **kwargs: Any) -> str:
+            assert kwargs["phase_session"].id == store.turn.repair_phase_session_id
+            return "adk_existing"
+
+    monkeypatch.setattr(background, "DiagnosticADKSessionClient", SessionClient)
+    monkeypatch.setattr(background, "get_adk_session_service", lambda: object())
     monkeypatch.setattr(
         background,
         "UserRepository",
@@ -283,7 +300,6 @@ async def test_background_missing_user_restores_session_and_writes_terminal_even
     fresh_session = _FakeSession()
     _patch_background_session(monkeypatch, session=fresh_session)
     _patch_background_repositories(monkeypatch, store=store)
-    monkeypatch.setattr(background, "EventService", _EventService)
 
     await background.execute_diagnostic_turn_background(
         "usr_bg",
@@ -295,7 +311,7 @@ async def test_background_missing_user_restores_session_and_writes_terminal_even
     assert [event[0] for event in store.events] == ["error", "turn.completed"]
     assert store.events[0][2] == {
         "code": "diagnostic_processing_error",
-        "message": "Diagnostic processing could not be started.",
+        "message": "Diagnostic processing could not be completed.",
         "retryable": True,
     }
     assert store.events[1][2]["turn_id"] == "turn_bg"
@@ -328,50 +344,46 @@ def test_background_composition_builds_visual_context_with_fresh_dependencies(
             captured["save_report_kwargs"] = kwargs
 
     monkeypatch.setattr(background, "get_storage_provider", lambda _settings: storage)
-    monkeypatch.setattr(background, "TurnService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "TurnService", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background,
+        execution,
         "RepairSessionService",
         lambda *args, **kwargs: object(),
     )
     monkeypatch.setattr(
-        background,
+        execution,
         "ResolvedBikeProfileService",
         lambda *args, **kwargs: object(),
     )
-    monkeypatch.setattr(background, "ArtifactService", lambda *args, **kwargs: object())
-    monkeypatch.setattr(background, "ReportService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "ArtifactService", lambda *args, **kwargs: object())
+    monkeypatch.setattr(execution, "ReportService", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background,
+        execution,
         "DiagnosticSafetyService",
         lambda *args, **kwargs: object(),
     )
+    monkeypatch.setattr(execution, "DiagnosticRunner", lambda *args, **kwargs: object())
     monkeypatch.setattr(
-        background, "DiagnosticRunner", lambda *args, **kwargs: object()
-    )
-    monkeypatch.setattr(
-        background, "create_diagnostic_agent", lambda *args, **kwargs: object()
+        execution, "create_diagnostic_agent", lambda *args, **kwargs: object()
     )
     monkeypatch.setattr(background, "get_adk_session_service", lambda: object())
     monkeypatch.setattr(
         background, "_build_cost_estimate_service", lambda _settings: None
     )
-    monkeypatch.setattr(background, "GetBikeProfileTool", lambda *args: object())
-    monkeypatch.setattr(background, "LookupRepairHistoryTool", lambda *args: object())
+    monkeypatch.setattr(execution, "GetBikeProfileTool", lambda *args: object())
+    monkeypatch.setattr(execution, "LookupRepairHistoryTool", lambda *args: object())
     monkeypatch.setattr(
-        background, "ListDiagnosticArtifactsTool", lambda *args: object()
+        execution, "ListDiagnosticArtifactsTool", lambda *args: object()
+    )
+    monkeypatch.setattr(execution, "RequestDiagnosticInputTool", lambda *args: object())
+    monkeypatch.setattr(execution, "RaiseSafetyFlagTool", lambda *args: object())
+    monkeypatch.setattr(
+        execution, "SaveDiagnosticReportTool", _SaveDiagnosticReportTool
     )
     monkeypatch.setattr(
-        background, "RequestDiagnosticInputTool", lambda *args: object()
+        execution, "DiagnosticVisualContextService", _VisualContextService
     )
-    monkeypatch.setattr(background, "RaiseSafetyFlagTool", lambda *args: object())
-    monkeypatch.setattr(
-        background, "SaveDiagnosticReportTool", _SaveDiagnosticReportTool
-    )
-    monkeypatch.setattr(
-        background, "DiagnosticVisualContextService", _VisualContextService
-    )
-    monkeypatch.setattr(background, "DiagnosticTurnOrchestrator", _Orchestrator)
+    monkeypatch.setattr(execution, "DiagnosticTurnOrchestrator", _Orchestrator)
 
     background._build_background_orchestrator(session=fresh_session, settings=settings)
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import cast
 
 import structlog
 from opentelemetry import trace
@@ -13,30 +12,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.adk.agents.diagnostic import (
     DIAGNOSTIC_PROMPT_VERSION,
-    create_diagnostic_agent,
+)
+from bike_doc_api.adk.execution import (
+    DiagnosticResources,
+    build_diagnostic_orchestrator,
+)
+from bike_doc_api.adk.execution_telemetry import (
+    _apply_snapshot,
+    _emit_completed,
+    _record_attempt_metrics,
+    _safe_log,
 )
 from bike_doc_api.adk.orchestration import DiagnosticTurnOrchestrator
-from bike_doc_api.adk.runner import DiagnosticRunner
 from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
-from bike_doc_api.adk.tools.artifacts import ListDiagnosticArtifactsTool
-from bike_doc_api.adk.tools.bike_profile import (
-    BikeProfileServiceProtocol,
-    GetBikeProfileTool,
-)
-from bike_doc_api.adk.tools.input_requests import (
-    DiagnosticInputRequestServiceProtocol,
-    RequestDiagnosticInputTool,
-)
-from bike_doc_api.adk.tools.repair_history import (
-    LookupRepairHistoryTool,
-    RepairHistoryServiceProtocol,
-)
-from bike_doc_api.adk.tools.reports import (
-    DiagnosticReportServiceProtocol,
-    SaveDiagnosticReportTool,
-)
-from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
-from bike_doc_api.adk.tools.tool_catalog import DiagnosticAgentToolDependencies
 from bike_doc_api.adk.turn_telemetry_state import DiagnosticTurnTelemetrySnapshot
 from bike_doc_api.api.deps import (
     get_adk_session_service,
@@ -61,32 +49,18 @@ from bike_doc_api.providers.observation_extraction import (
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.bikes import BikeRepository
-from bike_doc_api.repositories.events import RepairSessionEventRepository
-from bike_doc_api.repositories.observation_extraction import (
-    ObservationExtractionRunRepository,
+from bike_doc_api.repositories.diagnostic_terminalization import (
+    append_diagnostic_completion,
 )
+from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.profile_inference import ProfileInferenceRunRepository
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
     RepairSessionRepository,
     RepairTurnRepository,
 )
-from bike_doc_api.repositories.reports import PhaseReportRepository
 from bike_doc_api.repositories.users import UserRepository
 from bike_doc_api.schemas.common import RepairSessionStatus
-from bike_doc_api.schemas.event import RepairSessionEventType
-from bike_doc_api.schemas.repair_session import repair_session_from_model
-from bike_doc_api.services.artifacts import ArtifactService
-from bike_doc_api.services.bikes import ResolvedBikeProfileService
-from bike_doc_api.services.diagnostic_completion_telemetry import (
-    DiagnosticMetricDimensions,
-    default_diagnostic_completion_telemetry,
-)
-from bike_doc_api.services.diagnostic_visual_context import (
-    DiagnosticVisualContextService,
-    RepairTurnRepositoryProtocol,
-)
-from bike_doc_api.services.events import EventService
 from bike_doc_api.services.observation_extraction import (
     DiagnosticObservationExtractor,
     ObservationExtractionRequest,
@@ -97,10 +71,7 @@ from bike_doc_api.services.profile_inference import (
     ProfileInferenceService,
 )
 from bike_doc_api.services.profile_inference_resolution import ProfileResolverPolicy
-from bike_doc_api.services.repair_sessions import RepairSessionService
-from bike_doc_api.services.reports import CostEstimateServiceProtocol, ReportService
-from bike_doc_api.services.safety import DiagnosticSafetyService
-from bike_doc_api.services.turns import TurnService
+from bike_doc_api.services.reports import CostEstimateServiceProtocol
 
 logger = structlog.get_logger(__name__)
 _TELEMETRY_SCHEMA_VERSION = "diagnostic_telemetry.v1"
@@ -262,19 +233,14 @@ async def _execute_diagnostic_turn_attempt(
                     outcome="terminal_error",
                 )
                 return
-            if phase_session.adk_session_id is None:
-                # Acceptance owns only the reference. Serialize binding using the
-                # same session lock as acceptance, outside the HTTP transaction.
-                await repair_sessions.get_for_update(repair_session_id)
-                await session.refresh(phase_session)
-                if phase_session.adk_session_id is None:
-                    phase_session.adk_session_id = await DiagnosticADKSessionClient(
-                        get_adk_session_service()
-                    ).ensure_unbound_session(
-                        phase_session_id=phase_session.id,
-                        repair_session_id=repair_session_id,
-                    )
-                    await session.commit()
+            await DiagnosticADKSessionClient(
+                get_adk_session_service()
+            ).ensure_or_resume(
+                phase_session=phase_session,
+                phase_sessions=RepairPhaseSessionRepository(session),
+            )
+            await session.commit()
+            await session.refresh(phase_session)
             turn_index = (
                 await turns.count_for_phase_session_through_start_event_sequence(
                     repair_phase_session_id=phase_session.id,
@@ -353,6 +319,7 @@ async def _execute_diagnostic_turn_attempt(
             raise
         except Exception:
             _safe_log("error", "diagnostic_background_turn_failed")
+            await session.rollback()
             await _handle_background_setup_failure(
                 session=session,
                 user_id=user_id,
@@ -372,166 +339,6 @@ async def _execute_diagnostic_turn_attempt(
             _apply_snapshot(span, snapshot)
             _record_attempt_metrics(snapshot=snapshot, fields=loaded_fields)
             _emit_completed(logger, snapshot=snapshot, fields=loaded_fields)
-        return
-
-
-def _apply_snapshot(
-    span: trace.Span, snapshot: DiagnosticTurnTelemetrySnapshot
-) -> None:
-    """Apply only bounded immutable orchestration facts to the root span."""
-    span.set_attributes(
-        {
-            "bike_doc.turn.outcome": snapshot.outcome,
-            "bike_doc.turn.terminal_status": snapshot.terminal_status.value,
-            "bike_doc.turn.duration_ms": snapshot.duration_ms,
-            "bike_doc.output.delta_count": snapshot.assistant_delta_count,
-            "bike_doc.output.message_count": snapshot.assistant_message_count,
-            "bike_doc.terminal_action_count": snapshot.terminal_action_count,
-            "bike_doc.safety.escalated": snapshot.safety.escalated,
-        }
-    )
-    if snapshot.time_to_first_output_ms is not None:
-        span.set_attribute(
-            "bike_doc.turn.time_to_first_output_ms", snapshot.time_to_first_output_ms
-        )
-    if snapshot.error_code is not None:
-        span.set_attributes(
-            {
-                "bike_doc.error.code": snapshot.error_code,
-                "bike_doc.error.retryable": bool(snapshot.error_retryable),
-            }
-        )
-        span.add_event(
-            "diagnostic.recoverable_error",
-            {
-                "error_code": snapshot.error_code,
-                "retryable": bool(snapshot.error_retryable),
-            },
-        )
-    for action in snapshot.terminal_action_kinds:
-        span.add_event("diagnostic.terminal_action", {"action_kind": action})
-    for stage in snapshot.validation.stages:
-        span.add_event(
-            "diagnostic.report_validation_failed", {"validation_stage": stage}
-        )
-    if snapshot.safety.escalated:
-        span.add_event(
-            "diagnostic.safety_escalated",
-            {
-                "safety_state": snapshot.safety.safety_state or "unknown",
-                "escalation_count": snapshot.safety.escalation_count,
-            },
-        )
-    if snapshot.report.completed:
-        span.set_attributes(
-            {
-                "bike_doc.report.completed": True,
-                "bike_doc.report.observed_finding_count": (
-                    snapshot.report.observed_finding_count or 0
-                ),
-                "bike_doc.report.contributing_factor_count": (
-                    snapshot.report.contributing_factor_count or 0
-                ),
-                "bike_doc.report.alternate_hypothesis_count": (
-                    snapshot.report.alternate_hypothesis_count or 0
-                ),
-            }
-        )
-    if snapshot.outcome in {"recoverable_error", "terminal_error"}:
-        span.set_status(
-            Status(StatusCode.ERROR, snapshot.error_code or snapshot.outcome)
-        )
-
-
-def _record_attempt_metrics(
-    *, snapshot: DiagnosticTurnTelemetrySnapshot, fields: dict[str, object]
-) -> None:
-    """Keep metric export outside product state transitions and content boundaries."""
-
-    default_diagnostic_completion_telemetry().turn_completed(
-        snapshot=snapshot,
-        dimensions=DiagnosticMetricDimensions(
-            provider=str(fields.get("provider", "unknown")),
-            model=str(fields.get("model", "unknown")),
-            prompt_version=str(fields.get("prompt_version", "unknown")),
-            report_schema_version=str(fields.get("report_schema_version", "unknown")),
-            image_analysis_mode=str(fields.get("image_analysis_mode", "unknown")),
-        ),
-    )
-
-
-def _emit_completed(
-    logger: structlog.stdlib.BoundLogger,
-    *,
-    snapshot: DiagnosticTurnTelemetrySnapshot | None,
-    fields: dict[str, object],
-    terminal_status: str | None = None,
-    outcome: str | None = None,
-) -> None:
-    """Emit the one privacy-safe terminal lifecycle log for an attempt."""
-    if snapshot is None:
-        outcome = outcome or "terminal_error"
-        data: dict[str, object] = {
-            **fields,
-            "outcome": outcome,
-            "terminal_status": terminal_status or "unknown",
-        }
-    else:
-        data = {
-            **fields,
-            "outcome": snapshot.outcome,
-            "terminal_status": snapshot.terminal_status.value,
-            "duration_ms": snapshot.duration_ms,
-            "artifact_count": snapshot.artifact_count,
-            "current_image_count": snapshot.current_image_count,
-            "current_observation_count": snapshot.current_observation_count,
-            "prior_observation_count": snapshot.prior_observation_count,
-            "assistant_delta_count": snapshot.assistant_delta_count,
-            "assistant_message_count": snapshot.assistant_message_count,
-            "terminal_action_count": snapshot.terminal_action_count,
-            "safety_escalated": snapshot.safety.escalated,
-            "safety_state": snapshot.safety.safety_state,
-            "report_completed": snapshot.report.completed,
-        }
-        if snapshot.agent_run_duration_ms is not None:
-            data["agent_run_duration_ms"] = snapshot.agent_run_duration_ms
-        if snapshot.time_to_first_output_ms is not None:
-            data["time_to_first_output_ms"] = snapshot.time_to_first_output_ms
-        if snapshot.input_request is not None:
-            data.update(
-                input_request_type=snapshot.input_request.request_type,
-                input_required=snapshot.input_request.required,
-            )
-        if snapshot.report.completed:
-            data.update(
-                completion_reason=snapshot.report.completion_reason,
-                observed_finding_count=snapshot.report.observed_finding_count,
-                contributing_factor_count=snapshot.report.contributing_factor_count,
-                alternate_hypothesis_count=snapshot.report.alternate_hypothesis_count,
-            )
-        if snapshot.error_code is not None:
-            data["error_code"] = snapshot.error_code
-    common = {
-        "event_family": "diagnostic_flow",
-        "component": "background",
-        "telemetry_schema_version": _TELEMETRY_SCHEMA_VERSION,
-    }
-    if outcome in {"terminal_error"}:
-        _safe_log("error", "diagnostic_turn_completed", **common, **data)
-    elif outcome in {"recoverable_error", "no_terminal_action"} or (
-        snapshot is not None
-        and snapshot.outcome in {"recoverable_error", "no_terminal_action"}
-    ):
-        _safe_log("warning", "diagnostic_turn_completed", **common, **data)
-    else:
-        _safe_log("info", "diagnostic_turn_completed", **common, **data)
-
-
-def _safe_log(level: str, event: str, **fields: object) -> None:
-    """Keep lifecycle logging observational when a renderer is unavailable."""
-    try:
-        getattr(logger, level)(event, **fields)
-    except Exception:
         return
 
 
@@ -613,128 +420,17 @@ def _build_profile_inference_extractor(
 
 
 def _build_background_orchestrator(
-    *,
-    session: AsyncSession,
-    settings: Settings,
+    *, session: AsyncSession, settings: Settings
 ) -> DiagnosticTurnOrchestrator:
-    """Rebuild the ADK orchestration graph around a fresh DB session."""
-
-    repair_sessions = RepairSessionRepository(session)
-    phase_sessions = RepairPhaseSessionRepository(session)
-    events = RepairSessionEventRepository(session)
-    artifacts = ArtifactRepository(session)
-    storage = get_storage_provider(settings)
-    observation_extractor = _build_observation_extractor_or_unavailable(settings)
-
-    turn_service = TurnService(
-        repair_sessions,
-        phase_sessions,
-        RepairTurnRepository(session),
-        events,
-        artifacts,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    repair_session_service = RepairSessionService(
-        BikeRepository(session),
-        repair_sessions,
-        phase_sessions=phase_sessions,
-        rollback=session.rollback,
-    )
-    bike_profile_service = ResolvedBikeProfileService(
-        BikeRepository(session),
-        repair_sessions=repair_sessions,
-        phase_sessions=phase_sessions,
-    )
-    artifact_service = ArtifactService(
-        artifacts,
-        repair_sessions,
-        storage,
-        max_upload_bytes=settings.artifact_max_upload_bytes,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    report_service = ReportService(
-        repair_sessions,
-        phase_sessions,
-        PhaseReportRepository(session),
-        events,
-        artifacts,
-        cost_estimate_service=_build_cost_estimate_service(settings),
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    safety_service = DiagnosticSafetyService(
-        repair_sessions,
-        events,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    telemetry = default_diagnostic_completion_telemetry()
-    tool_dependencies = DiagnosticAgentToolDependencies(
-        bike_profile_service=cast(BikeProfileServiceProtocol, bike_profile_service),
-        repair_history_service=cast(
-            RepairHistoryServiceProtocol,
-            repair_session_service,
-        ),
-        artifact_service=artifact_service,
-        input_request_service=cast(
-            DiagnosticInputRequestServiceProtocol,
-            turn_service,
-        ),
-        safety_service=cast(SafetyServiceProtocol, safety_service),
-        report_service=cast(DiagnosticReportServiceProtocol, report_service),
-        telemetry=telemetry,
-    )
-    session_service = get_adk_session_service()
-    runner = DiagnosticRunner(
-        agent=create_diagnostic_agent(tool_dependencies, settings=settings),
-        session_service=session_service,
+    return build_diagnostic_orchestrator(
+        session=session,
         settings=settings,
-    )
-    return DiagnosticTurnOrchestrator(
-        phase_sessions=phase_sessions,
-        turns=RepairTurnRepository(session),
-        repair_sessions=repair_sessions,
-        events=events,
-        artifacts=artifacts,
-        event_service=EventService(
-            events,
-            repair_sessions,
-            commit=session.commit,
-            rollback=session.rollback,
+        resources=DiagnosticResources(
+            session_service=get_adk_session_service(),
+            storage=get_storage_provider(settings),
+            observation_extractor=_build_observation_extractor_or_unavailable(settings),
+            cost_estimate_service=_build_cost_estimate_service(settings),
         ),
-        runner=runner,
-        telemetry=telemetry,
-        get_bike_profile=GetBikeProfileTool(
-            cast(BikeProfileServiceProtocol, bike_profile_service),
-        ),
-        lookup_repair_history=LookupRepairHistoryTool(
-            cast(RepairHistoryServiceProtocol, repair_session_service),
-        ),
-        list_diagnostic_artifacts=ListDiagnosticArtifactsTool(artifact_service),
-        request_diagnostic_input=RequestDiagnosticInputTool(
-            cast(DiagnosticInputRequestServiceProtocol, turn_service),
-        ),
-        raise_safety_flag=RaiseSafetyFlagTool(
-            cast(SafetyServiceProtocol, safety_service),
-        ),
-        save_diagnostic_report=SaveDiagnosticReportTool(
-            cast(DiagnosticReportServiceProtocol, report_service),
-            telemetry=telemetry,
-        ),
-        visual_context=DiagnosticVisualContextService(
-            turns=cast(RepairTurnRepositoryProtocol, RepairTurnRepository(session)),
-            repair_sessions=repair_sessions,
-            artifacts=artifacts,
-            storage=storage,
-            runs=ObservationExtractionRunRepository(session),
-            extractor=observation_extractor,
-            extractor_version=settings.observation_extraction_extractor_version,
-            prompt_version=settings.observation_extraction_prompt_version,
-        ),
-        commit=session.commit,
-        rollback=session.rollback,
     )
 
 
@@ -797,36 +493,12 @@ async def _handle_background_setup_failure(
         await session.commit()
         return
 
-    event_service = EventService(
+    await append_diagnostic_completion(
         events,
-        repair_sessions,
-        commit=session.commit,
-        rollback=session.rollback,
-    )
-    await event_service.append_event(
-        repair_session_id=repair_session.id,
+        repair_session,
         turn_id=turn_id,
-        event_type=RepairSessionEventType.ERROR,
-        data={
-            "code": "diagnostic_processing_error",
-            "message": "Diagnostic processing could not be started.",
-            "retryable": True,
-        },
+        status="awaiting_user",
+        now=datetime.now(UTC),
+        processing_error=True,
     )
-
-    repair_session = await repair_sessions.get_for_update(repair_session_id)
-    if repair_session is None or repair_session.user_id != user_id:
-        return
-    repair_session.status = RepairSessionStatus.AWAITING_USER.value
-    repair_session.updated_at = datetime.now(UTC)
-    await event_service.append_event(
-        repair_session_id=repair_session.id,
-        turn_id=turn_id,
-        event_type=RepairSessionEventType.TURN_COMPLETED,
-        data={
-            "turn_id": turn_id,
-            "session": repair_session_from_model(repair_session).model_dump(
-                mode="json",
-            ),
-        },
-    )
+    await session.commit()

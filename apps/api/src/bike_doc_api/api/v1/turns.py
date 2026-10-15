@@ -10,14 +10,13 @@ from bike_doc_api.adk.background import (
     execute_profile_inference_background,
 )
 from bike_doc_api.adk.sessions import (
-    DiagnosticADKSessionClientProtocol,
     DiagnosticPhaseSessionManager,
 )
 from bike_doc_api.api.deps import (
     get_current_user,
     get_db_session,
-    get_diagnostic_adk_session_client,
 )
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
@@ -37,10 +36,6 @@ router = APIRouter(tags=["Turns and Events"])
 
 def get_turn_service(
     session: Annotated[AsyncSession, Depends(get_db_session)],
-    adk_sessions: Annotated[
-        DiagnosticADKSessionClientProtocol,
-        Depends(get_diagnostic_adk_session_client),
-    ],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TurnService:
     """Build the turn service for this request."""
@@ -52,9 +47,6 @@ def get_turn_service(
     artifacts = ArtifactRepository(session)
     phase_session_manager = DiagnosticPhaseSessionManager(
         phase_sessions=phase_sessions,
-        adk_sessions=adk_sessions,
-        commit=session.commit,
-        rollback=session.rollback,
         diagnostic_report_version=settings.diagnostic_report_version,
     )
     return TurnService(
@@ -68,6 +60,8 @@ def get_turn_service(
         phase_session_manager=phase_session_manager,
         image_analysis_mode=settings.image_analysis_mode,
         background_jobs=BackgroundJobService(BackgroundJobRepository(session)),
+        diagnostic_execution=settings.diagnostic_execution,
+        diagnostic_attempt_limit=settings.diagnostic_worker_attempt_limit,
         profile_inference_execution=settings.profile_inference_execution,
         profile_inference_extractor_version=settings.profile_inference_extractor_version,
         profile_inference_max_attempts=settings.profile_inference_max_attempts,
@@ -77,6 +71,8 @@ def get_turn_service(
 
 @router.post(
     "/repair-sessions/{sessionId}/turns",
+    operation_id="createRepairSessionTurn",
+    responses=error_responses(401, 404, 409, 422),
     response_model=TurnAccepted,
     status_code=status.HTTP_202_ACCEPTED,
 )
@@ -95,12 +91,13 @@ async def create_repair_session_turn(
         request=request,
     )
     if not service.last_acceptance_was_idempotent_replay:
-        background_tasks.add_task(
-            execute_diagnostic_turn_background,
-            current_user.id,
-            accepted.repair_session_id,
-            accepted.turn_id,
-        )
+        if not service.last_diagnostic_job_recorded:
+            background_tasks.add_task(
+                execute_diagnostic_turn_background,
+                current_user.id,
+                accepted.repair_session_id,
+                accepted.turn_id,
+            )
         if request.message.artifact_ids and not service.last_profile_job_recorded:
             # Run after diagnostic processing so enrichment cannot delay it.
             background_tasks.add_task(

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
 import structlog
+from google.adk.errors.already_exists_error import AlreadyExistsError
 from google.adk.sessions import BaseSessionService
 from sqlalchemy.exc import IntegrityError
 
@@ -56,28 +56,17 @@ class RepairPhaseSessionRepositoryProtocol(Protocol):
         """Return one app-owned phase-session mapping."""
 
 
-class LocalDiagnosticADKSessionClient:
-    """Small fake ADK session client retained for isolated tests."""
-
-    async def create_session(
-        self,
-        *,
-        repair_session_id: str,
-        phase: RepairSessionPhase,
-    ) -> str:
-        """Create an opaque local session ID without exposing it publicly."""
-
-        _ = repair_session_id
-        return f"adk_{phase.value}_{generate_prefixed_ulid('sess_')}"
-
-    async def close_session(self, *, adk_session_id: str) -> None:
-        """Discard a local session ID."""
-
-        _ = adk_session_id
-
-
 class StaleInMemoryADKSessionError(Exception):
     """Recoverable confirmed missing bound ADK session state."""
+
+
+class PhaseSessionBindingRepositoryProtocol(Protocol):
+    """Null-only binding in the executor-owned product transaction."""
+
+    async def bind_adk_session_if_null(
+        self, *, phase_session_id: str, adk_session_id: str
+    ) -> str:
+        """Bind an uninitialized row or return the concurrent winner."""
 
 
 class DiagnosticADKSessionClient:
@@ -123,12 +112,48 @@ class DiagnosticADKSessionClient:
             session_id=identity,
         )
         if existing is None:
-            await self._session_service.create_session(
-                app_name=DIAGNOSTIC_ADK_APP_NAME,
-                user_id=DIAGNOSTIC_ADK_USER_ID,
-                session_id=identity,
-                state={"repair_session_id": repair_session_id, "phase": "diagnostic"},
+            try:
+                await self._session_service.create_session(
+                    app_name=DIAGNOSTIC_ADK_APP_NAME,
+                    user_id=DIAGNOSTIC_ADK_USER_ID,
+                    session_id=identity,
+                    state={
+                        "repair_session_id": repair_session_id,
+                        "phase": "diagnostic",
+                    },
+                )
+            except (AlreadyExistsError, IntegrityError):
+                # ADK owns and rolls back its transaction. Only a confirmed
+                # durable winner makes a concurrent creation failure safe.
+                await ensure_adk_session_available(
+                    self._session_service, adk_session_id=identity
+                )
+        return identity
+
+    async def ensure_or_resume(
+        self,
+        *,
+        phase_session: RepairPhaseSessionModel,
+        phase_sessions: PhaseSessionBindingRepositoryProtocol,
+    ) -> str:
+        """Initialize before effects in the executor's caller-owned transaction.
+
+        ADK creation commits independently. A lost app commit can safely repeat
+        deterministic ensure; a non-null binding is always resumed exactly.
+        """
+        if phase_session.adk_session_id is not None:
+            identity = phase_session.adk_session_id
+        else:
+            proposed = await self.ensure_unbound_session(
+                phase_session_id=phase_session.id,
+                repair_session_id=phase_session.repair_session_id,
             )
+            identity = await phase_sessions.bind_adk_session_if_null(
+                phase_session_id=phase_session.id, adk_session_id=proposed
+            )
+        await ensure_adk_session_available(
+            self._session_service, adk_session_id=identity
+        )
         return identity
 
     async def close_session(self, *, adk_session_id: str) -> None:
@@ -169,9 +194,6 @@ class DiagnosticPhaseSessionManager:
     """Create or resume one app-owned phase session per repair-session phase."""
 
     phase_sessions: RepairPhaseSessionRepositoryProtocol
-    adk_sessions: DiagnosticADKSessionClientProtocol
-    commit: Callable[[], Awaitable[None]] | None = None
-    rollback: Callable[[], Awaitable[None]] | None = None
     diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2"
 
     async def ensure_diagnostic_session(
@@ -179,7 +201,7 @@ class DiagnosticPhaseSessionManager:
         *,
         repair_session_id: str,
     ) -> RepairPhaseSessionModel:
-        """Ensure the diagnostic phase has one app-owned ADK session mapping."""
+        """Ensure the diagnostic phase has one app-owned reference."""
 
         return await self.ensure_phase_session(
             repair_session_id=repair_session_id,
@@ -192,7 +214,7 @@ class DiagnosticPhaseSessionManager:
         repair_session_id: str,
         phase: RepairSessionPhase,
     ) -> RepairPhaseSessionModel:
-        """Create or resume the phase-scoped ADK session mapping."""
+        """Create or reuse the app reference within the acceptance transaction."""
 
         existing = await self.phase_sessions.get_for_session_phase(
             repair_session_id=repair_session_id,
@@ -201,14 +223,10 @@ class DiagnosticPhaseSessionManager:
         if existing is not None:
             return existing
 
-        adk_session_id = await self.adk_sessions.create_session(
-            repair_session_id=repair_session_id,
-            phase=phase,
-        )
         phase_session = RepairPhaseSessionModel(
             repair_session_id=repair_session_id,
             phase=phase.value,
-            adk_session_id=adk_session_id,
+            adk_session_id=None,
             diagnostic_report_schema_version=(
                 self.diagnostic_report_version
                 if phase is RepairSessionPhase.DIAGNOSTIC
@@ -217,34 +235,5 @@ class DiagnosticPhaseSessionManager:
             status="active",
         )
 
-        try:
-            created = await self.phase_sessions.add(phase_session)
-            if self.commit is not None:
-                await self.commit()
-            return created
-        except IntegrityError:
-            await self._rollback_if_configured()
-            await self._discard_orphaned_adk_session(adk_session_id)
-            raced = await self.phase_sessions.get_for_session_phase(
-                repair_session_id=repair_session_id,
-                phase=phase.value,
-            )
-            if raced is None:
-                raise
-            return raced
-
-    async def _discard_orphaned_adk_session(self, adk_session_id: str) -> None:
-        """Close or discard an ADK session that lost a database insert race."""
-
-        try:
-            await self.adk_sessions.close_session(adk_session_id=adk_session_id)
-        except Exception:
-            logger.warning(
-                "diagnostic_adk_session_cleanup_failed",
-            )
-
-    async def _rollback_if_configured(self) -> None:
-        """Rollback the current unit of work when one is configured."""
-
-        if self.rollback is not None:
-            await self.rollback()
+        # Acceptance holds the repair-session lock and owns commit/rollback.
+        return await self.phase_sessions.add(phase_session)

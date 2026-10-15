@@ -99,6 +99,7 @@ class _TurnRepositories:
     ) -> RepairTurn | RepairSessionEvent:
         if isinstance(model, RepairTurn):
             model.id = f"turn_{len(self.turns) + 1}"
+            model.created_at = datetime(2026, 1, 1, tzinfo=UTC)
             self.turns.append(model)
         else:
             model.id = f"evt_{len(self.events) + 1}"
@@ -346,9 +347,11 @@ async def test_accept_turn_validates_every_mixed_artifact_before_rejecting_all()
     assert orchestrator.calls == []
 
 
+@pytest.mark.parametrize("diagnostic_queue", [False, True])
 @pytest.mark.parametrize("has_image", [False, True])
 async def test_queue_selection_records_pinned_input_before_commit_and_replay(
     has_image: bool,
+    diagnostic_queue: bool,
 ) -> None:
     from unittest.mock import AsyncMock
 
@@ -379,7 +382,8 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
         repositories,
         repositories,
         background_jobs=BackgroundJobService(recorder),
-        profile_inference_execution="durable_queue",
+        diagnostic_execution="durable_queue" if diagnostic_queue else "legacy",
+        profile_inference_execution="legacy" if diagnostic_queue else "durable_queue",
         profile_inference_extractor_version="accepted.v1",
         profile_inference_max_attempts=2,
         commit=commit,
@@ -388,6 +392,12 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
     accepted = await service.accept_turn(
         current_user=_user(), repair_session_id=repositories.session.id, request=request
     )
+    assert service.last_diagnostic_job_recorded is diagnostic_queue
+    if diagnostic_queue:
+        definition = recorder.record.call_args_list[0].args[0]
+        assert definition.input == {"turn_id": accepted.turn_id}
+        assert definition.deduplication_key == accepted.turn_id
+        assert definition.workload_class == "diagnostic"
     assert service.last_profile_job_recorded is has_image
     if has_image:
         definition = recorder.record.call_args.args[0]
@@ -397,13 +407,16 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
             "extractor_version": "accepted.v1",
         }
         assert definition.attempt_limit == 2
-    else:
+    elif not diagnostic_queue:
         recorder.record.assert_not_awaited()
     commit.assert_awaited_once()
     # Configuration changes must not reinterpret accepted work.
+    repositories.session.status = "awaiting_user"
+    repositories.session.latest_event_sequence = 5
+    repositories.session.updated_at = datetime(2026, 2, 1, tzinfo=UTC)
     legacy = _service(repositories, _OrchestratorSpy())
     replay = await legacy.accept_turn(
         current_user=_user(), repair_session_id=repositories.session.id, request=request
     )
     assert replay == accepted and legacy.last_acceptance_was_idempotent_replay
-    assert recorder.record.await_count == int(has_image)
+    assert recorder.record.await_count == int(has_image) + int(diagnostic_queue)

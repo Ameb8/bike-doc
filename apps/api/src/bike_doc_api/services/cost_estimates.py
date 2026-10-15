@@ -56,7 +56,6 @@ class CostEstimateService:
         logger.info(
             "plan_cost_estimate_started",
             requirement_count=len(normalized),
-            requirement_names=[item.display_name for item in normalized],
         )
         results: list[PriceLookupResult] = []
         for requirement in normalized:
@@ -113,16 +112,13 @@ class CostEstimateService:
             logger.info(
                 "plan_cost_item_lookup_started",
                 item_type=requirement.item_type.value,
-                requirement_name=requirement.display_name,
                 quantity=requirement.quantity,
-                search_query=requirement.search_query,
             )
             result = await self._provider.lookup_requirement(requirement)
             aligned_result = _align_result_with_requirement(result, requirement)
             logger.info(
                 "plan_cost_item_lookup_completed",
                 item_type=aligned_result.item_type.value,
-                requirement_name=aligned_result.requirement_name,
                 status=aligned_result.status.value,
                 estimate_confidence=aligned_result.estimate_confidence.value,
                 primary_listing_price=(
@@ -145,11 +141,9 @@ class CostEstimateService:
         except ValidationAppError:
             raise
         except Exception:
-            logger.exception(
+            logger.warning(
                 "plan_cost_item_lookup_degraded",
                 item_type=requirement.item_type.value,
-                requirement_name=requirement.display_name,
-                search_query=requirement.search_query,
             )
             return _unavailable_result(requirement)
 

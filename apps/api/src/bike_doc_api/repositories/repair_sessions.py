@@ -1,6 +1,6 @@
 """Repair session repository."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.models.repair_session import (
@@ -136,6 +136,31 @@ class RepairPhaseSessionRepository:
             ),
         )
         return result.scalar_one_or_none()
+
+    async def bind_adk_session_if_null(
+        self, *, phase_session_id: str, adk_session_id: str
+    ) -> str:
+        """Compare-and-set without replacing a binding, leaving commit to caller."""
+        result = await self._session.execute(
+            update(RepairPhaseSession)
+            .where(
+                RepairPhaseSession.id == phase_session_id,
+                RepairPhaseSession.adk_session_id.is_(None),
+            )
+            .values(adk_session_id=adk_session_id)
+            .returning(RepairPhaseSession.adk_session_id)
+            .execution_options(synchronize_session=False)
+        )
+        bound = result.scalar_one_or_none()
+        if bound is None:
+            bound = await self._session.scalar(
+                select(RepairPhaseSession.adk_session_id).where(
+                    RepairPhaseSession.id == phase_session_id
+                )
+            )
+        if bound is None:
+            raise RuntimeError("Phase session unavailable for ADK binding")
+        return bound
 
     async def list_for_session(
         self,

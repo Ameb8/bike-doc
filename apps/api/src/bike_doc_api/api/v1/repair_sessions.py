@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Path, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.api.deps import get_current_user, get_db_session
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.repair_sessions import RepairSessionRepository
@@ -38,6 +39,8 @@ def get_repair_session_service(
 
 @router.get(
     "/repair-sessions",
+    operation_id="listRepairSessions",
+    responses=error_responses(401, 404, 422),
     response_model=RepairSessionList,
 )
 async def list_repair_sessions(
@@ -63,6 +66,8 @@ async def list_repair_sessions(
 
 @router.post(
     "/repair-sessions",
+    operation_id="createRepairSession",
+    responses=error_responses(401, 404, 409, 422),
     response_model=RepairSession,
     status_code=status.HTTP_201_CREATED,
 )
@@ -78,6 +83,8 @@ async def create_repair_session(
 
 @router.get(
     "/repair-sessions/{sessionId}",
+    operation_id="getRepairSession",
+    responses=error_responses(401, 404, 422),
     response_model=RepairSession,
 )
 async def get_repair_session(

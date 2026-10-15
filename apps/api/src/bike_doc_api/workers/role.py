@@ -22,16 +22,37 @@ def create_workload_worker(
     }
     if registry.workload not in subjects:
         raise ValueError("unsupported workload role")
+    diagnostic = registry.workload == "diagnostic"
     return PullWorker(
         registry,
         store,
         transport,
         RuntimeOptions(
             subject=subjects[registry.workload],
-            concurrency=settings.worker_concurrency,
-            fetch_batch=settings.worker_fetch_batch,
-            fetch_timeout=settings.worker_fetch_timeout_seconds,
-            progress_interval=settings.worker_progress_seconds,
-            shutdown_timeout=settings.worker_shutdown_seconds,
+            concurrency=(
+                settings.diagnostic_worker_concurrency
+                if diagnostic
+                else settings.worker_concurrency
+            ),
+            fetch_batch=(
+                settings.diagnostic_worker_fetch_batch
+                if diagnostic
+                else settings.worker_fetch_batch
+            ),
+            fetch_timeout=(
+                settings.diagnostic_worker_fetch_timeout_seconds
+                if diagnostic
+                else settings.worker_fetch_timeout_seconds
+            ),
+            progress_interval=(
+                settings.diagnostic_worker_progress_seconds
+                if diagnostic
+                else settings.worker_progress_seconds
+            ),
+            shutdown_timeout=(
+                settings.diagnostic_worker_shutdown_seconds
+                if diagnostic
+                else settings.worker_shutdown_seconds
+            ),
         ),
     )

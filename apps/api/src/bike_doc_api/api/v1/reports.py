@@ -12,6 +12,7 @@ from bike_doc_api.api.deps import (
     get_db_session,
     get_price_lookup_provider,
 )
+from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.artifacts import ArtifactRepository
@@ -65,6 +66,8 @@ def _optional_cost_estimate_service(
 
 @router.get(
     "/repair-sessions/{sessionId}/reports",
+    operation_id="listRepairSessionReports",
+    responses=error_responses(401, 404, 422),
     response_model=PhaseReportList,
 )
 async def list_repair_session_reports(
@@ -89,6 +92,8 @@ async def list_repair_session_reports(
 
 @router.get(
     "/repair-sessions/{sessionId}/reports/{reportId}",
+    operation_id="getRepairSessionReport",
+    responses=error_responses(401, 404, 422),
     response_model=PhaseReportEnvelope,
 )
 async def get_repair_session_report(

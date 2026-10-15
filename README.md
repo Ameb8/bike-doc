@@ -1166,3 +1166,40 @@ phase references remain; its downgrade fails instead of deleting accepted work.
 The canary adds no diagnostic jobs and removes no diagnostic executor. Production
 monitoring/load certification, broker reconstruction and diagnostic queue cutover
 remain later Chunk work.
+
+### Diagnostic worker preparation
+
+Run `task run:diagnostic`, or
+`docker compose --profile diagnostic-worker up --build diagnostic-worker`.
+The role logs `diagnostic_worker_ready` after database/topology validation and
+registers the complete `diagnostic_turn.v1` workload. It uses the same diagnostic
+composition as the transitional background executor, with durable ADK sessions
+and one process-owned NATS connection. The Google credential override also
+supports this role.
+
+Diagnostic producers remain disabled. Deploying this role alone does not change
+turn acceptance or select a new executor. Effect fencing (#150), atomic failure
+terminalization (#151), and producer/canary selection (#152) must land before
+production queue work is enabled. Expired diagnostic jobs intentionally wait
+for that product-aware recovery instead of replaying effects or being repaired
+by generic job maintenance.
+
+`BIKE_DOC_API_DIAGNOSTIC_WORKER_*` settings in `.env.example` set role-specific
+fetch/concurrency, handler and hard duration, grace, progress, shutdown, retry,
+product/ADK pool sizes and storage timeout. Existing diagnostic-model,
+observation-extraction and price timeouts also apply. Every provider timeout
+must be below the handler timeout; handler plus grace must be below the hard
+duration, leaving settlement time. Fetch cannot exceed concurrency, the product
+pool has two spare connections, and the ADK pool covers concurrency. Progress
+stays below half the 30-second AckWait; shutdown covers cancellation grace.
+Both database pools prohibit overflow. Total process connections include both
+pools, separately from API and profile roles. Compose grants 120 seconds for
+shared-runtime drain followed by bounded transport/telemetry cleanup.
+
+`task test:diagnostic` starts disposable PostgreSQL 16 and pinned JetStream,
+migrates schemas, seeds strict diagnostic jobs without enabling a producer,
+and runs the role with a fake model over real durable ADK. It checks immutable
+input, execution-time context, bound-session failure, normal/handled-error
+completion before acknowledgement, duplicate no-op behavior, consumer isolation,
+content-safe logs and transport shutdown. Containers and volumes are removed
+on exit. No live model credentials are required.

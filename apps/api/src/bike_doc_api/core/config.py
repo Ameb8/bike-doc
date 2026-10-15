@@ -126,6 +126,36 @@ class Settings(BaseSettings):
     worker_progress_seconds: float = Field(default=10, gt=0, lt=15, allow_inf_nan=False)
     worker_shutdown_seconds: float = Field(default=30, gt=0, le=60, allow_inf_nan=False)
 
+    diagnostic_worker_handler_seconds: float = Field(
+        default=110, gt=0, le=600, allow_inf_nan=False
+    )
+    diagnostic_worker_hard_seconds: float = Field(
+        default=120, gt=0, le=600, allow_inf_nan=False
+    )
+    diagnostic_worker_timeout_grace_seconds: float = Field(
+        default=5, gt=0, le=30, allow_inf_nan=False
+    )
+    diagnostic_worker_pool_size: int = Field(default=6, ge=3, le=130)
+    diagnostic_worker_adk_pool_size: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_attempt_limit: int = Field(default=3, ge=1, le=100)
+    diagnostic_worker_retry_seconds: float = Field(
+        default=10, gt=0, le=300, allow_inf_nan=False
+    )
+    diagnostic_worker_concurrency: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_fetch_timeout_seconds: float = Field(
+        default=1, gt=0, le=30, allow_inf_nan=False
+    )
+    diagnostic_worker_progress_seconds: float = Field(
+        default=10, gt=0, lt=15, allow_inf_nan=False
+    )
+    diagnostic_worker_shutdown_seconds: float = Field(
+        default=30, gt=0, le=60, allow_inf_nan=False
+    )
+    diagnostic_worker_storage_seconds: float = Field(
+        default=20, gt=0, le=600, allow_inf_nan=False
+    )
+
     job_maintenance_enabled: bool = True
     job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
     job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
@@ -173,6 +203,7 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
+    diagnostic_execution: Literal["legacy", "durable_queue"] = "legacy"
     profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy"
     profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)

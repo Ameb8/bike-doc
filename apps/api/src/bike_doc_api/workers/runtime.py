@@ -10,6 +10,7 @@ from typing import Protocol
 import structlog
 from pydantic import ValidationError
 
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.repositories.background_jobs import (
     DeliveryResolution,
     ExecutionPolicy,
@@ -186,6 +187,12 @@ class PullWorker:
             finally:
                 progress.cancel()
                 await asyncio.gather(progress, return_exceptions=True)
+        except StaleDiagnosticExecutionError:
+            # Recovery owns the terminal product transaction. Do not apply an
+            # outcome or acknowledge on behalf of the rejected execution.
+            logger.warning(
+                "job_worker_execution_stale", workload=self.registry.workload
+            )
         except Exception:
             # Never log exception strings, payloads, or transport URLs.
             logger.warning(

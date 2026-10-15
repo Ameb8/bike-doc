@@ -27,13 +27,21 @@ specifications linked below.
 | `tools/` | Internal tool input validation, context checks, service adaptation, and ADK `FunctionTool` wrappers | `build_tool_catalog`, individual tool classes |
 | `report_schemas/` | Agent-facing structured report payload models | `DiagnosticReportToolPayload`, `PlanReportToolPayload` |
 
-The production entry point is `execute_diagnostic_turn_background`. The turns
-route accepts and durably commits a turn before scheduling this function with
+The legacy entry point is `execute_diagnostic_turn_background`. For
+`diagnostic_execution=legacy`, the turns route commits before scheduling it with
 only `user_id`, `repair_session_id`, and `turn_id`. The function validates
 runtime configuration, opens a fresh async database session, reloads those
 records, and builds a fresh repository/service/agent/orchestrator graph. It
 must never retain a request-scoped `AsyncSession`, ORM instance, service, or
 FastAPI dependency after the response is returned.
+
+`diagnostic_execution=durable_queue` records diagnostic and eligible profile
+jobs in the acceptance transaction. Only the external diagnostic role calls
+`DiagnosticExecutionApplication` for that turn. It ensures/binds the deterministic
+durable ADK session before crossing the fenced effect boundary, then uses the
+same resource/orchestrator composition. Job presence is durable selection;
+changing producer settings never schedules a legacy executor for replayed turns.
+Profile work uses independent capacity and may finish in either order.
 
 `background.py` imports selected provider and session factories from
 `api.deps`; this is a composition-root convenience, not a transport
@@ -45,7 +53,8 @@ routes, request objects, or public endpoint handlers.
 The package sits behind the service workflow rather than beside the HTTP API:
 
 ```text
-turn route -> TurnService accepts and commits -> BackgroundTasks
+turn route -> TurnService accepts and commits -> jobs -> publisher -> diagnostic worker
+                                             -> BackgroundTasks (legacy selection)
                                              -> adk/background
                                              -> DiagnosticTurnOrchestrator
                                              -> DiagnosticRunner -> Google ADK
@@ -129,8 +138,9 @@ storage, settings-driven preprocessing, and the fresh background database
 session. It never retains route/request-scoped dependencies. `off` mode keeps
 submitted artifacts visible as explicit uninspected statuses without reading
 their bytes; `pixels_only` normalizes only current-turn valid images and makes
-no extraction call. Profile inference remains a separately queued task after
-diagnostic processing, so it cannot delay the diagnostic runner.
+no extraction call. Queue-selected turns have independent profile and diagnostic
+jobs from acceptance; either may finish first. Legacy composition schedules
+profile inference after diagnostic processing.
 
 While the runner is active, assistant delta and completed-message events are
 validated and appended through `EventService`; that service persists before
@@ -174,10 +184,10 @@ product outcome.
 Background setup failure follows a similar rule. It restores a verified,
 owned repair session out of `running`, writes a retryable
 `diagnostic_processing_error` and terminal event when a turn is known, and
-does not disclose missing or unowned records. FastAPI `BackgroundTasks` are
-local-first, in-process work—not a durable job queue—so worker crashes and
-restarts require a future queue boundary without changing the public turn/SSE
-contract.
+does not disclose missing or unowned records. The transitional FastAPI
+`BackgroundTasks` path remains in-process. Queue-selected turns instead use the
+external worker's fenced execution and durable recovery without changing the
+public turn/SSE contract.
 
 ## Agents, prompts, and runner
 
@@ -229,12 +239,21 @@ must not be added to the normalized union.
 `DiagnosticPhaseSessionManager` creates or resumes one
 `RepairPhaseSession` per repair session and phase. The row's ID is the
 app-owned `diagnostic_session_id` that may appear in a report; its
-`adk_session_id` is internal and opaque. Creation races are handled by rolling
-back, best-effort deleting the orphaned ADK session, and returning the row
-that won the unique database race.
-The current turn-acceptance path can create this non-null binding. Nullable
-binding, worker-side idempotent ensure-and-bind, and effect fencing are deferred
-to Chunk #137.
+`adk_session_id` is internal and opaque. Acceptance holds the repair-session
+lock and creates a null binding in the same product transaction as the turn,
+without ADK I/O. The manager never commits or rolls back the caller's work.
+
+`DiagnosticADKSessionClient.ensure_or_resume` is the executor precondition.
+For an unbound row it ensures `adk_diagnostic_{phase_session_id}` in the fixed
+BikeDoc app/user namespace and binds using the repository's null-only
+compare-and-set. ADK persistence commits independently; the executor owns the
+product binding commit. Creation conflicts require confirmation of the durable
+winner. Binding conflicts return the winner without replacement. Lost binding
+commits repeat the same deterministic ensure. Already-bound state resumes its
+exact identity, and a confirmed missing session raises a safe pre-orchestration
+failure without creation or rebinding. The legacy background host uses this
+operation before orchestration. The external queue executor also completes it
+before crossing the diagnostic effect boundary described below.
 
 For diagnostic sessions, the same row also snapshots the app-owned selected
 diagnostic report schema version. Orchestration seeds that immutable value into
@@ -304,8 +323,8 @@ once and exposes six ADK `FunctionTool`s:
   phase-session ID, and envelope summary.
   `ReportService` stamps those fields and validates the public envelope.
 
-The last three mutate product state directly in the ADK tool loop, exactly
-once. Their function responses are notifications to the runner and
+The last three mutate product state directly in the ADK tool loop. Their
+function responses are notifications to the runner and
 orchestrator, not commands to repeat a write. `tools/price_lookup.py` is a
 planning-only adapter around the cost-estimate service; it is intentionally
 not a diagnostic tool.
@@ -343,3 +362,53 @@ direction materially changes.
 - [ADK wiring specification](../../../../../docs/specs/apps/adk-wiring-spec.md)
 - [Diagnostic report schema](../../../../../docs/specs/apps/diagnostic-report-v1.md)
 - [Diagnostic safety rules](../../../../../docs/specs/apps/safety-diagnostic.md)
+
+## Shared external diagnostic execution
+
+`execution.py` composes one `DiagnosticTurnOrchestrator`, agent, normalized runner,
+visual context, input-request/report/safety tools and their product services.
+Its explicit `DiagnosticResources` argument carries process-owned transports;
+the fresh product session is local to an executor attempt. The transitional
+`background.py` and external `workers/diagnostic_application.py` call the same
+composition. The worker does not import HTTP routes or dependency factories.
+
+The queue application resolves only a typed `turn_id` from the claimed job and
+loads accepted text, artifacts and repair/phase identity from authoritative turn
+storage. It completes durable ADK ensure/resume and binding before orchestration.
+The orchestrator continues to load mutable profile/resolved claims and the
+existing history service at execution and preserves its normalized event and
+privacy-safe telemetry behavior. `execution_telemetry.py` holds the existing
+bounded completion summaries, spans and metrics shared by both hosts.
+
+`resources.py` supplies the external process's durable ADK pool and explicit
+model/provider/storage lifetimes. `diagnostic_model.py` bounds model calls and
+replaces provider exceptions with a fixed category before ADK records them.
+SDK retries are disabled; storage, observation and price calls are bounded.
+The thin diagnostic process host owns the NATS connection and imports the
+shared queue runtime. Cancellation remains cancellation; it does not create a
+business state. Execution-token effect protection is described below. Atomic
+acceptance and failure repair are integrated with the queue canary; deployment
+enablement and rollback follow the [backend runbook](../../../README.md#diagnostic-queue-canary).
+
+## Private diagnostic execution authority
+
+The queue host now persists a hard effect boundary after durable phase-session
+ensure/resume and before orchestration. The shared composition receives a
+`DiagnosticExecutionFence` over its fresh product session. All composed
+services/repositories use that session, whose SQL/flush/commit hooks compare the
+frozen job token and hard deadline under the job-row lock in the product
+transaction. The context also travels privately through orchestration, runner
+request and tool dependencies; `DiagnosticToolContext._execution` is a private
+attribute. `_content_from_request` and `_state_delta_from_request` explicitly
+omit execution authority, so neither model input nor ADK session state receives
+tokens. Public and broker schemas are unchanged.
+
+The irreversible boundary reserves the turn's external work. Runner/model
+entry and extraction invocation recheck authority and commit pending attempt or
+agent-start markers before external I/O; optional report pricing checks without
+releasing its existing validation locks. An in-flight call can outlive its
+worker/deadline, but its later product writes cannot commit. Stale authority
+propagates without model-facing tool feedback or public error/completion events;
+the shared runtime leaves the delivery for recovery. Database token validity is
+never extended by transport progress. See the service-wide architecture's
+[#150 evidence](../../../ARCHITECTURE.md#diagnostic-execution-fencing-150).

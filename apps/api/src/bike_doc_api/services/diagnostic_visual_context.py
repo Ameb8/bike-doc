@@ -11,6 +11,7 @@ from typing import Any, Literal, Protocol
 
 import structlog
 
+from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
 from bike_doc_api.models.observation_extraction import (
     ObservationExtractionAttempt,
@@ -207,7 +208,9 @@ class DiagnosticVisualContextService:
         prompt_version: str = "visual-observation-prompt.v1",
         preprocess: Preprocessor = normalize_diagnostic_image_async,
         telemetry: ObservationExtractionTelemetry | None = None,
+        reserve_external: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
+        self._reserve_external = reserve_external
         self._turns = turns
         self._repair_sessions = repair_sessions
         self._artifacts = artifacts
@@ -635,6 +638,8 @@ class DiagnosticVisualContextService:
             # Another preparation or the agent-start gate won the atomic race.
             # In either case, this pass must not start another provider call.
             return
+        if self._reserve_external is not None:
+            await self._reserve_external()
         attempt_count = getattr(attempt, "attempt_number", run.provider_attempt_count)
         retrying = attempt_count > 1
         event_fields = _telemetry_fields(run, attempt_count=attempt_count)
@@ -664,6 +669,8 @@ class DiagnosticVisualContextService:
 
             validated = validate_observation_output(result.output, images)
             validate_privacy_safe_observation_output(validated.model_dump(mode="json"))
+        except StaleDiagnosticExecutionError:
+            raise
         except asyncio.CancelledError:
             raise
         except Exception as exc:

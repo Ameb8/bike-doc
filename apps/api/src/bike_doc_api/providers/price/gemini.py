@@ -123,7 +123,12 @@ class GeminiGroundedPriceProvider:
     ) -> GeminiGroundedPriceProvider:
         """Build a Google AI Studio backed provider."""
 
-        client = genai.Client()
+        client = genai.Client(
+            http_options=types.HttpOptions(
+                timeout=int(timeout_seconds * 1000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            )
+        )
         return cls(
             model=model,
             temperature=temperature,
@@ -144,7 +149,13 @@ class GeminiGroundedPriceProvider:
     ) -> GeminiGroundedPriceProvider:
         """Build a Vertex AI backed provider from standard genai environment."""
 
-        client = genai.Client(vertexai=True)
+        client = genai.Client(
+            vertexai=True,
+            http_options=types.HttpOptions(
+                timeout=int(timeout_seconds * 1000),
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
+        )
         return cls(
             model=model,
             temperature=temperature,
@@ -153,6 +164,14 @@ class GeminiGroundedPriceProvider:
             generate_content=client.aio.models.generate_content,
             client=client,
         )
+
+    async def close(self) -> None:
+        """Close both async and synchronous SDK transports owned by this adapter."""
+        if self._client is not None:
+            try:
+                await self._client.aio.aclose()
+            finally:
+                await asyncio.to_thread(self._client.close)
 
     async def lookup_requirement(
         self,
@@ -164,9 +183,7 @@ class GeminiGroundedPriceProvider:
         logger.info(
             "price_lookup_search_started",
             item_type=requirement.item_type.value,
-            requirement_name=requirement.display_name,
             quantity=requirement.quantity,
-            search_query=requirement.search_query,
             exact_match_required=requirement.exact_match_required,
             generic_equivalent_acceptable=requirement.generic_equivalent_acceptable,
             provider_model=self._model,
@@ -494,17 +511,12 @@ def _result_log_fields(result: PriceLookupResult) -> dict[str, object]:
     estimated_price = result.estimated_price
     return {
         "item_type": result.item_type.value,
-        "requirement_name": result.requirement_name,
         "status": result.status.value,
         "estimate_confidence": result.estimate_confidence.value,
         "search_match_ambiguous": result.search_match_ambiguous,
         "compatibility_uncertain": result.compatibility_uncertain,
         "generic_substitute_used": result.generic_substitute_used,
         "exact_match_not_confirmed": result.exact_match_not_confirmed,
-        "primary_listing_title": primary_listing.title if primary_listing else None,
-        "primary_listing_retailer": (
-            primary_listing.retailer if primary_listing else None
-        ),
         "primary_listing_price": (
             primary_listing.observed_price if primary_listing else None
         ),

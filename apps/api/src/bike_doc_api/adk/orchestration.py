@@ -34,6 +34,10 @@ from bike_doc_api.adk.turn_telemetry_state import (
     DiagnosticTurnTelemetrySnapshot,
     DiagnosticTurnTelemetryState,
 )
+from bike_doc_api.core.diagnostic_execution import (
+    DiagnosticExecution,
+    StaleDiagnosticExecutionError,
+)
 from bike_doc_api.core.errors import NotFoundError, ServerError
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -43,14 +47,13 @@ from bike_doc_api.models.repair_session import (
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.repair_session import RepairTurn as RepairTurnModel
 from bike_doc_api.models.user import User
+from bike_doc_api.repositories.diagnostic_terminalization import (
+    append_diagnostic_completion,
+)
 from bike_doc_api.schemas.artifact import artifact_ref_from_model
 from bike_doc_api.schemas.common import RepairSessionPhase, RepairSessionStatus
 from bike_doc_api.schemas.event import (
     RepairSessionEventType,
-    validate_repair_session_event_data,
-)
-from bike_doc_api.schemas.repair_session import (
-    repair_session_from_model,
 )
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
@@ -171,6 +174,7 @@ class DiagnosticTurnOrchestrator:
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry,
     )
+    execution: DiagnosticExecution | None = field(default=None, repr=False)
     monotonic_clock: Callable[[], float] | None = None
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
@@ -189,6 +193,7 @@ class DiagnosticTurnOrchestrator:
             clock=self.monotonic_clock,
             artifact_count=len(turn_snapshot.artifact_ids),
         )
+        processing_error = False
         try:
             phase_session = await self.phase_sessions.get(
                 turn_snapshot.repair_phase_session_id,
@@ -218,6 +223,7 @@ class DiagnosticTurnOrchestrator:
                 ),
                 turn_id=turn_snapshot.id,
             )
+            context._execution = self.execution
             seed = await self._build_seed_context(
                 context=context,
                 turn=turn_snapshot,
@@ -253,6 +259,7 @@ class DiagnosticTurnOrchestrator:
                 bike_profile=seed.bike_profile,
                 repair_history=seed.repair_history,
                 diagnostic_artifacts=seed.diagnostic_artifacts,
+                execution=self.execution,
                 current_images=visual_context.current_images,
                 current_observations=visual_context.current_observations,
                 prior_observations=visual_context.prior_observations,
@@ -272,6 +279,12 @@ class DiagnosticTurnOrchestrator:
                             ),
                         ):
                             async for event in self.runner.stream(request):
+                                if (
+                                    isinstance(event, DiagnosticRunnerRecoverableError)
+                                    and event.code == "diagnostic_processing_error"
+                                    and event.retryable
+                                ):
+                                    processing_error = True
                                 await self._process_runner_event(
                                     context=context,
                                     turn=turn_snapshot,
@@ -291,21 +304,18 @@ class DiagnosticTurnOrchestrator:
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
+                processing_error=processing_error,
             )
         except asyncio.CancelledError:
             telemetry_state.note_cancelled()
             telemetry_state.finalize()
             raise
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception:
             telemetry_state.note_error(
                 code="diagnostic_processing_error",
-                retryable=True,
-            )
-            await self._append_recoverable_error(
-                repair_session_id=turn_snapshot.repair_session_id,
-                turn_id=turn_snapshot.id,
-                code="diagnostic_processing_error",
-                message="Diagnostic processing could not be completed.",
                 retryable=True,
             )
             return await self._finalize_turn(
@@ -313,6 +323,7 @@ class DiagnosticTurnOrchestrator:
                 user_id=user_snapshot.id,
                 repair_session_id=turn_snapshot.repair_session_id,
                 turn_id=turn_snapshot.id,
+                processing_error=True,
             )
 
     async def _prepare_visual_context(
@@ -343,6 +354,7 @@ class DiagnosticTurnOrchestrator:
         user_id: str,
         repair_session_id: str,
         turn_id: str,
+        processing_error: bool = False,
     ) -> DiagnosticTurnTelemetrySnapshot:
         """Derive and persist terminal state under one app-owned span."""
 
@@ -361,6 +373,7 @@ class DiagnosticTurnOrchestrator:
                     repair_session_id=repair_session_id,
                     turn_id=turn_id,
                     status=snapshot.terminal_status,
+                    processing_error=processing_error,
                 )
             except Exception:
                 span.set_status(Status(StatusCode.ERROR, "turn_completion_failed"))
@@ -475,6 +488,11 @@ class DiagnosticTurnOrchestrator:
             return
 
         if isinstance(event, DiagnosticRunnerRecoverableError):
+            if event.code == "diagnostic_processing_error" and event.retryable:
+                # Commit this error only alongside completion; a crash here leaves
+                # reconciliation to append the whole public pair exactly once.
+                telemetry_state.note_error(code=event.code, retryable=True)
+                return
             await self._append_recoverable_error(
                 repair_session_id=turn.repair_session_id,
                 turn_id=turn.id,
@@ -520,6 +538,9 @@ class DiagnosticTurnOrchestrator:
                     ),
                 )
             )
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception:
             # Count queries and telemetry export are post-commit observations.
             # Failure must not alter public events, safety, or terminal status.
@@ -684,6 +705,7 @@ class DiagnosticTurnOrchestrator:
         repair_session_id: str,
         turn_id: str,
         status: RepairSessionStatus,
+        processing_error: bool = False,
     ) -> None:
         """Persist terminal turn completion with the current session snapshot."""
 
@@ -695,30 +717,19 @@ class DiagnosticTurnOrchestrator:
             if repair_session is None:
                 raise NotFoundError()
 
-            repair_session.status = status.value
-            sequence = repair_session.latest_event_sequence + 1
-            repair_session.latest_event_sequence = sequence
-            repair_session.updated_at = datetime.now(UTC)
-            completed_data = validate_repair_session_event_data(
-                RepairSessionEventType.TURN_COMPLETED,
-                {
-                    "turn_id": turn_id,
-                    "session": repair_session_from_model(repair_session).model_dump(
-                        mode="json",
-                    ),
-                },
-            )
-            await self.events.add(
-                RepairSessionEventModel(
-                    repair_session_id=repair_session.id,
-                    turn_id=turn_id,
-                    sequence=sequence,
-                    type=RepairSessionEventType.TURN_COMPLETED.value,
-                    data=completed_data,
-                ),
+            await append_diagnostic_completion(
+                self.events,
+                repair_session,
+                turn_id=turn_id,
+                status=status.value,
+                now=datetime.now(UTC),
+                processing_error=processing_error,
             )
             if self.commit is not None:
                 await self.commit()
+        except StaleDiagnosticExecutionError:
+            await self._rollback_if_configured()
+            raise
         except Exception as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc
@@ -844,7 +855,9 @@ def _visual_error_message(code: str) -> str:
 def _start_span(name: str) -> AbstractContextManager[trace.Span]:
     """Resolve the process-global tracer at use time for ADK provider sharing."""
 
-    return trace.get_tracer(__name__).start_as_current_span(name)
+    return trace.get_tracer(__name__).start_as_current_span(
+        name, record_exception=False, set_status_on_exception=False
+    )
 
 
 def _visual_span_attributes(context: DiagnosticVisualContext) -> dict[str, bool | int]:

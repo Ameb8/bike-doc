@@ -1057,3 +1057,46 @@ async def test_legacy_replay_after_queue_enablement_does_not_enqueue(
     recorder.record.assert_not_awaited()
     assert len(store.background_calls) == 1
     assert store.profile_inference_calls == [first.json()["turn_id"]]
+
+
+@pytest.mark.parametrize("has_image", [False, True])
+async def test_diagnostic_queue_acceptance_never_schedules_legacy_work(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    app: FastAPI,
+    turn_service_override: _InMemoryTurnStore,
+    has_image: bool,
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from bike_doc_api.services.background_jobs import BackgroundJobService
+
+    store = turn_service_override
+    recorder = AsyncMock()
+    service = TurnService(
+        store,
+        store,
+        store,
+        store,
+        store,
+        background_jobs=BackgroundJobService(recorder),
+        diagnostic_execution="durable_queue",
+    )
+    app.dependency_overrides[get_turn_service] = lambda: service
+    payload = _valid_turn_payload(
+        message={
+            "text": "The chain skips.",
+            "artifact_ids": [OWNED_ARTIFACT_ID] if has_image else [],
+        }
+    )
+    response = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert response.status_code == 202
+    assert recorder.record.await_count == 1 + int(has_image)
+    assert not store.background_calls and not store.profile_inference_calls
+    assert next(iter(store.phase_sessions.values())).adk_session_id is None
+    # Rollback changes only future acceptances; replay never schedules fallback.
+    service._diagnostic_execution = "legacy"
+    replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert replay.json() == response.json()
+    assert recorder.record.await_count == 1 + int(has_image)
+    assert not store.background_calls and not store.profile_inference_calls

@@ -98,6 +98,11 @@ class BackgroundJob(Base):
             name="ck_background_jobs_times",
         ),
         CheckConstraint(
+            "effect_boundary_token IS NULL OR (effect_boundary_at IS NOT NULL "
+            "AND length(effect_boundary_token) = 32)",
+            name="ck_background_jobs_effect_token",
+        ),
+        CheckConstraint(
             "latest_error_category IS NULL OR latest_error_category IN "
             "('definition_unknown','version_unsupported','input_invalid','attempts_exhausted','provider_unavailable','execution_timeout','execution_lost','permanent_failure')",
             name="ck_background_jobs_error",
@@ -168,6 +173,7 @@ class BackgroundJob(Base):
     )
     execution_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     execution_token: Mapped[str | None] = mapped_column(String(32))
+    effect_boundary_token: Mapped[str | None] = mapped_column(String(32))
     effect_boundary_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     first_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -55,36 +55,17 @@ class _PhaseSessionRepo:
         return self.rows.get((repair_session_id, phase))
 
 
-class _ADKSessionClient:
-    """Fake opaque ADK session client."""
-
-    def __init__(self) -> None:
-        self.created: list[str] = []
-        self.closed: list[str] = []
-
-    async def create_session(self, *, repair_session_id: str, phase: object) -> str:
-        adk_session_id = f"adk_created_{len(self.created) + 1}"
-        self.created.append(adk_session_id)
-        return adk_session_id
-
-    async def close_session(self, *, adk_session_id: str) -> None:
-        self.closed.append(adk_session_id)
-
-
 async def test_creates_diagnostic_phase_session_lazily() -> None:
     repo = _PhaseSessionRepo()
-    client = _ADKSessionClient()
 
     phase_session = await DiagnosticPhaseSessionManager(
         phase_sessions=repo,
-        adk_sessions=client,
     ).ensure_diagnostic_session(repair_session_id="rs_1")
 
     assert phase_session.id == "phs_created"
     assert phase_session.phase == "diagnostic"
-    assert phase_session.adk_session_id == "adk_created_1"
+    assert phase_session.adk_session_id is None
     assert phase_session.diagnostic_report_schema_version == "diagnostic_report.v2"
-    assert client.created == ["adk_created_1"]
 
 
 async def test_snapshots_configured_report_version() -> None:
@@ -92,7 +73,6 @@ async def test_snapshots_configured_report_version() -> None:
 
     phase_session = await DiagnosticPhaseSessionManager(
         phase_sessions=repo,
-        adk_sessions=_ADKSessionClient(),
         diagnostic_report_version="diagnostic_report.v2",
     ).ensure_diagnostic_session(repair_session_id="rs_1")
 
@@ -113,7 +93,6 @@ async def test_existing_session_keeps_report_version_after_rollback() -> None:
 
     phase_session = await DiagnosticPhaseSessionManager(
         phase_sessions=repo,
-        adk_sessions=_ADKSessionClient(),
         diagnostic_report_version="diagnostic_report.v2",
     ).ensure_diagnostic_session(repair_session_id="rs_1")
 
@@ -181,48 +160,97 @@ async def test_resumes_existing_diagnostic_phase_session() -> None:
         status="active",
     )
     repo.rows[("rs_1", "diagnostic")] = existing
-    client = _ADKSessionClient()
 
     phase_session = await DiagnosticPhaseSessionManager(
         phase_sessions=repo,
-        adk_sessions=client,
     ).ensure_diagnostic_session(repair_session_id="rs_1")
 
     assert phase_session is existing
-    assert client.created == []
 
 
 async def test_app_owned_phase_session_id_is_report_session_context() -> None:
     repo = _PhaseSessionRepo()
-    client = _ADKSessionClient()
 
     phase_session = await DiagnosticPhaseSessionManager(
         phase_sessions=repo,
-        adk_sessions=client,
     ).ensure_diagnostic_session(repair_session_id="rs_1")
 
     assert phase_session.id.startswith("phs_")
     assert not phase_session.id.startswith("adk_")
-    assert phase_session.adk_session_id.startswith("adk_")
+    assert phase_session.adk_session_id is None
 
 
-async def test_creation_race_reuses_winning_row_and_closes_orphan() -> None:
+async def test_creation_failure_leaves_rollback_to_acceptance() -> None:
     repo = _PhaseSessionRepo()
     repo.raise_integrity_on_add = True
-    client = _ADKSessionClient()
-    rollback_count = 0
+    with pytest.raises(IntegrityError):
+        await DiagnosticPhaseSessionManager(
+            phase_sessions=repo,
+        ).ensure_diagnostic_session(repair_session_id="rs_1")
 
-    async def rollback() -> None:
-        nonlocal rollback_count
-        rollback_count += 1
 
-    phase_session = await DiagnosticPhaseSessionManager(
+class _BindingRepo:
+    def __init__(self) -> None:
+        self.binding: str | None = None
+        self.calls = 0
+        self.crash = False
+
+    async def bind_adk_session_if_null(
+        self, *, phase_session_id: str, adk_session_id: str
+    ) -> str:
+        self.calls += 1
+        if self.crash:
+            raise RuntimeError("injected crash before binding")
+        if self.binding is None:
+            self.binding = adk_session_id
+        return self.binding
+
+
+async def test_crash_before_binding_reuses_durable_identity() -> None:
+    service = InMemorySessionService()
+    repo = _BindingRepo()
+    repo.crash = True
+    phase = RepairPhaseSession(id="phs_one", repair_session_id="rs_one")
+    with pytest.raises(RuntimeError, match="injected crash"):
+        await DiagnosticADKSessionClient(service).ensure_or_resume(
+            phase_session=phase, phase_sessions=repo
+        )
+    repo.crash = False
+    identity = await DiagnosticADKSessionClient(service).ensure_or_resume(
+        phase_session=phase, phase_sessions=repo
+    )
+    assert identity == "adk_diagnostic_phs_one"
+    sessions = await service.list_sessions(
+        app_name=DIAGNOSTIC_ADK_APP_NAME, user_id=DIAGNOSTIC_ADK_USER_ID
+    )
+    assert len(sessions.sessions) == 1
+
+
+async def test_existing_binding_is_never_recreated_or_rebound() -> None:
+    service = InMemorySessionService()
+    repo = _BindingRepo()
+    phase = RepairPhaseSession(
+        id="phs_one", repair_session_id="rs_one", adk_session_id="exact_missing"
+    )
+    with pytest.raises(StaleInMemoryADKSessionError):
+        await DiagnosticADKSessionClient(service).ensure_or_resume(
+            phase_session=phase, phase_sessions=repo
+        )
+    assert repo.calls == 0
+    sessions = await service.list_sessions(
+        app_name=DIAGNOSTIC_ADK_APP_NAME, user_id=DIAGNOSTIC_ADK_USER_ID
+    )
+    assert sessions.sessions == []
+
+
+async def test_concurrent_winning_binding_is_resumed_exactly() -> None:
+    service = InMemorySessionService()
+    repo = _BindingRepo()
+    repo.binding = await DiagnosticADKSessionClient(service).create_session(
+        repair_session_id="rs_one", phase=RepairSessionPhase.DIAGNOSTIC
+    )
+    identity = await DiagnosticADKSessionClient(service).ensure_or_resume(
+        phase_session=RepairPhaseSession(id="phs_one", repair_session_id="rs_one"),
         phase_sessions=repo,
-        adk_sessions=client,
-        rollback=rollback,
-    ).ensure_diagnostic_session(repair_session_id="rs_1")
-
-    assert phase_session.id == "phs_winning"
-    assert phase_session.adk_session_id == "adk_winning"
-    assert client.closed == ["adk_created_1"]
-    assert rollback_count == 1
+    )
+    assert identity == repo.binding
