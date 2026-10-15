@@ -32,7 +32,7 @@ schemas and the ADK layout, but the active HTTP workflow is diagnostic-first.
 | `main.py`, `core/` | App construction, settings, logging, process telemetry lifecycle, security primitives, and the public error envelope | `create_app`, `Settings`, `initialize_telemetry`, `install_exception_handlers` |
 | `core/nats.py`, `core/event_notifications.py`, `core/event_wakeups.py` | Reusable asynchronous NATS connection lifecycle, V1 JetStream topology verification, one process-owned Core NATS event-hint subscription, and bounded local fanout | `nats_connection`, `NatsEventNotifications`, `EventWakeups` |
 | `workers/` | Shared pull execution and typed registry; independently runnable profile and diagnostic process resources and application composition | `PullWorker`, `profile_registry`, `diagnostic_registry`, workload roles |
-| `maintenance/` | API-hosted durable publication polling and bounded policy-gated reconciliation, with lazy JetStream resources and short independent database transactions | `JobMaintenance.start/close`, `create_job_maintenance`, `ReconciliationPolicy` |
+| `maintenance/` | API-hosted publication, policy-gated recovery and retention cleanup; finite operator reconstruction over PostgreSQL truth and pinned topology | `JobMaintenance.start/close`, `create_job_maintenance`, `recovery_policies`, `reconstruct` |
 | `api/` | HTTP/SSE adaptation and dependency composition | `api/router.py`, `api/deps.py`, `api/v1/` |
 | `schemas/` | Pydantic public request, response, event, and report shapes | Model conversion helpers beside each schema |
 | `services/` | Product rules, ownership checks, workflow state, idempotency, and transaction-level coordination | `TurnService`, `DiagnosticVisualContextService`, `EventService` |
@@ -408,7 +408,7 @@ schema/OpenAPI alignment.
 
 `main.lifespan` starts `maintenance.hosting.create_job_maintenance` and cancels
 it before closing the other API resources. `JobMaintenance.start()` immediately
-schedules independent publication and reconciliation loops; `close()` bounds
+schedules independent publication, reconciliation and cleanup loops; `close()` bounds
 cancellation and publisher shutdown by `job_shutdown_timeout_seconds`. The
 module has no FastAPI, route, ADK, or profile-provider dependency and can be
 hosted through this lifecycle elsewhere after a deployment decision.
@@ -863,3 +863,35 @@ atomic acceptance and route executor selection.
 The integrated diagnostic canary and worker-first enablement/drain/rollback
 procedure are documented in [README.md](README.md#diagnostic-queue-canary).
 Final removal of legacy background composition remains a later completion gate.
+
+### Complete recovery and retention (#153)
+
+`maintenance/hosting.py:recovery_policies` supplies the same complete initial
+kind/version allowlist to API reconciliation and finite reconstruction. Expired
+executions retain their kind-specific attempt/effect rules, with a typed recovery
+backoff floor. The repository invalidates execution tokens while holding the job
+lock, then atomically persists any diagnostic/product repair before eligibility.
+
+`maintenance/runtime.py` also hosts bounded terminal cleanup in FastAPI lifespan.
+`BackgroundJobRepository.delete_retained` rechecks terminal state, confirmed
+intent, absence of publication claims, terminal age and last-update age under
+the row lock. Publication confirmation restarts retention, so delayed terminal
+notifications cannot outlive their resolvable rows. Cleanup has no broker-state
+dependency. Scan locks live only through short transactions and release on
+cancellation; publication leases naturally expire.
+
+`maintenance/reconstruction.py` is an explicit finite operator composition over
+`core/nats.py` topology validation and repository keyset scans/conditional intent
+advances. It starts no runtime and sends no work messages. Acceptance cutoff,
+bounded page transactions, pending-intent coalescing and generation CAS permit
+interruption, restart and concurrent API maintenance. Unknown definitions,
+terminal jobs, future eligibility, exhausted attempts, active executions and
+reserved diagnostic effects cannot become executable through reconstruction.
+The pinned stream now has finite MaxAge; typed retention exceeds transport,
+retry/recovery and audit horizons. Stable recovery events contain only registered
+kind/outcome and counts/booleans. Advisories remain observational.
+
+See [QUEUE_RECOVERY.md](QUEUE_RECOVERY.md) for the operator procedure,
+configuration relationships, compatibility migration and acceptance evidence.
+`task test:recovery` runs real maintenance, both workload suites, pinned topology
+contracts and persistence races in disposable PostgreSQL/JetStream.

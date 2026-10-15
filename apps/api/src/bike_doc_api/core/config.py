@@ -156,6 +156,23 @@ class Settings(BaseSettings):
         default=20, gt=0, le=600, allow_inf_nan=False
     )
 
+    nats_work_max_age_seconds: float = Field(
+        default=86400, gt=0, le=604800, allow_inf_nan=False
+    )
+    job_terminal_retention_seconds: float = Field(
+        default=604800, gt=0, le=31536000, allow_inf_nan=False
+    )
+    job_audit_horizon_seconds: float = Field(
+        default=172800, ge=0, le=31536000, allow_inf_nan=False
+    )
+    job_recovery_backoff_seconds: float = Field(
+        default=30, gt=0, le=3600, allow_inf_nan=False
+    )
+    job_cleanup_batch_limit: int = Field(default=100, ge=1, le=1000)
+    job_cleanup_poll_seconds: float = Field(
+        default=3600, ge=30, le=86400, allow_inf_nan=False
+    )
+    job_reconstruction_page_limit: int = Field(default=100, ge=1, le=1000)
     job_maintenance_enabled: bool = True
     job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
     job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
@@ -312,6 +329,32 @@ class Settings(BaseSettings):
             self.job_reconciliation_poll_seconds,
         ):
             raise ValueError("no-progress threshold must exceed maintenance timings")
+        recovery_horizon = max(
+            self.profile_inference_max_attempts
+            * (
+                self.profile_worker_hard_seconds
+                + self.profile_worker_retry_seconds
+                + self.job_recovery_backoff_seconds
+                + self.job_reconciliation_poll_seconds
+            ),
+            self.diagnostic_worker_attempt_limit
+            * (
+                self.diagnostic_worker_hard_seconds
+                + self.diagnostic_worker_retry_seconds
+                + self.job_recovery_backoff_seconds
+                + self.job_reconciliation_poll_seconds
+            ),
+            self.job_no_progress_seconds + self.job_backoff_max_seconds,
+        )
+        if self.job_terminal_retention_seconds <= max(
+            self.nats_work_max_age_seconds,
+            self.job_audit_horizon_seconds,
+            recovery_horizon,
+        ):
+            raise ValueError(
+                "terminal retention must exceed broker, retry, recovery "
+                "and audit horizons"
+            )
         return self
 
     @field_validator("auth_mode", mode="before")

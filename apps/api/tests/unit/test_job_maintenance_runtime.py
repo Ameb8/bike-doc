@@ -92,7 +92,11 @@ class FakeRepository:
         self.claims = [CLAIM]
         self.confirmed: list[PublicationClaim] = []
         self.failed: list[tuple[PublicationClaim, TransportError, timedelta]] = []
-        self.scans: dict[str, list[JobSnapshot]] = {"expired": [], "no_progress": []}
+        self.scans: dict[str, list[JobSnapshot]] = {
+            "expired": [],
+            "no_progress": [],
+            "retention": [],
+        }
         self.recovered: list[dict[str, object]] = []
         self.advanced: list[dict[str, object]] = []
         self.in_transaction = False
@@ -127,6 +131,9 @@ class FakeRepository:
 
     async def recover_expired(self, **kwargs: object) -> bool:
         self.recovered.append(kwargs)
+        return True
+
+    async def delete_retained(self, **kwargs: object) -> bool:
         return True
 
     async def advance_publication(self, **kwargs: object) -> bool:
@@ -339,8 +346,8 @@ async def test_committed_work_is_discovered_by_repeated_bounded_polling() -> Non
     host.start()
     try:
         # One sleep belongs to the reconciler, one to the publisher.
-        sleeps = [await asyncio.wait_for(clock.sleeps.get(), 1) for _ in range(2)]
-        assert sorted(sleeps) == [1, 30]
+        sleeps = [await asyncio.wait_for(clock.sleeps.get(), 1) for _ in range(3)]
+        assert sorted(sleeps) == [1, 30, 3600]
         assert not publisher.messages
         repository.claims = [CLAIM]
         clock.resume.set()

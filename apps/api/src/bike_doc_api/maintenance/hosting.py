@@ -29,14 +29,25 @@ def create_job_maintenance(
         settings,
         transaction,
         NatsJobPublisher(settings),
-        policies
-        if policies is not None
-        else {
-            ("diagnostic_turn", 1): DiagnosticRecoveryPolicy(
-                settings.diagnostic_worker_retry_seconds
-            ),
-            ("profile_inference", 1): ProfileRecoveryPolicy(
-                settings.profile_worker_retry_seconds
-            ),
-        },
+        policies if policies is not None else recovery_policies(settings),
     )
+
+
+def recovery_policies(
+    settings: Settings,
+) -> Mapping[tuple[str, int], ReconciliationPolicy]:
+    """One complete initial-definition allowlist for maintenance and reconstruction."""
+    return {
+        ("diagnostic_turn", 1): DiagnosticRecoveryPolicy(
+            max(
+                settings.diagnostic_worker_retry_seconds,
+                settings.job_recovery_backoff_seconds,
+            )
+        ),
+        ("profile_inference", 1): ProfileRecoveryPolicy(
+            max(
+                settings.profile_worker_retry_seconds,
+                settings.job_recovery_backoff_seconds,
+            )
+        ),
+    }

@@ -458,6 +458,7 @@ class BackgroundJobRepository:
             query = query.where(
                 BackgroundJob.state.in_(TERMINAL_STATES),
                 BackgroundJob.terminal_at <= before,
+                BackgroundJob.updated_at <= before,
                 BackgroundJob.desired_generation == BackgroundJob.confirmed_generation,
                 BackgroundJob.publication_claim_token.is_(None),
             ).order_by(BackgroundJob.terminal_at, BackgroundJob.id)
@@ -471,9 +472,19 @@ class BackgroundJobRepository:
         return [JobSnapshot.from_row(row) for row in rows]
 
     async def advance_publication(
-        self, *, job_id: str, observed_generation: int, no_progress_before: datetime
+        self,
+        *,
+        job_id: str,
+        observed_generation: int,
+        no_progress_before: datetime | None,
+        coalesce_pending: bool = False,
     ) -> bool:
-        """Reconciler-only notification recovery; never a semantic retry."""
+        """Notification recovery; never a semantic retry.
+
+        Reconstruction coalesces unclaimed pending intent, but supersedes an
+        in-flight generation: its old broker ACK may refer to lost stream data.
+        Exact-generation confirmation then cannot close the restored intent.
+        """
         row = await self._lock(job_id)
         now = await self._now()
         if (
@@ -482,8 +493,14 @@ class BackgroundJobRepository:
             or row.effect_boundary_at is not None
             or row.eligible_at > now
             or row.attempt_count >= row.attempt_limit
+            or (
+                coalesce_pending
+                and row.confirmed_generation != row.desired_generation
+                and row.publication_claim_generation != row.desired_generation
+            )
+            or row.execution_deadline is not None
             or row.desired_generation != observed_generation
-            or row.updated_at > no_progress_before
+            or (no_progress_before is not None and row.updated_at > no_progress_before)
         ):
             return False
         row.desired_generation += 1
@@ -520,4 +537,50 @@ class BackgroundJobRepository:
             row.desired_generation += 1
             row.publication_eligible_at = row.eligible_at
         await self._persist_transition(row)
+        return True
+
+    async def reconstruction_page(
+        self,
+        *,
+        after: str,
+        limit: int,
+        accepted_before: datetime,
+    ) -> list[JobSnapshot]:
+        """Finite keyset traversal, including locked rows; transition rechecks truth.
+
+        No SKIP LOCKED here: skipping a row would lose it behind the page cursor.
+        Acceptance cutoff prevents ongoing producers from extending the operation.
+        """
+        _batch_limit(limit)
+        rows = await self._session.scalars(
+            select(BackgroundJob)
+            .where(
+                BackgroundJob.id > after, BackgroundJob.created_at <= accepted_before
+            )
+            .order_by(BackgroundJob.id)
+            .limit(limit)
+            .execution_options(populate_existing=True)
+        )
+        return [JobSnapshot.from_row(row) for row in rows]
+
+    async def delete_retained(self, *, job_id: str, before: datetime) -> bool:
+        """Recheck every refusal under the row lock, including late publication.
+
+        updated_at restarts retention after publication confirmation/failure or
+        generation changes, so a delayed terminal notification retains its row
+        for the broker's entire lifetime after the last possible publication.
+        """
+        row = await self._lock(job_id)
+        if (
+            row is None
+            or row.state not in TERMINAL_STATES
+            or row.terminal_at is None
+            or row.terminal_at > before
+            or row.updated_at > before
+            or row.desired_generation != row.confirmed_generation
+            or row.publication_claim_token is not None
+        ):
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
         return True

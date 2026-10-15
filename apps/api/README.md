@@ -70,8 +70,9 @@ the product API contract.
 Run migrations before starting the API (`uv run alembic upgrade head` from
 `apps/api` with the configured database URL). The root Compose environment passes
 the `BIKE_DOC_API_JOB_*` variables documented in `.env.example` to each API
-replica. `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` starts the reusable publisher
-and reconciler from FastAPI lifespan; there is no separate maintenance executable.
+replica. `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` starts the reusable publisher,
+reconciler, and bounded cleanup from FastAPI lifespan. The finite operator
+reconstruction command is documented in [QUEUE_RECOVERY.md](QUEUE_RECOVERY.md).
 Producer modes default to `legacy`. Enable them only after compatible workers
 are deployed. `create_job_maintenance(settings)` registers both diagnostic and
 profile recovery policies; an explicitly supplied empty policy registry skips

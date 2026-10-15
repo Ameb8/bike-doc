@@ -90,6 +90,14 @@ async def test_pinned_jetstream_transport_contract() -> None:
             await ensure_work_topology(js, settings, ack_wait=0.4, max_deliver=4)
             info = await js.stream_info(settings.nats_work_stream)
             assert info.config.storage == "file"
+            assert info.config.max_age == settings.nats_work_max_age_seconds
+            with pytest.raises(ValueError, match="incompatible"):
+                await ensure_work_topology(
+                    js,
+                    settings.model_copy(update={"nats_work_max_age_seconds": 1}),
+                    ack_wait=0.4,
+                    max_deliver=4,
+                )
             assert set(info.config.subjects or []) == {
                 settings.nats_diagnostic_subject,
                 settings.nats_profile_subject,

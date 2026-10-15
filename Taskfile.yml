@@ -70,6 +70,16 @@ tasks:
     cmds:
       - bash scripts/verify-backend-compatibility.sh worker
 
+  jobs:reconstruct:
+    desc: Finite operator recovery of topology and PostgreSQL notification intent.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.maintenance.reconstruction
+
+  test:recovery:
+    desc: Verify recovery, retention and reconstruction with disposable PostgreSQL/JetStream.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh recovery
+
   test:maintenance:
     desc: Verify maintenance with disposable PostgreSQL and pinned JetStream.
     cmds:

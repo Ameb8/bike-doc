@@ -107,6 +107,7 @@ class JobMaintenance:
         self._tasks = [
             asyncio.create_task(self._run_publication(), name="job-publication"),
             asyncio.create_task(self._run_reconciliation(), name="job-reconciliation"),
+            asyncio.create_task(self._run_cleanup(), name="job-cleanup"),
         ]
 
     async def close(self) -> None:
@@ -204,6 +205,7 @@ class JobMaintenance:
         now = self._clock.now()
         horizon = now - timedelta(seconds=self._settings.job_no_progress_seconds)
         # Separate short bounded scans avoid holding both batches simultaneously.
+        recovered = []
         async with self._transaction() as repository:
             expired = await repository.claim_scan(
                 purpose="expired",
@@ -215,11 +217,20 @@ class JobMaintenance:
                 policy = self._policies.get((job.job_kind, job.input_version))
                 outcome = policy.expired_outcome(job) if policy else None
                 if outcome is not None and job.execution_token is not None:
-                    await repository.recover_expired(
+                    changed = await repository.recover_expired(
                         job_id=job.id,
                         execution_token=job.execution_token,
                         outcome=outcome,
                     )
+                    recovered.append((job.job_kind, outcome.state, changed))
+        for kind, requested_state, changed in recovered:
+            logger.info(
+                "job_recovery",
+                kind=kind,
+                requested_state=requested_state,
+                changed=changed,
+            )
+        repaired = []
         async with self._transaction() as repository:
             candidates = await repository.claim_scan(
                 purpose="no_progress",
@@ -230,11 +241,14 @@ class JobMaintenance:
             for job in candidates:
                 policy = self._policies.get((job.job_kind, job.input_version))
                 if policy is not None and policy.may_republish(job):
-                    await repository.advance_publication(
+                    changed = await repository.advance_publication(
                         job_id=job.id,
                         observed_generation=job.desired_generation,
                         no_progress_before=horizon,
                     )
+                    repaired.append((job.job_kind, changed))
+        for kind, changed in repaired:
+            logger.info("job_notification_repair", kind=kind, changed=changed)
 
     async def _run_publication(self) -> None:
         while True:
@@ -251,3 +265,30 @@ class JobMaintenance:
             except Exception:
                 logger.warning("job_reconciliation_scan_failed")
             await self._clock.sleep(self._settings.job_reconciliation_poll_seconds)
+
+    async def cleanup_once(self) -> int:
+        """One locked batch per cadence, independent of live broker contents."""
+        before = self._clock.now() - timedelta(
+            seconds=self._settings.job_terminal_retention_seconds
+        )
+        deleted = 0
+        async with self._transaction() as repository:
+            candidates = await repository.claim_scan(
+                purpose="retention",
+                before=before,
+                limit=self._settings.job_cleanup_batch_limit,
+            )
+            for job in candidates:
+                deleted += await repository.delete_retained(
+                    job_id=job.id, before=before
+                )
+        logger.info("job_cleanup", scanned=len(candidates), deleted=deleted)
+        return deleted
+
+    async def _run_cleanup(self) -> None:
+        while True:
+            try:
+                await self.cleanup_once()
+            except Exception:
+                logger.warning("job_cleanup_scan_failed")
+            await self._clock.sleep(self._settings.job_cleanup_poll_seconds)

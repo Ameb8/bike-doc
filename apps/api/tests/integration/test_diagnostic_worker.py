@@ -1652,3 +1652,88 @@ asyncio.run(main())
         # SSE owns a cached pool distinct from the injected acceptance pool.
         # Dispose it on this loop before another test uses the same database URL.
         await get_sessionmaker(settings.database_url).kw["bind"].dispose()
+
+
+@pytest.mark.parametrize("reserved", [False, True])
+async def test_reconstruction_restores_diagnostic_without_replaying_reserved_effects(
+    context, reserved
+):
+    from contextlib import asynccontextmanager
+
+    from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
+    from bike_doc_api.maintenance.hosting import recovery_policies
+    from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
+    from bike_doc_api.maintenance.reconstruction import reconstruct
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    settings, sessions, job, _, model, resources, _ = context
+
+    @asynccontextmanager
+    async def transaction():
+        async with sessions() as session, session.begin():
+            yield DiagnosticJobRepository(session)
+
+    policies = recovery_policies(settings)
+    host = JobMaintenance(settings, transaction, NatsJobPublisher(settings), policies)
+
+    async def publish_current():
+        # Earlier failure tests deliberately retain jobs in this disposable DB.
+        # Exercise the real global publisher without assuming our row is first.
+        for _ in range(100):
+            await host.publish_once()
+            async with sessions() as session:
+                current = await session.get(BackgroundJob, job.id)
+                if current.confirmed_generation == current.desired_generation:
+                    return
+        pytest.fail("current job publication did not complete within bounded batches")
+
+    try:
+        await publish_current()
+        if reserved:
+            execution, _ = await _fencing_execution(context, duration=0.1)
+            async with sessions() as session:
+                await DiagnosticExecutionFence(session, execution).cross_boundary()
+            await asyncio.sleep(0.15)
+        async with nats_connection(settings) as client:
+            js = jetstream(client)
+            await js.delete_stream(settings.nats_work_stream)
+
+            async def provision():
+                await ensure_work_topology(js, settings)
+
+            await reconstruct(settings, transaction, provision, policies)
+            assert await reconstruct(settings, transaction, provision, policies) == 0
+            async with sessions() as session:
+                row = await session.get(BackgroundJob, job.id)
+                assert row.desired_generation == (1 if reserved else 2)
+            await publish_current()
+        if reserved:
+            await host.reconcile_once()
+            await _assert_error_pair(context, "interrupted", 1)
+        async with diagnostic_worker(settings, resources=resources) as runtime:
+            if reserved:
+                # An original post-boundary notification cannot invoke the model,
+                # even when manually delivered after topology reconstruction.
+                await runtime.transport.client.jetstream().publish(
+                    settings.nats_diagnostic_subject,
+                    json.dumps(
+                        {"version": 1, "job_id": job.id, "publication_generation": 1}
+                    ).encode(),
+                )
+            for _ in range(1000):
+                message = (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+                if json.loads(message.data)["job_id"] == job.id:
+                    await runtime.process(NatsDelivery(message))
+                    break
+                await message.ack_sync()
+            else:
+                pytest.fail("reconstructed diagnostic notification was missing")
+        assert len(model._requests) == (0 if reserved else 1)
+        async with sessions() as session:
+            row = await session.get(BackgroundJob, job.id)
+            assert row.state == ("interrupted" if reserved else "succeeded")
+            assert row.attempt_count == 1
+    finally:
+        await host.close()

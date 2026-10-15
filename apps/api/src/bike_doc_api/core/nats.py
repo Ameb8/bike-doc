@@ -74,6 +74,7 @@ async def ensure_work_topology(
         subjects=[settings.nats_diagnostic_subject, settings.nats_profile_subject],
         storage=StorageType.FILE,
         retention=RetentionPolicy.WORK_QUEUE,
+        max_age=settings.nats_work_max_age_seconds,
     )
     try:
         existing = (await js.stream_info(stream.name or "")).config
@@ -84,6 +85,7 @@ async def ensure_work_topology(
             existing.subjects != stream.subjects
             or existing.storage != stream.storage
             or existing.retention != stream.retention
+            or existing.max_age != stream.max_age
         ):
             raise ValueError("existing NATS work stream has incompatible configuration")
 
