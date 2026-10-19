@@ -97,3 +97,6 @@ apps/api/uv.lock
 compose.override.yaml
 logs/
 *.log
+
+# Generated single-host deployment secrets
+.deploy-secrets/

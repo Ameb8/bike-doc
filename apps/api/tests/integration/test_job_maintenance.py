@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from bike_doc_api.core.config import Settings
 from bike_doc_api.core.nats import jetstream, nats_connection
 from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
-from bike_doc_api.maintenance.runtime import JobMaintenance
+from bike_doc_api.maintenance.runtime import JobMaintenance, SystemClock
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.repositories.background_jobs import (
@@ -627,7 +627,13 @@ async def historical_job(harness: Harness, **changes: object) -> str:
 async def test_retention_boundaries_refusals_and_competing_cleanup(
     harness: Harness,
 ) -> None:
-    cutoff = datetime.now(UTC) - timedelta(days=7)
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(days=7)
+
+    class RetentionClock(SystemClock):
+        def now(self) -> datetime:
+            return now
+
     old = [
         await historical_job(harness, state=state)
         for state in ["succeeded", "dead", "interrupted"]
@@ -635,7 +641,7 @@ async def test_retention_boundaries_refusals_and_competing_cleanup(
     refused = [
         await historical_job(harness, state="queued", terminal_at=None),
         await historical_job(harness, desired_generation=2),
-        await historical_job(harness, terminal_at=cutoff + timedelta(seconds=1)),
+        await historical_job(harness, terminal_at=cutoff + timedelta(microseconds=1)),
         await historical_job(harness, updated_at=datetime.now(UTC)),
         await historical_job(
             harness,
@@ -651,6 +657,9 @@ async def test_retention_boundaries_refusals_and_competing_cleanup(
         for job_id in refused:
             assert not await repo.delete_retained(job_id=job_id, before=cutoff)
     first, second = harness.host(), harness.host()
+    # Both scans evaluate the same cutoff as the exact-boundary assertions.
+    # Database/container startup time must not age the refused row into retention.
+    first._clock = second._clock = RetentionClock()
     first._settings = harness.settings.model_copy(update={"job_cleanup_batch_limit": 2})
     second._settings = first._settings
     counts = await asyncio.gather(first.cleanup_once(), second.cleanup_once())

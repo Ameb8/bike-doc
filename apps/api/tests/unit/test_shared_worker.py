@@ -753,7 +753,23 @@ async def test_worker_fetch_failure_and_shutdown_emit_availability() -> None:
     runtime.transport = FailedTransport()
     runtime.start()
     await asyncio.sleep(0.02)
+    assert not runtime.healthy()
+    recovered = asyncio.Event()
+
+    class RecoveredTransport(FakeTransport):
+        async def fetch(
+            self, batch: int, wait_seconds: float
+        ) -> Sequence[FakeDelivery]:
+            result = await super().fetch(batch, wait_seconds)
+            recovered.set()
+            return result
+
+    runtime.transport = RecoveredTransport()
+    async with asyncio.timeout(1):
+        await recovered.wait()
+    assert runtime.healthy()
     await runtime.close()
+    assert not runtime.healthy()
     assert any(
         o.metric == "worker_available" and o.value == 0 for o in recorder.observations
     )
@@ -761,5 +777,5 @@ async def test_worker_fetch_failure_and_shutdown_emit_availability() -> None:
         o.attributes["health"]
         for o in recorder.observations
         if o.metric == "worker_health"
-    } == {"fetch_failed", "graceful"}
+    } == {"fetch_failed", "ready", "graceful"}
     assert "PRIVATE_CREDENTIALS" not in repr(recorder.observations)

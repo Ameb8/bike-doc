@@ -104,3 +104,8 @@ not production credentials.
 
 Inspection UX, dashboards, production deployment hardening, capacity tuning and
 final legacy executor removal belong to subsequent tasks.
+
+For the secured single-host topology, use the containerized finite command,
+volume backup/restore ordering and rollback procedure in the
+[production runbook](../../deploy/README.md). Worker credentials intentionally
+cannot provision/reconstruct the other workload; use the operator's API identity.

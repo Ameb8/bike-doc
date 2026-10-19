@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.maintenance.runtime import JobMaintenance
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.artifact import ArtifactRef
@@ -136,6 +137,8 @@ async def setup() -> AsyncIterator[
         profile_worker_hard_seconds=2,
         profile_worker_timeout_grace_seconds=0.2,
     )
+    async with nats_connection(settings) as provisioner:
+        await ensure_work_topology(jetstream(provisioner), settings)
     engine = create_async_engine(DB_URL)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     user_id, bike_id, session_id, artifact_id = [

@@ -1,0 +1,145 @@
+# Standalone file: do not merge development Compose or its automatic overrides.
+x-process: &process
+  image: ${BIKEDOC_RUNTIME_IMAGE:-bikedoc-runtime:local}
+  init: true
+  restart: unless-stopped
+  stop_grace_period: 60s
+  networks: [private, outbound]
+  volumes:
+    - artifacts:/var/lib/bikedoc/artifacts
+  healthcheck:
+    test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/ready', timeout=15)"]
+    interval: 15s
+    timeout: 16s
+    start_period: 180s
+    retries: 3
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    nats:
+      condition: service_healthy
+
+services:
+  gateway:
+    image: nginx:1.30.4-alpine
+    ports: ["127.0.0.1:${BIKEDOC_HTTP_PORT:-8000}:8000"]
+    volumes: ["./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    networks: [private]
+    restart: unless-stopped
+    depends_on: [api]
+  migrate:
+    image: ${BIKEDOC_RUNTIME_IMAGE:-bikedoc-runtime:local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: [python, -m, bike_doc_api.operations.deployment, migrate]
+    secrets:
+      - source: migrate
+        target: role.json
+    networks: [private]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+  api:
+    <<: *process
+    deploy:
+      replicas: ${BIKEDOC_API_REPLICAS:-1}
+    command: [python, -m, bike_doc_api.operations.deployment, api]
+    secrets:
+      - source: api
+        target: role.json
+  diagnostic-worker:
+    <<: *process
+    deploy:
+      replicas: ${BIKEDOC_DIAGNOSTIC_REPLICAS:-1}
+    command: [python, -m, bike_doc_api.operations.deployment, diagnostic]
+    secrets:
+      - source: diagnostic
+        target: role.json
+  profile-worker:
+    <<: *process
+    deploy:
+      replicas: ${BIKEDOC_PROFILE_REPLICAS:-1}
+    command: [python, -m, bike_doc_api.operations.deployment, profile]
+    secrets:
+      - source: profile
+        target: role.json
+  operator:
+    <<: *process
+    profiles: [operator]
+    restart: "no"
+    healthcheck:
+      disable: true
+    command: [python, -m, bike_doc_api.operations.deployment, inspect, --transport]
+    secrets:
+      - source: api
+        target: role.json
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bikedoc
+      POSTGRES_DB: bikedoc
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    networks: [private]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    restart: unless-stopped
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD, pg_isready, -U, bikedoc, -d, bikedoc]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  nats:
+    image: nats:2.12.1-alpine
+    # Compose cannot scale a service with container_name. One volume, one server.
+    container_name: ${COMPOSE_PROJECT_NAME:-bikedoc-production}-jetstream
+    command: [-c, /run/secrets/nats.conf]
+    secrets:
+      - source: nats
+        target: nats.conf
+    networks: [private]
+    volumes: ["nats_data:/data"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, "http://127.0.0.1:8222/healthz?js-enabled-only=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  collector:
+    # Local Compose file secrets retain source ownership; run as their host owner.
+    user: "${BIKEDOC_SECRET_OWNER_UID:-1000}"
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: [--config=/etc/otelcol/config.yaml]
+    volumes: ["./deploy/otel-collector.yaml:/etc/otelcol/config.yaml:ro"]
+    secrets: [otlp_export]
+    networks: [private, outbound]
+    restart: unless-stopped
+
+networks:
+  private:
+    internal: true
+  outbound: {}
+volumes:
+  postgres_data: {}
+  nats_data:
+    # A recovery suffix selects a new empty disk while retaining the old volume.
+    name: ${COMPOSE_PROJECT_NAME:-bikedoc-production}_nats_data${BIKEDOC_NATS_VOLUME_SUFFIX:-}
+  artifacts: {}
+secrets:
+  api:
+    file: ${BIKEDOC_SECRETS_DIR:?Set BIKEDOC_SECRETS_DIR}/api.json
+  diagnostic:
+    file: ${BIKEDOC_SECRETS_DIR}/diagnostic.json
+  profile:
+    file: ${BIKEDOC_SECRETS_DIR}/profile.json
+  migrate:
+    file: ${BIKEDOC_SECRETS_DIR}/migrate.json
+  nats:
+    file: ${BIKEDOC_SECRETS_DIR}/nats.conf
+  postgres_password:
+    file: ${BIKEDOC_SECRETS_DIR}/postgres_password
+  otlp_export:
+    file: ${BIKEDOC_SECRETS_DIR}/otlp-export.yaml

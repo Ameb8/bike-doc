@@ -107,8 +107,24 @@ class JobMaintenance:
             "diagnostic": settings.nats_diagnostic_subject,
             "profile_inference": settings.nats_profile_subject,
         }
+        self._last_success: dict[str, float] = {}
         self._tasks: list[asyncio.Task[None]] = []
         self._failure_rounds = 0
+
+    def healthy(self) -> bool:
+        return (
+            len(self._tasks) == 3
+            and all(not task.done() for task in self._tasks)
+            and all(
+                name in self._last_success
+                and monotonic() - self._last_success[name] < max(30, interval * 3)
+                for name, interval in (
+                    ("publication", self._settings.job_publication_poll_seconds),
+                    ("reconciliation", self._settings.job_reconciliation_poll_seconds),
+                    ("cleanup", self._settings.job_cleanup_poll_seconds),
+                )
+            )
+        )
 
     def start(self) -> None:
         """Return immediately, including when PostgreSQL or NATS is unavailable."""
@@ -307,6 +323,7 @@ class JobMaintenance:
         while True:
             try:
                 await self.publish_once()
+                self._last_success["publication"] = monotonic()
             except Exception:
                 self._telemetry.observe(
                     "maintenance", maintenance="publication_scan_failed"
@@ -318,6 +335,7 @@ class JobMaintenance:
         while True:
             try:
                 await self.reconcile_once()
+                self._last_success["reconciliation"] = monotonic()
             except Exception:
                 self._telemetry.observe(
                     "maintenance", maintenance="reconciliation_scan_failed"
@@ -352,6 +370,7 @@ class JobMaintenance:
         while True:
             try:
                 await self.cleanup_once()
+                self._last_success["cleanup"] = monotonic()
             except Exception:
                 self._telemetry.observe(
                     "maintenance", maintenance="cleanup_scan_failed"

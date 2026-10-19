@@ -393,3 +393,25 @@ async def test_recovery_observes_final_state_after_product_normalization() -> No
     assert not any(
         o.attributes.get("outcome") == "retrying" for o in recorder.observations
     )
+
+
+async def test_readiness_requires_successful_fresh_loops() -> None:
+    from time import monotonic
+
+    maintenance = JobMaintenance(Settings(), AsyncMock(), FakePublisher(), {})
+    assert not maintenance.healthy()
+    maintenance._tasks = [asyncio.create_task(asyncio.sleep(60)) for _ in range(3)]
+    try:
+        assert not maintenance.healthy()
+        maintenance._last_success = {
+            name: monotonic() for name in ("publication", "reconciliation", "cleanup")
+        }
+        assert maintenance.healthy()
+        maintenance._last_success["publication"] -= 31
+        assert not maintenance.healthy()
+        maintenance._last_success["publication"] = monotonic()
+        maintenance._tasks[0].cancel()
+        await asyncio.gather(maintenance._tasks[0], return_exceptions=True)
+        assert not maintenance.healthy()
+    finally:
+        await maintenance.close()

@@ -24,3 +24,5 @@ apps/api/uv.lock
 
 logs/
 *.log
+
+.deploy-secrets/

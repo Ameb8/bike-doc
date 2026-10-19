@@ -128,3 +128,7 @@ and maintenance suites. These tests use fake handlers/providers, not model calls
 | Final recovery outcomes | Normalization test and real diagnostic completion-before-settlement recovery returns succeeded |
 | Production-like degradation signals | Disposable integration target covers outage/backlog, latency, absent workers, recovery, advisories, SSE polling and concurrent connection samples |
 | Required verification | `task format`, `task check`, then `task test:observability` |
+
+Task #155's [alert contract and deployment runbook](../../deploy/README.md)
+consumes these instruments through the existing OTLP exporter. Validate its
+synthetic threshold/missing-signal behavior with `task deployment:validate`.

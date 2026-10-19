@@ -13,7 +13,11 @@ from bike_doc_api.core.queue_telemetry import QueueTelemetry, queue_telemetry
 
 class QueueMonitor:
     def __init__(
-        self, settings: Settings, telemetry: QueueTelemetry = queue_telemetry
+        self,
+        settings: Settings,
+        telemetry: QueueTelemetry = queue_telemetry,
+        *,
+        workload: str | None = None,
     ) -> None:
         self.settings = settings
         self.telemetry = telemetry
@@ -22,6 +26,11 @@ class QueueMonitor:
             settings.nats_diagnostic_consumer: "diagnostic",
             settings.nats_profile_consumer: "profile_inference",
         }
+
+        if workload is not None:
+            self._consumers = {
+                k: v for k, v in self._consumers.items() if v == workload
+            }
 
     async def snapshot(self) -> dict[str, object]:
         # No ensure_topology: observing an absent stream must never create it.

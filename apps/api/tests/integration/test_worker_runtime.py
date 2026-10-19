@@ -663,3 +663,117 @@ async def test_observability_real_transport_execution_recovery_and_privacy(
     await monitor.snapshot()
     assert sentinel not in repr(recorder.observations)
     assert all("id" not in key for o in recorder.observations for key in o.attributes)
+
+
+async def test_worker_first_version_rollout_and_producer_rollback(
+    harness: Harness,
+) -> None:
+    """Synthetic versions exercise deployment ordering without adding product kinds."""
+    calls: list[str] = []
+
+    async def handle(job: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        calls.append(job.id)
+        return JobOutcome("succeeded")
+
+    policy = HandlerPolicy(
+        3,
+        timedelta(seconds=2),
+        timedelta(seconds=2),
+        timedelta(seconds=0.2),
+        timedelta(seconds=0.2),
+        JobOutcome("dead", JobError.EXECUTION_TIMEOUT),
+        EffectPolicy.IDEMPOTENT,
+        Recovery(),
+    )
+
+    @asynccontextmanager
+    async def host(versions: tuple[int, ...]) -> AsyncIterator[PullWorker]:
+        async with nats_connection(harness.settings) as client:
+            subscription = await jetstream(client).pull_subscribe(
+                harness.settings.nats_profile_subject,
+                durable=harness.settings.nats_profile_consumer,
+                stream=harness.settings.nats_work_stream,
+            )
+            runtime = PullWorker(
+                HandlerRegistry(
+                    "profile_inference",
+                    [
+                        HandlerDefinition(
+                            "rollout_probe",
+                            version,
+                            "profile_inference",
+                            ProfileInferenceInputV1,
+                            handle,
+                            policy,
+                        )
+                        for version in versions
+                    ],
+                ),
+                PostgresJobStore(harness.sessions),
+                NatsPullTransport(subscription, client=client),
+                RuntimeOptions(
+                    harness.settings.nats_profile_subject,
+                    ack_wait=0.3,
+                    progress_interval=0.05,
+                    fetch_timeout=0.1,
+                ),
+            )
+            runtime.start()
+            try:
+                yield runtime
+            finally:
+                await runtime.close()
+
+    async def completed(*jobs: JobSnapshot) -> None:
+        for _ in range(300):
+            rows = [await harness.row(job) for job in jobs]
+            if all(row.state == "succeeded" for row in rows):
+                assert all(row.attempt_count == 1 for row in rows)
+                return
+            await asyncio.sleep(0.01)
+        pytest.fail("rollout work failed to reach durable completion")
+
+    original = await harness.create(job_kind="rollout_probe")
+    async with host((1,)) as old_worker:
+        await harness.publish(original)
+        await completed(original)
+    assert not old_worker.healthy()
+    # Old producers can leave v1 backlog before the worker upgrade barrier.
+    backlog = await harness.create(job_kind="rollout_probe")
+    async with host((1, 2)) as first, host((1, 2)) as second:
+        for _ in range(300):
+            if first.healthy() and second.healthy():
+                break
+            await asyncio.sleep(0.01)
+        else:
+            pytest.fail("compatible worker replicas did not become ready")
+        for runtime in (first, second):
+            assert set(runtime.registry.reconciliation_policies()) == {
+                ("rollout_probe", 1),
+                ("rollout_probe", 2),
+            }
+        # Only complete upgraded replicas are fetching when v2 producers enable.
+        upgraded = await harness.create(job_kind="rollout_probe", input_version=2)
+        await harness.publish(backlog)
+        await harness.publish(upgraded)
+        await completed(backlog, upgraded)
+        # Roll back the producer while retaining compatible workers through all
+        # possible v2 deliveries; never send accepted queue work to legacy code.
+        rollback = await harness.create(job_kind="rollout_probe", input_version=1)
+        await harness.publish(rollback)
+        await harness.publish(upgraded)
+        await completed(rollback)
+        for _ in range(300):
+            consumer = await harness.js.consumer_info(
+                harness.settings.nats_work_stream,
+                harness.settings.nats_profile_consumer,
+            )
+            if consumer.num_pending == consumer.num_ack_pending == 0:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            pytest.fail("retained-version duplicate did not settle")
+        await completed(original, backlog, upgraded, rollback)
+        assert sorted(calls) == sorted(
+            job.id for job in (original, backlog, upgraded, rollback)
+        )

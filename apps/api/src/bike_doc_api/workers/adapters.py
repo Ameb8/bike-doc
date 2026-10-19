@@ -8,6 +8,7 @@ from nats.errors import TimeoutError as NatsTimeoutError
 from nats.js import JetStreamContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from bike_doc_api.core.nats import permission_denied
 from bike_doc_api.repositories.background_jobs import (
     BackgroundJobRepository,
     DeliveryResolution,
@@ -97,6 +98,8 @@ class NatsPullTransport:
                 )
             ]
         except NatsTimeoutError:
+            if not self.client.is_connected or permission_denied(self.client):
+                raise ConnectionError("NATS pull unavailable") from None
             return []
 
     async def close(self) -> None:

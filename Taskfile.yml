@@ -179,3 +179,18 @@ tasks:
       - task: ci:sync
       - task: check
       - task: build
+
+  deployment:validate:
+    desc: Validate deployment security, topology and synthetic alert behavior.
+    dir: apps/api
+    cmds:
+      - uv run ruff format --check ../../scripts/prepare-production.py ../../deploy/verify_permissions.py ../../deploy/verify_rotation.py
+      - uv run ruff check ../../scripts/prepare-production.py ../../deploy/verify_permissions.py ../../deploy/verify_rotation.py
+      - bash -n ../../scripts/verify-production.sh
+      - uv run pytest tests/unit/test_deployment.py tests/unit/test_health.py
+      - uv run python -m bike_doc_api.operations.alerts ../../deploy/alerts.json
+
+  test:deployment:
+    desc: Exercise isolated production topology, role ACLs, scaling and shutdown.
+    cmds:
+      - bash scripts/verify-production.sh

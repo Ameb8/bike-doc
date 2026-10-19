@@ -917,3 +917,44 @@ maintenance owns its lifecycle; worker hosts reuse the adapter. No advisory can
 feed authoritative recovery. See [QUEUE_OBSERVABILITY.md](QUEUE_OBSERVABILITY.md)
 for commands, metric semantics, cardinality/privacy policy and real-infrastructure
 verification via `task test:observability`.
+
+### Production process contracts (#155)
+
+`compose.production.yaml` hosts API-owned V1 maintenance, independent diagnostic
+and profile roles, one pinned persistent JetStream server, migrated PostgreSQL,
+a loopback HTTP gateway and an OTLP Collector. It is separate from development
+Compose. `operations/deployment.py` loads only the mounted role secret, then
+executes the established entry point with normal signal supervision. Settings
+are validated before exec so malformed secrets produce a fixed error instead of
+an import-time traceback containing Pydantic's environment inputs. Settings
+`process_role` separates worker configuration from HTTP auth requirements; HTTP
+construction explicitly requires the API role. Workers retain one shared runtime.
+
+`operations/health.py` provides an opt-in process-local loopback listener on
+`health_port`. It distinguishes process, database, broker, consumer and
+worker/maintenance readiness without provider calls. Maintenance tracks successful
+cycle freshness; workers expose fetch-loop liveness and the latest fetch result. These observations do not
+mutate job state. Worker topology checks inspect only their existing durable and
+monitoring subscriptions are workload-scoped; API/operator composition provisions
+and verifies the complete topology. Broker permissions enforce the boundary.
+
+`operations/alerts.py` validates and evaluates versioned backend-reduced alert
+windows against `core/queue_contract.py`. Application metrics still use the one
+OTLP instrumentation/export path. Infrastructure resource polling and alert
+routing belong to the deployment backend. See [deployment runbook](../../deploy/README.md)
+for security policy, secrets, health, shutdown, rollout/rollback, rotation,
+backup/reconstruction and executable validation.
+The deployment entrypoint scopes the configured `telemetry_service_name` by
+container hostname (`<base>.<hostname>`), so replicas' cumulative counters and
+connection pools remain distinguishable. The application resource retains
+exactly the canonical three fields; no metric attribute or second instrumentation
+path is added. Native entrypoints preserve their configured service name.
+A timed-out pull with a disconnected client or recorded protocol/permission error
+raises a bounded transport failure instead of masquerading as an idle successful
+fetch. Existing runtime telemetry consequently marks fetch availability false;
+reconnect clears the client's transport error. Readiness reports a connected
+broker with a recorded permission error as unhealthy consumer access.
+Read-only health connections use finite initial retries and immediate bounded
+close, under a total probe deadline. Process-owned publisher/SSE/worker connections
+retain unlimited automatic reconnect and graceful drain. Broker loss must produce
+a boolean failed readiness response, not an indefinitely connecting probe.

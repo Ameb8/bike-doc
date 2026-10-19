@@ -21,6 +21,7 @@ from bike_doc_api.adk.sessions import DIAGNOSTIC_ADK_APP_NAME, DIAGNOSTIC_ADK_US
 from bike_doc_api.adk.storage import open_adk_session_service
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.models.bike import BikeProfile
@@ -89,6 +90,8 @@ async def context(tmp_path) -> AsyncIterator[tuple]:
         image_analysis_mode="off",
         artifact_local_storage_root=tmp_path,
     )
+    async with nats_connection(settings) as provisioner:
+        await ensure_work_topology(jetstream(provisioner), settings)
     engine = create_async_engine(DB_URL)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     adk = await open_adk_session_service(settings, pool_size=4)
@@ -1035,7 +1038,9 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
 
     settings, sessions, job, repair_id, model, resources, _ = context
     model._fail = handled_error
-    execution, _ = await _fencing_execution(context, duration=2)
+    # Allow cold ADK setup on contended integration hosts before deliberately
+    # waiting for expiry below. Product completion must commit before the loss.
+    execution, _ = await _fencing_execution(context, duration=10)
     await DiagnosticExecutionApplication(sessions, settings, resources).execute(
         ClaimedJob(
             job.id,

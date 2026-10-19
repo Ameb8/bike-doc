@@ -128,6 +128,15 @@ class PullWorker:
         self._handlers: set[asyncio.Task[JobOutcome]] = set()
         self._orphaned: set[asyncio.Task[JobOutcome]] = set()
         self._closed = False
+        self._fetch_available = False
+
+    def healthy(self) -> bool:
+        return (
+            not self._closed
+            and self._fetch_available
+            and self._fetcher is not None
+            and not self._fetcher.done()
+        )
 
     def start(self) -> None:
         if self._closed:
@@ -154,6 +163,7 @@ class PullWorker:
                     min(capacity, self.options.fetch_batch), self.options.fetch_timeout
                 )
             except Exception:
+                self._fetch_available = False
                 self.telemetry.observe(
                     "worker_available", 0, workload=self.registry.workload
                 )
@@ -165,6 +175,7 @@ class PullWorker:
                 logger.warning("job_worker_fetch_failed")
                 await self.clock.sleep(self.options.fetch_timeout)
                 continue
+            self._fetch_available = True
             self.telemetry.observe(
                 "worker_available", 1, workload=self.registry.workload
             )

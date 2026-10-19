@@ -1203,3 +1203,14 @@ input, execution-time context, bound-session failure, normal/handled-error
 completion before acknowledgement, duplicate no-op behavior, consumer isolation,
 content-safe logs and transport shutdown. Containers and volumes are removed
 on exit. No live model credentials are required.
+
+## Production queue deployment
+
+Use the standalone [production topology and operator runbook](deploy/README.md)
+for per-role secrets, private authenticated JetStream, independent worker scaling,
+health checks, OTLP alerts, worker-first rollout, rollback and recovery.
+Validate with `task deployment:validate` and `task test:deployment`.
+
+Development workers also receive narrow workload settings. Provision the shared
+broker topology with `task jobs:reconstruct` before starting either worker against
+a fresh broker; production uses the containerized operator command in its runbook.

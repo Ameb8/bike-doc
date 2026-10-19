@@ -98,6 +98,10 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
         min_length=1,
     )
+    process_role: Literal["api", "diagnostic", "profile"] = "api"
+    health_port: int = Field(default=0, ge=0, le=65535)
+
+    nats_inbox_prefix: str = "_INBOX"
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     event_poll_interval_seconds: float = Field(default=2.0, ge=1.0, le=10.0)
     nats_work_stream: str = "BIKEDOC_WORK_V1"
@@ -307,6 +311,13 @@ class Settings(BaseSettings):
     def validate_nats_subject(cls, value: str) -> str:
         if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+", value):
             raise ValueError("NATS workload subjects must contain literal tokens")
+        return value
+
+    @field_validator("nats_inbox_prefix")
+    @classmethod
+    def validate_nats_inbox_prefix(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", value):
+            raise ValueError("NATS inbox prefix must contain literal tokens")
         return value
 
     @model_validator(mode="after")
@@ -601,7 +612,11 @@ class Settings(BaseSettings):
     def validate_auth_environment(self) -> "Settings":
         """Prevent local fixed-token auth from being enabled in production."""
         environment = self.environment.lower()
-        if environment == "production" and self.auth_mode != "firebase":
+        if (
+            self.process_role == "api"
+            and environment == "production"
+            and self.auth_mode != "firebase"
+        ):
             raise ValueError("only firebase auth mode is permitted in production")
         if self.auth_mode == "firebase" and self.firebase_project_id is None:
             raise ValueError("firebase_project_id is required in firebase auth mode")
