@@ -100,3 +100,6 @@ logs/
 
 # Generated single-host deployment secrets
 .deploy-secrets/
+
+# Private disposable capacity evidence (sanitized result summaries are versioned).
+.capacity/

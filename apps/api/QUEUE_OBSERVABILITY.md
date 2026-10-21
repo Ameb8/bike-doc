@@ -60,7 +60,7 @@ series freshness and aggregation across replicas must be considered.
 | advisory | counter | consumer, advisory | max_deliver or terminated; observation only |
 | sse_latency | histogram / seconds | none | Persisted event timestamp to reader wake-up query result |
 | sse_recovery | counter | none | Poll cycle recovered persisted events without a hint |
-| pool | gauge / connections | role, pool | QueuePool size, checked_out, nonnegative overflow; roles api, worker, sse |
+| pool | gauge / connections | role, pool | QueuePool size, checked_out, nonnegative overflow; roles api, worker, sse, maintenance, adk |
 | maintenance | counter | maintenance | notification_repair, cleanup_scanned/deleted, publication/reconciliation/cleanup_scan_failed, observation_failed |
 
 `core/queue_contract.py` is the executable name/dimension/value contract.
@@ -90,10 +90,10 @@ work and consumer waiting/ack counts. Abrupt SIGKILL cannot emit a final sample:
 missing heartbeat/freshness detects a vanished process; `forced` means local
 shutdown exceeded its grace period. Alert thresholds and delivery belong to
 Task 4.3. Pool instrumentation uses driver-exposed QueuePool measurements only,
-without querying server sessions or logging connection identifiers. API
-maintenance and SSE share the API pool: the sse role is a sampled view of that
-pool, not additional connections to sum. Checkout/checkin sampling also observes
-short-lived worker and API pressure. No pool tuning is performed here.
+without querying server sessions or logging connection identifiers. API requests and SSE share the API pool: the sse role is a sampled view of
+that pool, not additional connections to sum. Maintenance and ADK use separate
+bounded pools. Checkout/checkin sampling observes short-lived pressure in each
+pool. Capacity settings and certification are recorded in deploy/CAPACITY.md.
 
 Telemetry validation/export failures cannot change outcomes or settlement.
 Transport observation failure cannot change job rows. Cancellation still
@@ -132,3 +132,8 @@ and maintenance suites. These tests use fake handlers/providers, not model calls
 Task #155's [alert contract and deployment runbook](../../deploy/README.md)
 consumes these instruments through the existing OTLP exporter. Validate its
 synthetic threshold/missing-signal behavior with `task deployment:validate`.
+
+Pool observations distinguish the reserved `maintenance` and `adk` pools from
+`api`/`worker` pools. Compute utilization separately by full process service
+name and role; `sse` aliases the API request pool and must not be added again.
+All pools have zero overflow. See [capacity certification](../../deploy/CAPACITY.md).

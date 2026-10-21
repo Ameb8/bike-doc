@@ -1,0 +1,28 @@
+# Test-only overlay on the Task 4.3 production deployment, never use in production.
+x-capacity: &capacity
+  volumes:
+    - ${BIKEDOC_CAPACITY_CODE}:/capacity:ro
+    - ${BIKEDOC_CAPACITY_OUTPUT}:/evidence
+    - artifacts:/var/lib/bikedoc/artifacts
+services:
+  api:
+    <<: *capacity
+    command: [python, /capacity/role.py, api]
+  diagnostic-worker:
+    <<: *capacity
+    command: [python, /capacity/role.py, diagnostic]
+  profile-worker:
+    <<: *capacity
+    command: [python, /capacity/role.py, profile]
+  operator:
+    <<: *capacity
+    command: [python, /capacity/role.py, driver]
+  gateway:
+    ports: !reset []
+    # No gateway access logs: URI IDs are operational correlation, but there
+    # is no reason to retain every SSE connection in the certification output.
+  collector:
+    user: '0'
+    volumes:
+      - ${BIKEDOC_CAPACITY_CODE}/collector.yaml:/etc/otelcol/config.yaml:ro
+      - ${BIKEDOC_CAPACITY_OUTPUT}:/evidence

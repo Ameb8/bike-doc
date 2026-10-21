@@ -187,8 +187,9 @@ matrix before producer enablement.
 Set the three `BIKEDOC_*_REPLICAS` variables in the deployment environment to
 retain the desired counts during every `up`, dependency start and recreation.
 An ad hoc `--scale` overrides one invocation; it does not persist across later
-commands. Defaults are one replica per role; the two-replica example verifies
-isolation and maintenance overlap, rather than establishing measured capacity.
+commands. Defaults are two replicas per role. The jointly bounded settings and
+certification limits are recorded in [CAPACITY.md](CAPACITY.md). Recalculate
+the total PostgreSQL and consumer budgets before adding replicas.
 
 For rollback, first stop ingress/new acceptance at the reverse proxy. Use
 inspection (`--filters '{"terminal":false,"limit":200}'`, paginate with `after`)
@@ -316,7 +317,8 @@ maintenance recovers expired executions and publishes eligible intent. See
 ## Alerts and executable verification
 
 `deploy/alerts.json` defines backend-neutral conditions over Task 4.2 OTLP
-instruments. Thresholds are provisional starting values, not measured SLOs.
+instruments. Threshold rationale and capacity-test safety margins are in
+[CAPACITY.md](CAPACITY.md); these are operational warnings, not production SLOs.
 The deployment's OTLP backend must implement each rule's selector and reduction
 over a rolling 300-second window and evaluate every 30 seconds. Configure its
 notification routing, access and retention there. Run:
@@ -339,8 +341,9 @@ never average quantiles. `max` drops samples older than 120 seconds before
 reducing. Worker availability takes the max across fresh replicas for each
 explicit workload; absence fires even after SIGKILL. Publication gauges and
 broker observations are duplicated by API replicas: use max, never sum.
-`pool_utilization` is max per-process checked_out / (size + overflow), grouped
-by the unique configured OTLP `service.name`; exclude the SSE alias of the API pool.
+`pool_utilization` is max per-process checked_out / (size + overflow), grouped by the unique configured OTLP `service.name` **and pool `role`**;
+exclude the SSE alias of the API pool. Roles `maintenance` and `adk` identify
+their separate bounded pools.
 Deployment appends the opaque container hostname to the configured base service
 name, e.g. `bike-doc-profile.<hostname>`. Aggregate by base name/workload across
 replicas and preserve the full service name for counter resets and pool ratios.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -112,9 +113,18 @@ class FakeRepairSessionRepository:
 
 
 @pytest.fixture(autouse=True)
-def artifact_service_override(app: FastAPI, tmp_path: Path) -> ArtifactTestContext:
+def artifact_service_override(
+    app: FastAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> ArtifactTestContext:
     """Override the artifact service with real service logic and temp storage."""
 
+    # Random opaque IDs can accidentally spell a prohibited privacy fragment
+    # (e.g. GCS). Keep content assertions strict and fixture identities stable.
+    identities = count(1)
+    monkeypatch.setattr(
+        "bike_doc_api.services.artifacts.generate_artifact_ref_id",
+        lambda: f"art_{next(identities):026d}",
+    )
     artifacts = FakeArtifactRepository()
     context = ArtifactTestContext(
         storage_root=tmp_path / "artifacts",

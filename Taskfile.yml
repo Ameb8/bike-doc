@@ -194,3 +194,9 @@ tasks:
     desc: Exercise isolated production topology, role ACLs, scaling and shutdown.
     cmds:
       - bash scripts/verify-production.sh
+
+  test:capacity:
+    desc: Certify workload budgets on disposable production topology (Docker; opt-in).
+    dir: apps/api
+    cmds:
+      - uv run python tests/capacity/certify.py --output ../../.capacity/run-$(date +%Y%m%d-%H%M%S) {{.CLI_ARGS}}

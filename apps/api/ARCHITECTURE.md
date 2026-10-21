@@ -958,3 +958,29 @@ Read-only health connections use finite initial retries and immediate bounded
 close, under a total probe deadline. Process-owned publisher/SSE/worker connections
 retain unlimited automatic reconnect and graceful drain. Broker loss must produce
 a boolean failed readiness response, not an indefinitely connecting probe.
+
+### Measured workload budgets (#156)
+
+API requests and SSE share one bounded `api` database pool. API-hosted
+publication/reconciliation/monitoring use a separate bounded `maintenance`
+pool so long SSE streams cannot occupy maintenance's connections. The existing
+cached session factory normalizes defaults before caching to avoid accidentally
+creating two API pools. ADK storage has a bounded, observed `adk` pool; worker
+product pools remain independent. Every pool has zero overflow and bounded
+checkout wait. Observations distinguish pool role within each process resource.
+
+Consumer acknowledgement limits and waits are typed settings shared by topology
+provisioning and role validation. Runtime progress cadence must remain below half
+the broker wait; local concurrency must fit the consumer limit. Live consumer
+configuration mismatches continue to fail closed. No deadline is renewed.
+
+`tests/capacity/` is an opt-in certification composition over the production
+Compose surface, product HTTP/SSE routes, existing worker factories and real
+PostgreSQL/JetStream. Only external model/extractor adapters are deterministic
+fakes. It records Task 4.2 signals and independent database/broker observations,
+checks durable-effect uniqueness and operational privacy, and owns disposable
+secrets/volumes. It is never imported by production or normal unit tests.
+`deploy/capacity.json` pins reviewed role values used by secret generation;
+unit tests keep them synchronized with typed defaults and `.env.example`.
+See [CAPACITY.md](../../deploy/CAPACITY.md) for commands, budgets, results,
+isolation limits, scaling arithmetic and alert implications.
