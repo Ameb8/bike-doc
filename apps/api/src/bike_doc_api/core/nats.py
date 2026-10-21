@@ -82,7 +82,7 @@ async def ensure_work_topology(
     js: JetStreamContext,
     settings: Settings,
     *,
-    ack_wait: float = 30,
+    ack_wait: float | None = None,
     max_deliver: int = 32,
     workload: str | None = None,
 ) -> None:
@@ -129,9 +129,13 @@ async def ensure_work_topology(
             filter_subject=subject,
             ack_policy=AckPolicy.EXPLICIT,
             deliver_policy=DeliverPolicy.ALL,
-            ack_wait=ack_wait,
+            ack_wait=settings.nats_ack_wait_seconds if ack_wait is None else ack_wait,
             max_deliver=max_deliver,
-            max_ack_pending=128,
+            max_ack_pending=(
+                settings.nats_diagnostic_max_ack_pending
+                if subject == settings.nats_diagnostic_subject
+                else settings.nats_profile_max_ack_pending
+            ),
         )
         try:
             existing_consumer = (

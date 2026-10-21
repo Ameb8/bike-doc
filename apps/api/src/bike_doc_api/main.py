@@ -55,7 +55,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             async with health_server(
                 app.state.settings,
                 lambda: dependencies(
-                    get_sessionmaker(app.state.settings.database_url),
+                    get_sessionmaker(
+                        app.state.settings.database_url,
+                        app.state.settings.api_pool_size,
+                        app.state.settings.database_pool_timeout_seconds,
+                    ),
                     app.state.settings,
                     maintenance=maintenance,
                 ),

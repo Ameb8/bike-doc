@@ -158,8 +158,8 @@ async def test_cancellation_and_stale_execution_propagate(error: BaseException) 
         {"observation_extraction_timeout_seconds": 110},
         {"price_lookup_timeout_seconds": 110},
         {"diagnostic_worker_fetch_batch": 5},
-        {"diagnostic_worker_pool_size": 5},
-        {"diagnostic_worker_adk_pool_size": 3},
+        {"diagnostic_worker_pool_size": 3},
+        {"diagnostic_worker_adk_pool_size": 1},
         {"diagnostic_worker_shutdown_seconds": 4},
         {"diagnostic_worker_progress_seconds": 15},
         {"diagnostic_worker_handler_seconds": float("nan")},
@@ -318,7 +318,7 @@ async def test_process_transports_close_even_on_partial_construction(
         client.aio.aclose.assert_awaited_once()
         client.close.assert_called_once()
     adk.close.assert_awaited_once()
-    assert open_adk.call_args.kwargs["pool_size"] == 4
+    assert open_adk.call_args.kwargs["pool_size"] == 2
 
 
 async def test_process_role_delegates_runtime_and_closes_resources(
@@ -534,7 +534,7 @@ async def test_worker_host_disposes_pool_and_nats_on_failure(
                 assert registry.select(snapshot()).kind == "diagnostic_turn"
                 raise RuntimeError("test exit")
         assert calls == ["nats_open", "runtime_close", "nats_close", "pool_close"]
-    assert construct.call_args.kwargs["pool_size"] == 6
+    assert construct.call_args.kwargs["pool_size"] == 4
     assert construct.call_args.kwargs["max_overflow"] == 0
 
 

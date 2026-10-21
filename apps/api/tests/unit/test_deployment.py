@@ -91,7 +91,7 @@ def test_production_topology() -> None:
         ("diagnostic-worker", "BIKEDOC_DIAGNOSTIC_REPLICAS"),
         ("profile-worker", "BIKEDOC_PROFILE_REPLICAS"),
     ):
-        assert services[role]["deploy"]["replicas"] == "${" + variable + ":-1}"
+        assert services[role]["deploy"]["replicas"] == "${" + variable + ":-2}"
 
 
 def test_every_alert_crosses_and_recovers() -> None:

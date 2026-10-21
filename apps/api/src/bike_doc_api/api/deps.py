@@ -38,7 +38,11 @@ async def get_db_session(
 ) -> AsyncIterator[AsyncSession]:
     """Yield a request-scoped database session."""
 
-    async for session in get_session_for_database_url(settings.database_url):
+    async for session in get_session_for_database_url(
+        settings.database_url,
+        pool_size=settings.api_pool_size,
+        pool_timeout=settings.database_pool_timeout_seconds,
+    ):
         yield session
 
 

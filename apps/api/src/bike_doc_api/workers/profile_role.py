@@ -124,6 +124,7 @@ async def profile_worker(
         pool_pre_ping=True,
         pool_size=settings.profile_worker_pool_size,
         max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
     )
     observe_pool(engine, "worker")
     sessions = async_sessionmaker(engine, expire_on_commit=False)

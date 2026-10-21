@@ -44,7 +44,7 @@ services:
   api:
     <<: *process
     deploy:
-      replicas: ${BIKEDOC_API_REPLICAS:-1}
+      replicas: ${BIKEDOC_API_REPLICAS:-2}
     command: [python, -m, bike_doc_api.operations.deployment, api]
     secrets:
       - source: api
@@ -52,7 +52,7 @@ services:
   diagnostic-worker:
     <<: *process
     deploy:
-      replicas: ${BIKEDOC_DIAGNOSTIC_REPLICAS:-1}
+      replicas: ${BIKEDOC_DIAGNOSTIC_REPLICAS:-2}
     command: [python, -m, bike_doc_api.operations.deployment, diagnostic]
     secrets:
       - source: diagnostic
@@ -60,7 +60,7 @@ services:
   profile-worker:
     <<: *process
     deploy:
-      replicas: ${BIKEDOC_PROFILE_REPLICAS:-1}
+      replicas: ${BIKEDOC_PROFILE_REPLICAS:-2}
     command: [python, -m, bike_doc_api.operations.deployment, profile]
     secrets:
       - source: profile

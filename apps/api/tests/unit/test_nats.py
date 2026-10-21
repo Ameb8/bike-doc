@@ -103,7 +103,7 @@ async def test_worker_verification_is_scoped_and_cannot_provision() -> None:
             deliver_policy=DeliverPolicy.ALL,
             ack_wait=30,
             max_deliver=32,
-            max_ack_pending=128,
+            max_ack_pending=settings.nats_profile_max_ack_pending,
         )
     )
     await ensure_work_topology(js, settings, workload="profile_inference")

@@ -28,10 +28,14 @@
     {
       "name": "queue_latency",
       "metric": "queue_latency",
-      "attributes": {},
+      "attributes": {
+        "workload": [
+          "diagnostic"
+        ]
+      },
       "reduce": "p95",
       "operator": "gt",
-      "threshold": 60
+      "threshold": 6
     },
     {
       "name": "diagnostic_workers_unavailable",
@@ -132,7 +136,9 @@
       "attributes": {
         "role": [
           "api",
-          "worker"
+          "worker",
+          "maintenance",
+          "adk"
         ]
       },
       "reduce": "pool_utilization",
@@ -170,6 +176,18 @@
       "operator": "gt",
       "threshold": 0,
       "missing_fires": true
+    },
+    {
+      "name": "profile_queue_latency",
+      "metric": "queue_latency",
+      "attributes": {
+        "workload": [
+          "profile_inference"
+        ]
+      },
+      "reduce": "p95",
+      "operator": "gt",
+      "threshold": 120
     }
   ]
 }

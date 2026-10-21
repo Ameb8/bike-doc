@@ -22,7 +22,12 @@ def create_job_maintenance(
     policies: Mapping[tuple[str, int], ReconciliationPolicy] | None = None,
 ) -> JobMaintenance:
     """Wire short independent sessions and an explicitly registered policy set."""
-    sessions = get_sessionmaker(settings.database_url)
+    sessions = get_sessionmaker(
+        settings.database_url,
+        settings.maintenance_pool_size,
+        settings.database_pool_timeout_seconds,
+        "maintenance",
+    )
 
     @asynccontextmanager
     async def transaction() -> AsyncIterator[BackgroundJobRepository]:

@@ -41,6 +41,10 @@ def prepare(directory: Path, trusted_single_host: bool) -> None:
         "TELEMETRY_OTLP_ENDPOINT": "http://collector:4318",
         "ARTIFACT_LOCAL_STORAGE_ROOT": "/var/lib/bikedoc/artifacts",
     }
+    # Reviewed jointly with Settings/.env.example and deploy/CAPACITY.md.
+    capacity = json.loads(
+        (Path(__file__).resolve().parents[1] / "deploy/capacity.json").read_text()
+    )
     stream = "BIKEDOC_WORK_V1"
     wakeup = "bikedoc.events.wakeup.v1"
     durables = ("bikedoc_diagnostic_v1", "bikedoc_profile_v1")
@@ -88,6 +92,10 @@ def prepare(directory: Path, trusted_single_host: bool) -> None:
             }
         )
         values = {prefix + k: v for k, v in common.items()}
+        if role in capacity:
+            values.update(
+                {prefix + k.upper(): str(v) for k, v in capacity[role].items()}
+            )
         values[prefix + "NATS_INBOX_PREFIX"] = f"_INBOX.{role}"
         values[prefix + "NATS_URL"] = f"nats://{role}:{password}@nats:4222"
         values[prefix + "TELEMETRY_SERVICE_NAME"] = f"bike-doc-{role}"

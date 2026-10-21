@@ -61,7 +61,7 @@ DIMENSIONS = {
     "transport": frozenset(
         {"stored", "pending", "redelivered", "ack_pending", "waiting"}
     ),
-    "role": frozenset({"api", "worker", "sse"}),
+    "role": frozenset({"api", "worker", "sse", "maintenance", "adk"}),
     "pool": frozenset({"size", "checked_out", "overflow"}),
 }
 FIELDS = {

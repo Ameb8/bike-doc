@@ -99,6 +99,13 @@ class Settings(BaseSettings):
         min_length=1,
     )
     process_role: Literal["api", "diagnostic", "profile"] = "api"
+    api_pool_size: int = Field(default=13, ge=2, le=128)
+    api_adk_pool_size: int = Field(default=1, ge=1, le=128)
+    maintenance_pool_size: int = Field(default=2, ge=1, le=16)
+    database_pool_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    nats_ack_wait_seconds: float = Field(default=30, ge=1, le=600)
+    nats_diagnostic_max_ack_pending: int = Field(default=8, ge=1, le=1024)
+    nats_profile_max_ack_pending: int = Field(default=8, ge=1, le=1024)
     health_port: int = Field(default=0, ge=0, le=65535)
 
     nats_inbox_prefix: str = "_INBOX"
@@ -118,12 +125,12 @@ class Settings(BaseSettings):
     profile_worker_timeout_grace_seconds: float = Field(
         default=5, gt=0, le=30, allow_inf_nan=False
     )
-    profile_worker_pool_size: int = Field(default=6, ge=2, le=130)
+    profile_worker_pool_size: int = Field(default=3, ge=2, le=130)
     profile_worker_retry_seconds: float = Field(
         default=10, gt=0, le=300, allow_inf_nan=False
     )
-    worker_concurrency: int = Field(default=4, ge=1, le=128)
-    worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    worker_concurrency: int = Field(default=1, ge=1, le=128)
+    worker_fetch_batch: int = Field(default=1, ge=1, le=128)
     worker_fetch_timeout_seconds: float = Field(
         default=1, gt=0, le=30, allow_inf_nan=False
     )
@@ -139,14 +146,14 @@ class Settings(BaseSettings):
     diagnostic_worker_timeout_grace_seconds: float = Field(
         default=5, gt=0, le=30, allow_inf_nan=False
     )
-    diagnostic_worker_pool_size: int = Field(default=6, ge=3, le=130)
-    diagnostic_worker_adk_pool_size: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_pool_size: int = Field(default=4, ge=3, le=130)
+    diagnostic_worker_adk_pool_size: int = Field(default=2, ge=1, le=128)
     diagnostic_worker_attempt_limit: int = Field(default=3, ge=1, le=100)
     diagnostic_worker_retry_seconds: float = Field(
         default=10, gt=0, le=300, allow_inf_nan=False
     )
-    diagnostic_worker_concurrency: int = Field(default=4, ge=1, le=128)
-    diagnostic_worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_concurrency: int = Field(default=2, ge=1, le=128)
+    diagnostic_worker_fetch_batch: int = Field(default=2, ge=1, le=128)
     diagnostic_worker_fetch_timeout_seconds: float = Field(
         default=1, gt=0, le=30, allow_inf_nan=False
     )
@@ -178,7 +185,7 @@ class Settings(BaseSettings):
     )
     job_reconstruction_page_limit: int = Field(default=100, ge=1, le=1000)
     job_maintenance_enabled: bool = True
-    job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
+    job_publication_batch_limit: int = Field(default=8, ge=1, le=100)
     job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
     job_publication_poll_seconds: float = Field(default=1, ge=0.1, le=30)
     job_publish_timeout_seconds: float = Field(default=10, ge=0.1, le=60)

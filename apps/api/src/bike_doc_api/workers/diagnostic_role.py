@@ -53,6 +53,7 @@ async def diagnostic_worker(
         pool_pre_ping=True,
         pool_size=settings.diagnostic_worker_pool_size,
         max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
     )
     try:
         observe_pool(engine, "worker")

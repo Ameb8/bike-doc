@@ -104,11 +104,9 @@ async def open_adk_session_service(
     try:
         service = DatabaseSessionService(
             db_url=settings.database_url,
-            **(
-                {"pool_size": pool_size, "max_overflow": 0}
-                if pool_size is not None
-                else {}
-            ),
+            pool_size=settings.api_adk_pool_size if pool_size is None else pool_size,
+            max_overflow=0,
+            pool_timeout=settings.database_pool_timeout_seconds,
         )
     except ValueError:
         raise RuntimeError(
@@ -117,6 +115,9 @@ async def open_adk_session_service(
     try:
         if service.db_engine.dialect.name != "postgresql":
             raise RuntimeError("ADK session storage requires PostgreSQL")
+        from bike_doc_api.db.pool_observation import observe_pool
+
+        observe_pool(service.db_engine, "adk")
         async with service.db_engine.connect() as connection:
             await connection.run_sync(_check_schema)
         return service
