@@ -368,6 +368,7 @@ class JobMaintenance:
 
     async def _run_cleanup(self) -> None:
         while True:
+            delay = self._settings.job_cleanup_poll_seconds
             try:
                 await self.cleanup_once()
                 self._last_success["cleanup"] = monotonic()
@@ -376,4 +377,8 @@ class JobMaintenance:
                     "maintenance", maintenance="cleanup_scan_failed"
                 )
                 logger.warning("job_cleanup_scan_failed")
-            await self._clock.sleep(self._settings.job_cleanup_poll_seconds)
+                # A transient checkout/DB failure during restart must not keep
+                # readiness false for the full low-frequency retention period.
+                # Retry a bounded batch without borrowing request/worker pools.
+                delay = min(delay, self._settings.job_reconciliation_poll_seconds)
+            await self._clock.sleep(delay)

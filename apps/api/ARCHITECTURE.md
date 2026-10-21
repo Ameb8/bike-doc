@@ -973,6 +973,10 @@ Consumer acknowledgement limits and waits are typed settings shared by topology
 provisioning and role validation. Runtime progress cadence must remain below half
 the broker wait; local concurrency must fit the consumer limit. Live consumer
 configuration mismatches continue to fail closed. No deadline is renewed.
+The shared runtime also checks local capacity before each returned delivery:
+the pinned client's batch fetch can return its entire pending queue after
+reconnect. Excess deliveries wait unclaimed and remain unacknowledged if the
+process stops, preserving bounded handler and database use during recovery.
 
 `tests/capacity/` is an opt-in certification composition over the production
 Compose surface, product HTTP/SSE routes, existing worker factories and real

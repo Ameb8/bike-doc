@@ -185,6 +185,19 @@ class PullWorker:
             if self._closed:
                 return
             for message in messages:
+                # A transport may return more than requested (nats-py 2.12's
+                # batch fetch drains its pending queue after reconnect). Reserve
+                # capacity per delivery rather than trusting the fetch size.
+                # Unstarted deliveries remain unacknowledged on shutdown.
+                while (
+                    len(self._active) + len(self._orphaned) >= self.options.concurrency
+                ):
+                    await asyncio.wait(
+                        [*self._active, *self._orphaned],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                if self._stopping():
+                    return
                 task = asyncio.create_task(self.process(message), name="job-delivery")
                 self._active.add(task)
                 task.add_done_callback(self._active.discard)

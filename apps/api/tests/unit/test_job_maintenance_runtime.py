@@ -415,3 +415,33 @@ async def test_readiness_requires_successful_fresh_loops() -> None:
         assert not maintenance.healthy()
     finally:
         await maintenance.close()
+
+
+async def test_failed_cleanup_retries_before_normal_retention_cadence() -> None:
+    delays = []
+    recovered = asyncio.Event()
+
+    class RetryClock(FakeClock):
+        async def sleep(self, seconds: float) -> None:
+            delays.append(seconds)
+            if len(delays) == 2:
+                recovered.set()
+                await asyncio.Future[None]()
+
+    host = JobMaintenance(
+        Settings(job_cleanup_poll_seconds=600, job_reconciliation_poll_seconds=30),
+        AsyncMock(),
+        FakePublisher(),
+        {},
+        clock=RetryClock(),
+    )
+    host.cleanup_once = AsyncMock(side_effect=[TimeoutError(), 0])
+    task = asyncio.create_task(host._run_cleanup())
+    try:
+        await asyncio.wait_for(recovered.wait(), 1)
+        assert delays == [30, 600]
+        assert "cleanup" in host._last_success
+        assert host.cleanup_once.await_count == 2
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

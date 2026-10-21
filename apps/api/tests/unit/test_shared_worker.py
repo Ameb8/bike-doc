@@ -541,6 +541,62 @@ async def test_shutdown_stops_fetching_bounds_concurrency_and_drains(
     await runtime.close()
 
 
+@pytest.mark.parametrize("shutdown", [False, True])
+async def test_reconnect_overfetch_cannot_exceed_local_capacity(
+    shutdown: bool,
+) -> None:
+    release = asyncio.Event()
+    started = asyncio.Event()
+    calls = 0
+
+    async def handle(job: ClaimedJob[Input]) -> JobOutcome:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            started.set()
+        await release.wait()
+        return JobOutcome("succeeded")
+
+    class ReconnectedTransport(FakeTransport):
+        async def fetch(
+            self, batch: int, wait_seconds: float
+        ) -> Sequence[FakeDelivery]:
+            if self.messages:
+                # Pinned nats-py's batch fetch drains the pending queue, which
+                # may contain more than the requested batch after reconnect.
+                messages, self.messages = self.messages, []
+                return messages
+            return await super().fetch(batch, wait_seconds)
+
+    runtime, store, events = worker(
+        DeliveryResolution(ResolutionKind.EXECUTABLE, snapshot()),
+        handle,
+        concurrency=2,
+        fetch_batch=2,
+        shutdown_timeout=0.01,
+    )
+    transport = ReconnectedTransport([FakeDelivery(events=events) for _ in range(8)])
+    runtime.transport = transport
+    runtime.start()
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+        await asyncio.sleep(0.01)
+        assert calls == store.calls == 2
+        if shutdown:
+            await runtime.close()
+            assert store.calls == 2 and events.count("ack") == 0
+        else:
+            release.set()
+            async with asyncio.timeout(1):
+                while events.count("ack") < 8:  # noqa: ASYNC110
+                    await asyncio.sleep(0.01)
+            assert store.calls == 8
+    finally:
+        release.set()
+        await runtime.close()
+    assert transport.closed
+
+
 @pytest.mark.parametrize(
     "data",
     [
