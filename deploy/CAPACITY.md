@@ -15,7 +15,11 @@ not changed. Each run uses a fresh `.capacity/run-TIMESTAMP` directory and
 refuses to overwrite evidence. All resources it creates are removed in `finally`;
 existing projects are untouched. Raw evidence stays private (0700 directory,
 git/Docker ignored). A sanitized result summary is versioned alongside this
-file. A failed gate exits nonzero; inspect that run's private logs locally.
+file. On success, `certification.json` contains the environment fingerprints
+and an allowlist of aggregate scenario measurements and gates; copy that file to
+`deploy/capacity-results.json` after reviewing it. It excludes raw captures,
+private identities and per-process capture names. A failed gate exits nonzero;
+inspect that run's private logs locally.
 Do not publish raw captures or secrets. This is a finite certification workload,
 not a claim about production model throughput or high availability.
 
@@ -87,6 +91,29 @@ execution capacity. Changing a consumer's limit or AckWait requires an explicit
 stop/drain/reprovision operation: topology checks reject incompatible existing
 consumers. Never silently update a live durable or delete outstanding work.
 
+The runtime enforces the local limit before starting each delivery even when
+the client returns more messages than requested. In nats-py 2.12.0, batch fetch
+drains the subscription's pending queue after reconnect. A rejected outage run
+observed eight active handlers in one diagnostic process configured for two,
+followed by two dead diagnostics. Per-delivery admission now bounds claims and
+handlers; buffered notifications remain unclaimed and unacknowledged on shutdown.
+The reconnect-overfetch unit regression covers both full drain and shutdown;
+the repeated outage certification checks real process peaks.
+
+A coordinated six-process cold restart exposed a second recovery issue: one
+API's first cleanup scan failed under restart pressure, then waited the normal
+600s retention cadence without becoming ready. Failed cleanup scans now retry
+at the smaller of the retention and reconciliation intervals (30s here), then
+return to 600s after success. Readiness still requires all three maintenance
+loops to succeed; neither pool limits nor health checks are bypassed.
+The same rejected run durably interrupted four lost diagnostics at 144.4s and
+settled the remaining accepted work by 191.4s after injection. The test-host
+coordinated-loss recovery/queue gate is therefore 240s: 191s observed work
+settlement, one 30s cleanup retry and 19s margin. This covers simultaneous cold
+restart on this Pi; the normal diagnostic queue gate remains 8s and the hard
+execution deadlines remain 120s/60s. Loss runs must still prove new acceptance,
+complete drain, unique effects and SSE recovery before passing.
+
 For PostgreSQL `max_connections=100`, the test topology's **maximum** is:
 
 ```
@@ -126,12 +153,28 @@ of every role must contribute signal files. Every turn must have exactly one
 `turn.completed`; successful profile inference must have one run, one claim and
 at most one profile revision. All eligible intent and consumer pending/ACK counts
 must drain to zero. A failed profile uses exactly its application attempt budget.
+Every captured pool size and checkout sample is checked against its role's
+reservation (including API, maintenance, diagnostic product, ADK and the SSE
+alias); an unexpected pool role fails certification.
 
 Interruption-specific gates are explicit rather than mixed into normal service
-latency: burst queue p95 <=24s with acceptance p95 <=4s; broker restart queue
+latency: burst queue p95 <=24s; all unpaced two-client scenarios (burst,
+worker/API loss, broker restart and timing) use acceptance p95 <=4s. The
+worker-loss calibration measured 2.503s admission p95; its prior steady-traffic
+2s gate mismatched the unpaced offered load. Paced mixed/profile scenarios
+retain the 2s gate. NATS downtime separately measures admission while offline and during restoration,
+both retaining the normal 2s p95 gate after correcting the SSE reader timeout. Broker restart queue
 p95 <=60s; NATS downtime queue p95/drain <=150s;
-worker/API loss queue/recovery <=180s, SSE p95 <=40s for reconnect/replay. Timing
-scenario queue p95 <=20s. Execution p95 stays below the configured hard deadline
+worker/API loss queue/recovery and SSE replay age <=240s. After API recovery,
+one completed reader moves to the newly accepted session (eight readers remain),
+and a separate nonempty sample of events created after recovery must meet the
+normal 3s live SSE p95 gate. A rejected run observed 140.376s replay age during
+the all-API outage, despite 1.359s wake-up observations and 181.748s recovery;
+the provisional 40s replay gate did not include measured cold restart time.
+The replay gate now covers the same bounded outage as the recovery gate, while
+the independent fresh-event gate verifies restored service latency. Timing
+scenario queue p95 <=30s: the measured 22.046s includes 12s fake calls and
+cold framework overhead; the gate reserves approximately 8s margin. Execution p95 stays below the configured hard deadline
 for each kind; recovery time also includes reconciliation and application retry.
 The budget is an upper bound, not a target operating latency.
 
@@ -242,6 +285,15 @@ measured while the profile workload is under pressure. Reader loops reconnect
 and replay after HTTP read/server timeouts or process loss. SSE shares the API
 request pool throughout these loops.
 
+SSE reads allow 45s between frames; connect/write/pool timeouts and ordinary
+request reads remain 15s. The original 15s stream read timeout matched the
+server's 15s heartbeat before commit/network overhead, causing artificial
+reconnects and cancellation during heartbeat writes. A rejected run reached
+13.138s restored admission and 6.477s SSE p95 while pools remained below their
+ceilings and lock waiters stayed at zero. That run is retained as failed
+calibration. Long-lived readers now leave heartbeat margin; all latency gates
+remain independently enforced.
+
 The initial four-submitter burst met queue (11.478s p95), SSE (2.744s) and
 connection (36 peak) gates but failed its 4s admission gate at 5.894s p95.
 The certified traffic candidate therefore limits concurrent submitters to two
@@ -295,3 +347,82 @@ full publish timeout has elapsed beyond the restoration marker, a separate
 nonempty sample set must meet the unchanged 1s connected-state ACK gate. The
 outage's exact PostgreSQL snapshot verifies all 36 accepted intents are pending;
 it supplements periodic pressure samples when recording the pending maximum.
+
+### Acceptance evidence and interpretation
+
+Each certified case starts a fresh topology; `capacity-results.json` combines
+successful per-case reports rather than merging percentiles across runs. The
+common environment records the runtime image, source fingerprints and selected
+settings. Per-run source overrides retain provenance when only certification
+adapters or gates changed. Raw evidence remains under the named private run
+folders and is deliberately excluded from version control.
+
+The following checks apply to every successful case: nonempty broker, log,
+trace and metric privacy captures; minimal broker envelopes; independent
+PostgreSQL and consumer pressure samples; per-process pool and active-handler
+ceilings; durable effects unique; and final publication/transport drain. The
+profile cases additionally prove isolation under backlog and failed provider
+calls. The timing case requires progress acknowledgements for both kinds and
+unchanged deadlines. Worker loss requires actual reconciliation recovery and
+fresh live SSE samples after recovery; wake-up loss requires polling recovery.
+These checks complement the unit tests for timing/configuration validation,
+reconnect overfetch admission and cleanup retry readiness.
+
+The existing alerts remain selected: diagnostic queue 6s warns before the 8s
+steady failure gate, database utilization 80% retains 20% headroom, and
+publication age 60s catches unexpected lag without treating every short
+reconnect as sustained backlog. Healthy runs have zero redeliveries; injected
+profile failures and worker loss produced four and five respectively. Retain
+the existing abnormal-redelivery threshold of ten rather than fitting an alert
+to deliberate faults in this short certification. Interruption, publication
+failure, maximum delivery and forced shutdown have independent immediate
+alerts. Repeat this calibration with deployment-specific histogram buckets,
+arrival distributions, provider service times and host resources before
+changing production alert thresholds or scaling counts.
+
+### Selected-topology measurements
+
+All ten scenarios passed, each on its own clean topology. Latencies below are
+seconds; admission, diagnostic queue, publication ACK and SSE are nearest-rank
+p95. Recovery is time until accepted product work settles after the final
+arrival or injected interruption, as defined by the scenario; it is not an
+execution percentile. PostgreSQL totals are independent sampled maxima.
+
+| Scenario | Admission | Diagnostic queue | Publication ACK | SSE | Recovery | PG connections |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| nats_outage | 0.676 | 102.528 | 4.221 | 1.927 | 103.495 | 32 |
+| broker_restart | 1.779 | 38.268 | 0.117 | 2.124 | 46.059 | 34 |
+| duplicates | 0.755 | 1.735 | 0.048 | 1.097 | 4.908 | 27 |
+| wakeup_loss | 0.593 | 1.738 | 0.070 | 1.997 | 2.403 | 25 |
+| timing | 3.310 | 17.544 | 0.137 | 1.796 | 30.041 | 31 |
+| profile_failure | 0.715 | 1.331 | 0.034 | 0.534 | 24.579 | 28 |
+| burst | 2.219 | 10.394 | 0.121 | 1.766 | 11.921 | 33 |
+| steady | 0.468 | 1.495 | 0.050 | 0.632 | 2.244 | 25 |
+| profile_backlog | 0.809 | 1.238 | 0.023 | 0.299 | 19.447 | 31 |
+| worker_loss | 1.876 | 164.761 | 0.624 | 7.407 | 181.940 | 30 |
+
+NATS downtime retained all 36 offline publication intents; offline/restored
+admission p95 was 0.676s/0.633s. Its ACK measurement includes reconnection;
+the independent post-reconnection ACK p95 was 0.029s over
+37 samples, meeting the normal 1s gate. Worker-loss SSE includes outage replay;
+fresh post-recovery SSE p95 was 0.374s over 3 samples, meeting the 3s live gate.
+Duplicate-pressure transport drain took 116.536s, within its 165s deadline-aware
+gate. Profile backlog reached 29 pending messages; profile failure produced
+144 execution samples for 48 jobs (three bounded attempts each), while
+diagnostic queue p95 remained 1.331s. Wake-up loss recorded 16 polling recoveries.
+The timing run recorded eight diagnostic and four profile progress ACKs,
+12 fixed deadlines and maximum elapsed execution 18.935s/13.379s, with one
+attempt for every job. All cases ended with zero pending/unacknowledged
+consumer deliveries and unique durable effects.
+
+Verification used `task format`, `task check` (1,136 passed, 72 skipped,
+126 deselected; infrastructure tests remain opt-in), and
+`task deployment:validate` (19 passed plus alert/config/script validation).
+These were followed by the documented
+`task test:capacity -- --scenario NAME --no-build` target for each case;
+the final focused reruns were broker restart,
+timing and NATS downtime. The reused image's 186 runtime Python files were
+checked against host source hashes before the sweep; all recorded cases share
+that exact image and runtime source. The report retains individual harness
+fingerprints and effective gates. No paid-provider or different-hardware
+capacity claim follows from these results.
