@@ -20,12 +20,69 @@ from budget import (
     SCENARIOS,
     percentile,
     scenario_budgets,
+    validate_pools,
 )
 
 REPO = Path(__file__).resolve().parents[4]
 CODE = Path(__file__).resolve().parent
 SECRET_SENTINEL = "CAPACITY_PROHIBITED_SECRET_156"
 AUTH_SENTINEL = "CAPACITY_PROHIBITED_AUTH_156"
+
+
+def certification_report(
+    environment: dict[str, Any], results: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Finite aggregate evidence suitable for review; raw captures stay private."""
+    fields = (
+        "scenario",
+        "accepted_turns",
+        "jobs",
+        "acceptance_p95_seconds",
+        "outage_acceptance_p95_seconds",
+        "restored_acceptance_p95_seconds",
+        "diagnostic_queue_p95_seconds",
+        "publication_ack_p95_seconds",
+        "publication_ack_recovered_p95_seconds",
+        "publication_ack_recovered_samples",
+        "execution",
+        "queue",
+        "sse_p95_seconds",
+        "sse_samples",
+        "sse_resumed_p95_seconds",
+        "sse_resumed_samples",
+        "sse_poll_recoveries",
+        "recovery_seconds",
+        "recovery_events",
+        "transport_drain_seconds",
+        "database_connections_max",
+        "pool_role_peaks",
+        "active_role_peaks",
+        "consumer_peaks",
+        "transport_final",
+        "stream_messages_max",
+        "lock_waiters_max",
+        "publication_pending_max",
+        "outage_intents",
+        "durable_effects_unique",
+        "interrupted_jobs",
+        "fixed_deadlines_observed",
+        "timing",
+        "progress_acknowledgements",
+        "resolution_counts",
+        "broker_samples",
+        "process_counts",
+        "shutdown_exit_codes",
+        "budgets",
+        "checks",
+        "passed",
+    )
+    return {
+        "schema_version": 1,
+        "environment": environment,
+        "scenarios": [
+            {key: result[key] for key in fields if key in result} for result in results
+        ],
+    }
 
 
 def invoke(command: list[str], env: dict[str, str], log: Path) -> None:
@@ -217,6 +274,7 @@ def evaluate(output: Path, forbidden: list[str]) -> dict[str, Any]:
     active_peaks = {}
     for path in output.glob("signals-*.jsonl"):
         records = [json.loads(line) for line in path.read_text().splitlines()]
+        validate_pools(path.name.removeprefix("signals-").split("-")[0], records)
         if path.name.startswith(("signals-diagnostic-", "signals-profile-")):
             limit = 2 if path.name.startswith("signals-diagnostic-") else 1
             active = 0.0
@@ -237,18 +295,27 @@ def evaluate(output: Path, forbidden: list[str]) -> dict[str, Any]:
             )
             for role in {o["attributes"]["role"] for o in pools}
         }
-        assert all(
-            o["value"] == 0 for o in pools if o["attributes"]["pool"] == "overflow"
-        )
-        if path.name.startswith("signals-profile-"):
-            assert (
-                max(
-                    o["value"]
-                    for o in pools
-                    if o["attributes"]["pool"] == "checked_out"
-                )
-                <= 3
-            )
+    pool_role_peaks: dict[str, dict[str, float]] = {}
+    active_role_peaks: dict[str, float] = {}
+    for process, peaks in pool_peaks.items():
+        roles = pool_role_peaks.setdefault(process.split("-")[0], {})
+        for role, value in peaks.items():
+            roles[role] = max(roles.get(role, 0), value)
+    for process, peak in active_peaks.items():
+        role = process.split("-")[0]
+        active_role_peaks[role] = max(active_role_peaks.get(role, 0), peak)
+    consumer_peaks = {}
+    for workload in ("diagnostic", "profile_inference"):
+        samples = [
+            s["consumers"][workload]
+            for s in result["database_samples"]
+            if workload in s.get("consumers", {})
+        ]
+        assert samples, f"missing independent consumer samples: {workload}"
+        consumer_peaks[workload] = {
+            field: max(sample[field] for sample in samples)
+            for field in ("pending", "ack_pending", "redelivered")
+        }
     checks = {
         name: result[name] <= limit
         for name, limit in budgets.items()
@@ -281,6 +348,10 @@ def evaluate(output: Path, forbidden: list[str]) -> dict[str, Any]:
         passed=all(checks.values()),
         pool_peaks=pool_peaks,
         active_peaks=active_peaks,
+        pool_role_peaks=pool_role_peaks,
+        active_role_peaks=active_role_peaks,
+        consumer_peaks=consumer_peaks,
+        stream_messages_max=max(s.get("stored", 0) for s in result["database_samples"]),
     )
     pressure = result.pop("database_samples")
     (output / "pressure.json").write_text(json.dumps(pressure, indent=2) + "\n")
@@ -355,6 +426,7 @@ def certify(scenario: str, destination: Path, build: bool) -> dict[str, Any]:
         # Passive observation of published work only, isolated from role ACLs.
         config_path = root / "nats.conf"
         config = json.loads(config_path.read_text())
+        forbidden.extend(user["password"] for user in config["authorization"]["users"])
         password = secrets.token_hex(32)
         forbidden.append(password)
         config["authorization"]["users"].append(
@@ -666,6 +738,9 @@ def main() -> None:
             )
         print(f"Passed {scenario}", flush=True)
     (output / "summary.json").write_text(json.dumps(results, indent=2) + "\n")
+    (output / "certification.json").write_text(
+        json.dumps(certification_report(environment, results), indent=2) + "\n"
+    )
 
 
 if __name__ == "__main__":

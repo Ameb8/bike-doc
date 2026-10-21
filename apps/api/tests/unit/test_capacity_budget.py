@@ -98,6 +98,38 @@ def test_deployment_budget_matches_typed_defaults_and_env_template() -> None:
             assert f"BIKE_DOC_API_{key.upper()}={value}\n" in template
 
 
+@pytest.mark.parametrize(
+    ("process", "role", "limit"),
+    [
+        ("api", "api", 13),
+        ("api", "sse", 13),
+        ("api", "maintenance", 2),
+        ("api", "adk", 1),
+        ("diagnostic", "worker", 4),
+        ("diagnostic", "adk", 2),
+        ("profile", "worker", 3),
+    ],
+)
+def test_certification_enforces_every_reserved_pool(
+    process: str, role: str, limit: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capacity = Path(__file__).resolve().parents[1] / "capacity"
+    monkeypatch.syspath_prepend(str(capacity))
+    from budget import validate_pools
+
+    def observation(field: str, value: int) -> dict[str, object]:
+        return dict(metric="pool", value=value, attributes=dict(role=role, pool=field))
+
+    validate_pools(process, [observation("checked_out", limit)])
+    for field, value in (
+        ("checked_out", limit + 1),
+        ("size", limit + 1),
+        ("overflow", 1),
+    ):
+        with pytest.raises(AssertionError, match="exceeds reserved capacity"):
+            validate_pools(process, [observation(field, value)])
+
+
 def test_restoration_budget_keeps_the_connected_publication_gate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -154,3 +186,35 @@ def test_certification_rejects_content_on_every_operational_surface(
     (tmp_path / surface).write_text(sentinel)
     with pytest.raises(AssertionError, match=f"privacy failure on {surface}"):
         module.evaluate(tmp_path, [sentinel])
+
+
+def test_review_report_excludes_raw_capture_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    capacity = Path(__file__).resolve().parents[1] / "capacity"
+    monkeypatch.syspath_prepend(str(capacity))
+    from certify import certification_report
+
+    report = certification_report(
+        {"replicas": {"api": 2}},
+        [
+            {
+                "scenario": "steady",
+                "passed": True,
+                "checks": {"database_connections_max": True},
+                "database_connections_max": 32,
+                "private_identities": ["private-user"],
+                "database_samples": [{"private": "raw-capture"}],
+                "pool_peaks": {"private-process": {}},
+            }
+        ],
+    )
+    assert report["scenarios"] == [
+        {
+            "scenario": "steady",
+            "passed": True,
+            "checks": {"database_connections_max": True},
+            "database_connections_max": 32,
+        }
+    ]
+    assert "private" not in json.dumps(report)

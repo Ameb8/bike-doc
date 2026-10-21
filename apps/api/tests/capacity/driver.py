@@ -50,7 +50,11 @@ async def run(settings: Settings, scenario: str) -> None:
     samples = []
     deadlines = {}
     sse_latencies = []
+    resumed_sse_latencies = []
+    resumed_after: float | None = None
     acceptance = []
+    outage_acceptance = []
+    restored_acceptance = []
     observed_messages = []
     invalid_messages = []
     recoveries = []
@@ -279,6 +283,10 @@ async def run(settings: Settings, scenario: str) -> None:
                                 "GET",
                                 f"/repair-sessions/{repair_id}/events",
                                 params={"after": cursor, "timeout_seconds": 120},
+                                # Heartbeats arrive every 15s plus commit/network
+                                # latency. Keep request deadlines at 15s, but
+                                # give long-lived readers heartbeat margin.
+                                timeout=httpx.Timeout(15, read=45),
                             ) as response:
                                 if response.status_code >= 500:
                                     await asyncio.sleep(0.2)
@@ -294,11 +302,15 @@ async def run(settings: Settings, scenario: str) -> None:
                                         created = datetime.fromisoformat(
                                             event["created_at"]
                                         )
-                                        sse_latencies.append(
-                                            (
-                                                datetime.now(UTC) - created
-                                            ).total_seconds()
-                                        )
+                                        latency = (
+                                            datetime.now(UTC) - created
+                                        ).total_seconds()
+                                        sse_latencies.append(latency)
+                                        if (
+                                            resumed_after is not None
+                                            and created.timestamp() >= resumed_after
+                                        ):
+                                            resumed_sse_latencies.append(latency)
                                         if event["type"] == "turn.completed":
                                             completed.set()
                         except (httpx.TransportError, httpx.HTTPStatusError):
@@ -337,7 +349,11 @@ async def run(settings: Settings, scenario: str) -> None:
                             "message": {"text": CONTENT, "artifact_ids": repair[1]},
                         },
                     )
-                    acceptance.append(time.monotonic() - start)
+                    latency = time.monotonic() - start
+                    acceptance.append(latency)
+                    if scenario == "nats_outage":
+                        phase = outage_acceptance if index < 24 else restored_acceptance
+                        phase.append(latency)
 
             try:
                 initial = repairs[:24] if scenario == "nats_outage" else repairs
@@ -398,6 +414,22 @@ async def run(settings: Settings, scenario: str) -> None:
                     )
                     await visible(RepairSession, fresh_repair["id"])
                     repairs.append((fresh_repair["id"], []))
+                    if scenario == "worker_loss":
+                        # Measure live delivery after all API hosts recover,
+                        # separately from the age of replayed outage events.
+                        # Keep eight readers, and require the replaced session's
+                        # completion before moving its reader to the fresh turn.
+                        await asyncio.wait_for(read_completed[0].wait(), 40)
+                        readers[0].cancel()
+                        await asyncio.gather(readers[0], return_exceptions=True)
+                        ready = asyncio.Event()
+                        completed = asyncio.Event()
+                        resumed_after = time.time()
+                        read_completed[0] = completed
+                        readers[0] = asyncio.create_task(
+                            reader(fresh_repair["id"], ready, completed)
+                        )
+                        await asyncio.wait_for(ready.wait(), 20)
                     await accept(count, repairs[-1])
                     count += 1
                 else:
@@ -478,7 +510,11 @@ async def run(settings: Settings, scenario: str) -> None:
                                 if scenario == "worker_loss"
                                 else {"succeeded"}
                             )
-                            assert job.state in allowed, "unexpected diagnostic failure"
+                            assert job.state in allowed, (
+                                "unexpected diagnostic failure: "
+                                f"{job.state}/{job.latest_error_category} "
+                                f"after {job.attempt_count} attempts"
+                            )
                         elif scenario == "profile_failure":
                             assert (
                                 job.state == "dead"
@@ -522,10 +558,34 @@ async def run(settings: Settings, scenario: str) -> None:
                     accepted_turns=count,
                     jobs=len(jobs),
                     acceptance_p95_seconds=percentile(acceptance),
+                    outage_acceptance_p95_seconds=(
+                        percentile(outage_acceptance)
+                        if scenario == "nats_outage"
+                        else None
+                    ),
+                    restored_acceptance_p95_seconds=(
+                        percentile(restored_acceptance)
+                        if scenario == "nats_outage"
+                        else None
+                    ),
                     sse_p95_seconds=percentile(sse_latencies),
                     sse_samples=len(sse_latencies),
+                    sse_resumed_p95_seconds=(
+                        percentile(resumed_sse_latencies)
+                        if scenario == "worker_loss"
+                        else None
+                    ),
+                    sse_resumed_samples=len(resumed_sse_latencies),
                     recovery_seconds=max(recoveries),
                     transport_drain_seconds=transport_drain,
+                    transport_final={
+                        workload: dict(
+                            pending=info.num_pending, ack_pending=info.num_ack_pending
+                        )
+                        for workload, info in zip(
+                            ("diagnostic", "profile_inference"), infos, strict=True
+                        )
+                    },
                     timing=timing,
                     database_connections_max=max(s["connections"] for s in samples),
                     lock_waiters_max=max(s["lock_waiters"] for s in samples),
