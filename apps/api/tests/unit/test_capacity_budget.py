@@ -218,3 +218,55 @@ def test_review_report_excludes_raw_capture_fields(
         }
     ]
     assert "private" not in json.dumps(report)
+
+
+def test_failed_scenario_retains_safe_measurements_and_forces_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capacity = Path(__file__).resolve().parents[1] / "capacity"
+    monkeypatch.syspath_prepend(str(capacity))
+    from certify import failed_scenario_report
+
+    case = tmp_path / "burst"
+    case.mkdir()
+    secret = "PROHIBITED_PROVIDER_CONTENT_AND_CREDENTIALS"
+    (case / "result.json").write_text(
+        json.dumps(
+            {
+                "scenario": "burst",
+                "passed": True,
+                "checks": {"acceptance_p95_seconds": False},
+                "acceptance_p95_seconds": 5.0,
+                "durable_effects_unique": True,
+                "transport_final": {"diagnostic": {"pending": 0, "ack_pending": 0}},
+                "private_identities": [secret],
+                "database_samples": [{"private": secret}],
+                "failure": {"private": secret},
+            }
+        )
+    )
+    (case / "driver.log").write_text(
+        f'{secret}\nFile "/private/{secret}.py", line 99\n'
+        'File "/capacity/driver.py", line 123\n'
+        f"AssertionError: {secret}\n"
+    )
+    report = failed_scenario_report("burst", tmp_path, AssertionError(secret))
+    assert report["passed"] is False
+    assert report["checks"] == {
+        "acceptance_p95_seconds": False,
+        "scenario_completed": False,
+    }
+    assert report["acceptance_p95_seconds"] == 5.0
+    assert report["durable_effects_unique"] is True
+    assert report["transport_final"]["diagnostic"]["ack_pending"] == 0
+    assert report["failure"] == {
+        "category": "assertion",
+        "component": "driver",
+        "line": 123,
+    }
+    assert secret not in json.dumps(report)
+    (case / "result.json").write_text("unfinished")
+    incomplete = failed_scenario_report("burst", tmp_path, RuntimeError(secret))
+    assert incomplete["passed"] is False
+    assert incomplete["checks"] == {"scenario_completed": False}
+    assert secret not in json.dumps(incomplete)

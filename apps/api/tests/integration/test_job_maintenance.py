@@ -261,7 +261,10 @@ async def test_two_hosts_claim_and_reconcile_without_duplicate_attempts(
 ) -> None:
     jobs = [await harness.create() for _ in range(20)]
     first, second = harness.host(), harness.host()
-    await asyncio.gather(first.publish_once(), second.publish_once())
+    # The tuned per-host batch is eight: drain twenty intents over bounded
+    # cycles rather than assuming one replica can publish the whole fixture.
+    for _ in range(2):
+        await asyncio.gather(first.publish_once(), second.publish_once())
     async with nats_connection(harness.settings) as client:
         assert (
             await jetstream(client).stream_info(harness.settings.nats_work_stream)
@@ -277,7 +280,8 @@ async def test_two_hosts_claim_and_reconcile_without_duplicate_attempts(
     for job in jobs:
         row = await harness.row(job.id)
         assert row.desired_generation == 2 and row.attempt_count == 0
-    await asyncio.gather(first.publish_once(), second.publish_once())
+    for _ in range(2):
+        await asyncio.gather(first.publish_once(), second.publish_once())
     async with nats_connection(harness.settings) as client:
         assert (
             await jetstream(client).stream_info(harness.settings.nats_work_stream)
@@ -489,6 +493,8 @@ async def test_reconstruction_broker_loss_restart_overlap_and_delivery(
             )
         )
     host = harness.host()
+    # Nine initial intents exceed the tuned per-cycle batch of eight.
+    await host.publish_once()
     await host.publish_once()
     async with nats_connection(harness.settings) as client:
         js = jetstream(client)

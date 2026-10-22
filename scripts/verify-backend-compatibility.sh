@@ -2,6 +2,19 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+certification_output=""
+if [[ "${1:-}" == certification ]]; then
+  certification_output="$2"
+fi
+setup_phase=initialization
+phase() {
+  setup_phase="$1"
+  if [[ -n "$certification_output" ]]; then
+    printf '{"phase":"%s","status":"%s"}\n' "$1" "$2" \
+      > "$certification_output/setup.json"
+  fi
+}
+phase initialization running
 suffix="$(python3 -c 'import uuid; print(uuid.uuid4().hex[:16])')"
 db_name="bike-doc-compat-db-${suffix}"
 nats_name="bike-doc-compat-nats-${suffix}"
@@ -10,23 +23,31 @@ nats_volume="${nats_name}-data"
 password="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
 
 cleanup() {
+  local outcome=$?
+  if [[ "$outcome" != 0 ]]; then
+    phase "$setup_phase" failed
+  fi
   docker rm -f "$db_name" "$nats_name" >/dev/null 2>&1 || true
   docker volume rm "$db_volume" "$nats_volume" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+trap 'exit 143' TERM INT
 
+phase database_start running
 docker volume create "$db_volume" >/dev/null
 docker volume create "$nats_volume" >/dev/null
 docker run -d --name "$db_name" \
   -e POSTGRES_USER=bikedoc -e "POSTGRES_PASSWORD=$password" -e POSTGRES_DB=bikedoc \
   -p 127.0.0.1::5432 -v "$db_volume:/var/lib/postgresql/data" \
   postgres:16-alpine >/dev/null
+phase broker_start running
 # A fixed selected host port survives Docker stop/start failure injection.
 nats_host_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 docker run -d --name "$nats_name" -p "127.0.0.1:${nats_host_port}:4222" \
   -v "$nats_volume:/data" nats:2.12.1-alpine \
   -js -sd /data -m 8222 >/dev/null
 
+phase readiness running
 ready=false
 for _ in $(seq 1 60); do
   if docker exec "$db_name" pg_isready -q -U bikedoc -d bikedoc \
@@ -56,7 +77,15 @@ export BIKE_DOC_API_MAINTENANCE_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL"
 export BIKE_DOC_API_MAINTENANCE_TEST_NATS_URL="$BIKE_DOC_API_EVENT_TEST_NATS_URL"
 
 cd apps/api
+phase migrations running
 uv run alembic upgrade head
+if [[ "${1:-}" == certification ]]; then
+  export BIKE_DOC_API_TEST_DATABASE_URL="$BIKE_DOC_API_DATABASE_URL"
+  phase tests running
+  uv run python tests/certification/run_tests.py "$2"
+  phase completed passed
+  exit 0
+fi
 if [[ "${1:-}" == observability ]]; then
   uv run pytest -vv -m nats tests/integration/test_worker_runtime.py tests/integration/test_job_maintenance.py tests/integration/test_diagnostic_worker.py tests/integration/test_cross_process_event_wakeups.py
   exit 0

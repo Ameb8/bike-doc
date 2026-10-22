@@ -5,10 +5,12 @@ import hashlib
 import json
 import os
 import platform
+import re
 import secrets
 import subprocess
 import tempfile
 import time
+import traceback
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -75,6 +77,7 @@ def certification_report(
         "budgets",
         "checks",
         "passed",
+        "failure",
     )
     return {
         "schema_version": 1,
@@ -83,6 +86,61 @@ def certification_report(
             {key: result[key] for key in fields if key in result} for result in results
         ],
     }
+
+
+def failed_scenario_report(
+    scenario: str, output: Path, error: BaseException
+) -> dict[str, Any]:
+    """Retain measured truth/transport aggregates, never exception content."""
+    result: dict[str, Any] = {}
+    path = output / scenario / "result.json"
+    try:
+        if path.stat().st_size <= 2_000_000:
+            raw = json.loads(path.read_text())
+            result = certification_report({}, [raw])["scenarios"][0]
+    except (OSError, ValueError, TypeError):
+        pass
+    result.update(scenario=scenario, passed=False)
+    result["checks"] = {**result.get("checks", {}), "scenario_completed": False}
+    category = (
+        "assertion"
+        if isinstance(error, AssertionError)
+        else "timeout"
+        if isinstance(error, subprocess.TimeoutExpired)
+        else "process"
+        if isinstance(error, subprocess.CalledProcessError)
+        else "interrupted"
+        if isinstance(error, KeyboardInterrupt | SystemExit)
+        else "unexpected"
+    )
+    # Source locations identify the failed assertion without copying messages,
+    # locals, command arguments, dependency output or credential-bearing URLs.
+    frames = traceback.extract_tb(error.__traceback__)
+    location = next(
+        (frame for frame in reversed(frames) if Path(frame.filename).parent == CODE),
+        None,
+    )
+    result["failure"] = {
+        "category": category,
+        "component": "capacity" if location else "dependency",
+        "line": location.lineno if location else None,
+    }
+    # A driver process failure otherwise points only at its host's exit-code
+    # assertion. Extract a public source location from a bounded tail, while
+    # discarding all exception messages, URLs, locals and captured content.
+    try:
+        with (output / scenario / "driver.log").open("rb") as log:
+            log.seek(max(0, log.seek(0, 2) - 65536))
+            tail = log.read(65536).decode(errors="replace")
+        locations = re.findall(
+            r'File "/capacity/(driver|role|budget)\.py", line (\d+)', tail
+        )
+        if locations:
+            component, line = locations[-1]
+            result["failure"].update(component=component, line=int(line))
+    except OSError:
+        pass
+    return result
 
 
 def invoke(command: list[str], env: dict[str, str], log: Path) -> None:
@@ -720,7 +778,15 @@ def main() -> None:
     selected = SCENARIOS if args.scenario == "all" else (args.scenario,)
     for index, scenario in enumerate(selected):
         print(f"Certifying {scenario} ({index + 1}/{len(selected)})", flush=True)
-        results.append(certify(scenario, output, index == 0 and not args.no_build))
+        try:
+            results.append(certify(scenario, output, index == 0 and not args.no_build))
+        except BaseException as error:
+            results.append(failed_scenario_report(scenario, output, error))
+            raise
+        finally:
+            (output / "certification.json").write_text(
+                json.dumps(certification_report(environment, results), indent=2) + "\n"
+            )
         if index == 0:
             environment["runtime_image_id"] = subprocess.check_output(
                 [

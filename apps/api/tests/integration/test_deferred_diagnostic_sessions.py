@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bike_doc_api.adk.sessions import (
     DIAGNOSTIC_ADK_APP_NAME,
@@ -40,7 +40,16 @@ async def context() -> AsyncIterator[
     assert TEST_URL is not None
     settings = Settings(environment="test", database_url=TEST_URL)
     adk = await open_adk_session_service(settings)
-    sessions = async_sessionmaker(adk.db_engine, expire_on_commit=False)
+    # App transactions and ADK persistence own separate pools in production.
+    # Sharing ADK's tuned single connection deadlocks concurrent product reads
+    # and an ensure-or-resume call nested inside a product transaction.
+    engine = create_async_engine(
+        TEST_URL,
+        pool_size=settings.api_pool_size,
+        max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
+    )
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with sessions() as session, session.begin():
         user = User(
             auth_subject=os.urandom(16).hex(),
@@ -96,6 +105,7 @@ async def context() -> AsyncIterator[
                     {"id": f"adk_diagnostic_{retained_id}"},
                 )
         await adk.close()
+        await engine.dispose()
 
 
 async def test_migration_roundtrip_and_null_constraints(context: tuple) -> None:
@@ -251,7 +261,7 @@ async def test_lost_binding_commit_then_resume_in_another_process(
 
     child_code = """
 import asyncio, sys
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
 from bike_doc_api.adk.storage import open_adk_session_service
 from bike_doc_api.core.config import Settings
@@ -260,8 +270,9 @@ from bike_doc_api.repositories.repair_sessions import RepairPhaseSessionReposito
 async def run():
     adk = await open_adk_session_service(
         Settings(environment='test', database_url=sys.argv[1]))
+    engine = create_async_engine(sys.argv[1], pool_size=2, max_overflow=0)
     try:
-        sessions = async_sessionmaker(adk.db_engine, expire_on_commit=False)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions() as session, session.begin():
             phase = await session.get(RepairPhaseSession, sys.argv[2])
             identity = await DiagnosticADKSessionClient(adk).ensure_or_resume(
@@ -270,6 +281,7 @@ async def run():
             assert identity == sys.argv[3]
     finally:
         await adk.close()
+        await engine.dispose()
 asyncio.run(run())
 """
     for _ in range(2):  # Recovery followed by exact bound resume in another process.

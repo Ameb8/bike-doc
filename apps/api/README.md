@@ -220,3 +220,10 @@ The canary exercises graceful/forced shutdown and recovery of running jobs on
 both sides of the boundary, plus idempotent replay after producer rollback.
 Production inspection tooling, retention, broker reconstruction, full load
 certification, and final removal of legacy wiring remain outside this canary.
+
+### Full durable queue certification
+
+`task test:queue-certification` runs format/check and certifies all 38 canonical
+failure-matrix items twice against clean real PostgreSQL/JetStream and the tuned
+multi-replica capacity/privacy topology. See [QUEUE_CERTIFICATION.md](QUEUE_CERTIFICATION.md)
+for the executable coverage manifest, bounded workflow and failure interpretation.

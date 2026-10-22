@@ -103,3 +103,5 @@ logs/
 
 # Private disposable capacity evidence (sanitized result summaries are versioned).
 .capacity/
+
+.certification/

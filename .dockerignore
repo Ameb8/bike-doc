@@ -27,3 +27,5 @@ logs/
 
 .deploy-secrets/
 .capacity/
+
+.certification/

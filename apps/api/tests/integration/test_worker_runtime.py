@@ -777,3 +777,150 @@ async def test_worker_first_version_rollout_and_producer_rollback(
         assert sorted(calls) == sorted(
             job.id for job in (original, backlog, upgraded, rollback)
         )
+
+
+async def test_replicas_resolve_mixed_generations_and_running_delivery(
+    harness: Harness,
+) -> None:
+    """Concurrent transport replicas must agree with authoritative job state."""
+    running = await harness.create(desired_generation=2)
+    early = await harness.create(eligible_at=datetime.now(UTC) + timedelta(seconds=4))
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def handle(claim: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        calls.append(claim)
+        entered.set()
+        await release.wait()
+        return JobOutcome("succeeded")
+
+    first = harness.worker(handle)
+    async with nats_connection(harness.settings) as other_client:
+        other_sub = await jetstream(other_client).pull_subscribe(
+            harness.settings.nats_profile_subject,
+            durable=harness.settings.nats_profile_consumer,
+            stream=harness.settings.nats_work_stream,
+        )
+        second = PullWorker(
+            first.registry,
+            PostgresJobStore(harness.sessions),
+            NatsPullTransport(other_sub, client=other_client),
+            first.options,
+        )
+        execution: asyncio.Task[None] | None = None
+        try:
+            await harness.publish(running, 2)
+            execution = asyncio.create_task(
+                first.process(NatsDelivery(await harness.message()))
+            )
+            await asyncio.wait_for(entered.wait(), 3)
+            before = await harness.row(running)
+            assert before.state == "running" and before.attempt_count == 1
+            # Stale and impossible future notifications race a running duplicate.
+            for generation in (1, 3, 2):
+                await harness.publish(running, generation)
+                delivery = (await other_sub.fetch(1, timeout=3))[0]
+                await second.process(NatsDelivery(delivery))
+                current = await harness.row(running)
+                assert current.state == "running" and current.attempt_count == 1
+                assert current.execution_token == before.execution_token
+                assert current.execution_deadline == before.execution_deadline
+            await harness.publish(early)
+            await second.process(NatsDelivery((await other_sub.fetch(1, timeout=3))[0]))
+            row = await harness.row(early)
+            assert row.state == "queued" and row.attempt_count == 0
+            consumer = await harness.js.consumer_info(
+                harness.settings.nats_work_stream,
+                harness.settings.nats_profile_consumer,
+            )
+            assert consumer.num_pending == 0
+            # Original, running duplicate and early delivery remain unsettled.
+            assert consumer.num_ack_pending == 3
+            release.set()
+            await asyncio.wait_for(execution, 3)
+            assert len(calls) == 1
+            row = await harness.row(running)
+            assert row.state == "succeeded" and row.attempt_count == 1
+            # Delayed duplicates remain available until their original deadline;
+            # then PostgreSQL success, not the transport state, makes them no-ops.
+            deadline = asyncio.get_running_loop().time() + 7
+            while asyncio.get_running_loop().time() < deadline:
+                info = await harness.js.consumer_info(
+                    harness.settings.nats_work_stream,
+                    harness.settings.nats_profile_consumer,
+                )
+                if info.num_pending == info.num_ack_pending == 0:
+                    break
+                try:
+                    deliveries = await other_sub.fetch(1, timeout=0.5)
+                except TimeoutError:
+                    continue
+                for message in deliveries:
+                    await second.process(NatsDelivery(message))
+            else:
+                pytest.fail("mixed replica transport did not drain")
+            assert (await harness.row(running)).attempt_count == 1
+            assert (await harness.row(early)).state == "succeeded"
+            assert (await harness.row(early)).attempt_count == 1
+            assert sorted(c.id for c in calls) == sorted((running.id, early.id))
+        finally:
+            release.set()
+            await second.close()
+            if execution is not None:
+                await asyncio.wait_for(execution, 3)
+
+
+async def test_cleanup_preserves_terminal_identity_through_retained_delivery(
+    harness: Harness,
+) -> None:
+    from test_job_maintenance import historical_job
+
+    from bike_doc_api.maintenance.runtime import publication_message
+
+    # Generation two was requested before terminalization; terminal intent and
+    # outcome are immutable. Seed the historical accepted state without editing
+    # a terminal timestamp or advancing terminal intent through forbidden SQL.
+    job_id = await historical_job(
+        harness,
+        state="succeeded",
+        desired_generation=2,
+        confirmed_generation=1,
+    )
+    async with harness.sessions() as session:
+        job = JobSnapshot.from_row(await session.get(BackgroundJob, job_id))
+    runtime = harness.worker(succeed)
+    await harness.publish(job, 1)
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    async with harness.sessions() as session, session.begin():
+        repo = BackgroundJobRepository(session)
+        assert not await repo.delete_retained(job_id=job.id, before=cutoff)
+        claim = (
+            await repo.claim_publications(limit=1, claim_duration=timedelta(seconds=10))
+        )[0]
+    payload, message_id = publication_message(claim)
+    await harness.js.publish(
+        harness.settings.nats_profile_subject,
+        payload,
+        headers={"Nats-Msg-Id": message_id},
+    )
+    # Confirmation renews retention while old and current notifications coexist.
+    async with harness.sessions() as session, session.begin():
+        repo = BackgroundJobRepository(session)
+        assert await repo.confirm_publication(claim)
+        assert not await repo.delete_retained(job_id=job.id, before=cutoff)
+    row = await harness.row(job)
+    assert row.state == "succeeded"
+    assert row.desired_generation == row.confirmed_generation == 2
+    assert row.updated_at > cutoff
+    consumer = await harness.js.consumer_info(
+        harness.settings.nats_work_stream, harness.settings.nats_profile_consumer
+    )
+    assert consumer.num_pending == 2
+    for _ in range(2):
+        await runtime.process(NatsDelivery(await harness.message()))
+    row = await harness.row(job)
+    assert row.state == "succeeded" and row.attempt_count == 0
+    consumer = await harness.js.consumer_info(
+        harness.settings.nats_work_stream, harness.settings.nats_profile_consumer
+    )
+    assert consumer.num_pending == consumer.num_ack_pending == 0

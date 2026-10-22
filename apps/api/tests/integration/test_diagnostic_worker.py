@@ -13,7 +13,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from pydantic import PrivateAttr
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bike_doc_api.adk.execution import DiagnosticResources
 from bike_doc_api.adk.resources import InactiveObservationExtractor
@@ -819,6 +819,46 @@ async def _assert_error_pair(context, state, attempts):
     assert events[-1].data["turn_id"] == context[2].input["turn_id"]
 
 
+async def _assert_recovery_delivery_settles_without_replay(
+    context: tuple[
+        Settings,
+        async_sessionmaker[AsyncSession],
+        JobSnapshot,
+        str,
+        FakeModel,
+        DiagnosticResources,
+        str,
+    ],
+) -> None:
+    """Couple recovery truth to a real retained-generation terminal/stale ACK."""
+    settings, _, job, _, model, resources, _ = context
+    before, repair, events = await _terminal_events(context)
+    expected = (before.state, before.attempt_count, repair.status, len(events))
+    calls = len(model._requests)
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        await runtime.transport.client.jetstream().publish(
+            runtime.options.subject,
+            json.dumps(
+                {
+                    "version": 1,
+                    "job_id": job.id,
+                    "publication_generation": 1,
+                }
+            ).encode(),
+        )
+        message = (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+        assert message.metadata.num_delivered == 1
+        assert (
+            await runtime.transport.subscription.consumer_info()
+        ).num_ack_pending == 1
+        await runtime.process(NatsDelivery(message))
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == consumer.num_ack_pending == 0
+    after, repair, events = await _terminal_events(context)
+    assert (after.state, after.attempt_count, repair.status, len(events)) == expected
+    assert len(model._requests) == calls
+
+
 @pytest.mark.parametrize("error", ["version", "extra", "malformed", "missing"])
 async def test_trusted_definition_failure_repairs_only_valid_product_identity(
     context, error
@@ -983,6 +1023,8 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
             no_progress_before=datetime.now(UTC),
         )
 
+    await _assert_recovery_delivery_settles_without_replay(context)
+
 
 async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emits_once(
     context, monkeypatch
@@ -1020,6 +1062,8 @@ async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emit
     assert sorted(await asyncio.gather(recover(), recover())) == [False, True]
     assert not await recover()
     await _assert_error_pair(context, "dead", 1)
+
+    await _assert_recovery_delivery_settles_without_replay(context)
 
 
 @pytest.mark.parametrize("handled_error", [False, True])
@@ -1178,6 +1222,8 @@ async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
     assert row.desired_generation == 3
     assert not context[4]._requests
 
+    await _assert_recovery_delivery_settles_without_replay(context)
+
 
 async def test_classified_retry_is_durable_before_real_delayed_nak(
     context, monkeypatch
@@ -1246,6 +1292,8 @@ async def test_arbitrary_postboundary_failure_is_interrupted_without_retry(conte
         )
     assert result.state == "interrupted" and result.desired_generation == 1
     await _assert_error_pair(context, "interrupted", 1)
+
+    await _assert_recovery_delivery_settles_without_replay(context)
 
 
 @pytest.mark.parametrize("first", ["profile", "diagnostic", "profile_failure"])

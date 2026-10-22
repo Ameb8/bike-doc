@@ -988,3 +988,14 @@ secrets/volumes. It is never imported by production or normal unit tests.
 unit tests keep them synchronized with typed defaults and `.env.example`.
 See [CAPACITY.md](../../deploy/CAPACITY.md) for commands, budgets, results,
 isolation limits, scaling arithmetic and alert implications.
+
+### Whole-system queue certification (#157)
+
+`tests/certification/coverage.json` maps each canonical §17 obligation to its
+existing executable owners and evidence boundaries. The opt-in runner composes
+ordered session/migration, PostgreSQL, real-broker/canary and capacity/privacy
+suites, rejecting missing/skipped evidence and reporting every item independently.
+It owns no runtime behavior; Task 4.4 retains production-like process composition.
+See [QUEUE_CERTIFICATION.md](QUEUE_CERTIFICATION.md) for the two-clean-run release
+gate and bounded content-safe artifacts. New combined-delivery/retention tests
+remain with the existing shared-worker integration owner.

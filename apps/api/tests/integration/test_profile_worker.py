@@ -323,6 +323,8 @@ async def test_ambiguous_crash_replays_with_one_run_and_idempotent_effects(
                 await runtime.process(await notify(runtime, job))
         row, run, bike, claims = await state(sessions, job, bike_id)
         assert row.state == "running"
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == 0 and consumer.num_ack_pending == 1
         revision = bike.profile_revision
         await recover(settings, sessions, job)
         await runtime.process(await notify(runtime, job, 2))
@@ -335,6 +337,18 @@ async def test_ambiguous_crash_replays_with_one_run_and_idempotent_effects(
         assert (await state(sessions, job, bike_id))[
             2
         ].profile_revision == bike.profile_revision
+        # The lost original settlement is still transport-pending after durable
+        # success. Its eventual real redelivery must settle without another call.
+        message = (await runtime.transport.subscription.fetch(1, timeout=32))[0]
+        assert message.metadata.num_delivered == 2
+        calls = extractor.calls
+        await runtime.process(NatsDelivery(message))
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == consumer.num_ack_pending == 0
+        row, run, bike_after, claims = await state(sessions, job, bike_id)
+        assert row.state == "succeeded" and row.attempt_count == 2
+        assert extractor.calls == calls and len(claims) == 1
+        assert bike_after.profile_revision == bike.profile_revision
 
 
 @pytest.mark.parametrize("failure_phase", ["resolution", "commit"])

@@ -1,0 +1,782 @@
+{
+  "schema_version": 1,
+  "spec": "docs/specs/apps/durable-job-queue.md#17-verification-requirements",
+  "suites": {
+    "sessions": {
+      "marker": "not nats",
+      "targets": [
+        "tests/integration/test_deferred_diagnostic_sessions.py",
+        "tests/integration/test_adk_postgres.py"
+      ]
+    },
+    "transport": {
+      "marker": "nats",
+      "targets": [
+        "tests/integration/test_queue_compatibility.py",
+        "tests/integration/test_nats_compatibility.py",
+        "tests/integration/test_job_maintenance.py",
+        "tests/integration/test_worker_runtime.py",
+        "tests/integration/test_profile_worker.py",
+        "tests/integration/test_diagnostic_worker.py",
+        "tests/integration/test_cross_process_event_wakeups.py"
+      ]
+    },
+    "persistence": {
+      "marker": "not nats",
+      "targets": [
+        "tests/unit/repositories/test_background_job_persistence.py"
+      ]
+    },
+    "unit": {
+      "marker": "not nats",
+      "targets": [
+        "tests/unit/test_job_maintenance_runtime.py",
+        "tests/unit/test_shared_worker.py",
+        "tests/unit/test_capacity_budget.py",
+        "tests/unit/services/test_background_jobs.py",
+        "tests/unit/schemas/test_diagnostic_job_input.py"
+      ]
+    },
+    "capacity": {
+      "targets": [
+        "task test:capacity"
+      ]
+    }
+  },
+  "capacity_scenarios": [
+    "steady",
+    "burst",
+    "profile_backlog",
+    "profile_failure",
+    "nats_outage",
+    "worker_loss",
+    "broker_restart",
+    "duplicates",
+    "wakeup_loss",
+    "timing"
+  ],
+  "compatibility": [
+    "compatibility",
+    "pinned_transport",
+    "adk_resume"
+  ],
+  "evidence": {
+    "atomic_rollback": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_acceptance_rollback_has_no_product_or_job_intent",
+      "assertions": "Turn, event, inference run and both job intents roll back together."
+    },
+    "independent_jobs": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_two_jobs_execute_independently_and_read_only_committed_facts",
+      "assertions": "Both accepted jobs remain independent; durable state and events are checked."
+    },
+    "adk_independent_acceptance": {
+      "suite": "sessions",
+      "type": "cross-process",
+      "node": "tests/integration/test_deferred_diagnostic_sessions.py::test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase",
+      "assertions": "Acceptance commits null binding without contacting ADK."
+    },
+    "logical_identity": {
+      "suite": "persistence",
+      "type": "postgresql",
+      "node": "tests/unit/repositories/test_background_job_persistence.py::test_concurrent_creation_resolves_one_logical_job",
+      "assertions": "Concurrent independent transactions produce one unique logical job."
+    },
+    "http_idempotency": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_concurrent_replay_does_not_reselect_executor",
+      "assertions": "HTTP replay returns the original accepted turn and executor."
+    },
+    "pinned_transport": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_nats_compatibility.py::test_pinned_jetstream_transport_contract",
+      "assertions": "File storage survives restart; delayed NAK, progress, ACK and resource close work."
+    },
+    "acceptance_restarts": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_acceptance_outage_ack_window_broker_and_worker_restart",
+      "assertions": "Accepted profile job and inference effects survive publication and process restart."
+    },
+    "publication_ack_window": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_ack_window_replay_deduplicates_and_preserves_newer_intent",
+      "assertions": "Lost confirmation leaves durable intent; broker deduplicates replay and exposes coalesced generations."
+    },
+    "reconstruction_ack_race": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_reconstruction_preserves_intent_across_old_broker_ack",
+      "assertions": "Old ACK confirms only its generation after full stream recreation."
+    },
+    "diagnostic_duplicate": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_accepted_role_commits_product_before_ack_and_duplicate_is_noop",
+      "assertions": "Durable job/product and ordered events precede settlement; duplicate invokes no model."
+    },
+    "concurrent_claim": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_simultaneous_claims_in_independent_transactions_invoke_once",
+      "assertions": "Concurrent claims execute once and running delivery remains recoverable."
+    },
+    "replica_matrix": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_replicas_resolve_mixed_generations_and_running_delivery",
+      "assertions": "Two independent worker connections preserve state/attempts for stale/future/early/running deliveries and drain transport."
+    },
+    "protected_writes": {
+      "suite": "transport",
+      "type": "postgresql",
+      "node": "tests/integration/test_diagnostic_worker.py::test_every_protected_write_family_rejects_late_execution",
+      "assertions": "All protected durable product write families reject expired/replaced authority."
+    },
+    "timeout": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_timeout_finishes_before_hard_deadline",
+      "assertions": "Handler timeout reaches durable dead state inside hard deadline and settles."
+    },
+    "inflight_fence": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_in_flight_provider_loses_authority_despite_progress",
+      "assertions": "Progress does not extend deadline; late provider writes fail."
+    },
+    "early_retry": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_retry_commits_eligibility_and_early_delivery_cannot_execute",
+      "assertions": "Retry eligibility commits before delayed NAK; early notification consumes no attempt."
+    },
+    "preboundary_recovery": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_expired_execution_race_repeated_maintenance_and_no_progress",
+      "assertions": "Competing/repeated recovery follows boundary and attempt policy."
+    },
+    "profile_process_budget": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_external_process_loss_and_restart_share_one_provider_budget",
+      "assertions": "Real process kill/restart repeats only within authoritative attempt budget."
+    },
+    "interruption": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_arbitrary_postboundary_failure_is_interrupted_without_retry",
+      "assertions": "Interruption repairs session and emits exactly one ordered terminal pair without replay."
+    },
+    "recovery_rollback": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_crash_during_terminalization_rolls_back_then_racing_recovery_emits_once",
+      "assertions": "Flushed failure rolls back; competing recoveries commit one product/event outcome."
+    },
+    "deferred_crash": {
+      "suite": "sessions",
+      "type": "cross-process",
+      "node": "tests/integration/test_deferred_diagnostic_sessions.py::test_lost_binding_commit_then_resume_in_another_process",
+      "assertions": "Session creation before binding survives process replacement with deterministic identity."
+    },
+    "missing_binding": {
+      "suite": "sessions",
+      "type": "cross-process",
+      "node": "tests/integration/test_deferred_diagnostic_sessions.py::test_repository_preserves_winner_and_missing_binding_fails_closed",
+      "assertions": "Bound missing sessions never get recreated."
+    },
+    "ambiguous_profile": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_ambiguous_crash_replays_with_one_run_and_idempotent_effects",
+      "assertions": "Pre/postcommit ambiguous loss preserves one run, claims and profile revision."
+    },
+    "provider_budget": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_provider_exhaustion_is_one_call_per_application_attempt",
+      "assertions": "Provider calls equal bounded attempts; durable failure cannot duplicate effects."
+    },
+    "classified_retry": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_classified_retry_is_durable_before_real_delayed_nak",
+      "assertions": "Only classified preboundary retry commits eligibility before real NAK."
+    },
+    "diagnostic_input": {
+      "suite": "transport",
+      "type": "postgresql",
+      "node": "tests/integration/test_diagnostic_worker.py::test_trusted_definition_failure_repairs_only_valid_product_identity",
+      "assertions": "Trusted malformed/versioned definitions fail closed and repair only the valid authoritative turn identity."
+    },
+    "profile_definition": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_unsupported_behavior_pin_permanently_fails_before_provider",
+      "assertions": "Pinned versions and strict stored input fail before provider call."
+    },
+    "workload_isolation": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_profile_worker.py::test_role_pull_loop_abstains_and_does_not_consume_diagnostic_workload",
+      "assertions": "Profile consumer never fetches diagnostic messages."
+    },
+    "delivery_resolution": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_real_fail_closed_and_attempt_free_branches",
+      "assertions": "Parameterized terminal/stale/future/mismatch/malformed and unknown-definition deliveries assert PostgreSQL and settlement."
+    },
+    "immutable_terminal": {
+      "suite": "persistence",
+      "type": "postgresql",
+      "node": "tests/unit/repositories/test_background_job_persistence.py::test_terminal_outcomes_cannot_be_rewritten",
+      "assertions": "Database constraints reject terminal revival and rewriting."
+    },
+    "diagnostic_exhaustion": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_expired_preboundary_attempt_budget_exhausts_atomically",
+      "assertions": "Dead job, restored session and exactly one ordered terminal event pair commit atomically."
+    },
+    "preboundary_outcomes": {
+      "suite": "transport",
+      "type": "postgresql",
+      "node": "tests/integration/test_diagnostic_worker.py::test_preboundary_outcomes_commit_before_settlement",
+      "assertions": "Permanent failures/exhaustion settle only after durable product repair."
+    },
+    "progress": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_real_pull_progress_duplicate_claim_ack_and_drain",
+      "assertions": "Progress prevents premature redelivery while PostgreSQL deadline stays fixed."
+    },
+    "ack_loss": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_commit_then_ack_failure_redelivers_safely",
+      "assertions": "Lost ACK leaves committed success; redelivery is an attempt-free no-op."
+    },
+    "diagnostic_ack_loss": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_terminal_delivery_after_commit_and_ack_loss_is_attempt_free",
+      "assertions": "All diagnostic terminal states redeliver safely with exact product/event preservation."
+    },
+    "maintenance_policy": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_reconciliation_preserves_eligibility_deadlines_attempts_and_policy",
+      "assertions": "No-progress repair cannot bypass eligibility, deadline, budget or boundary."
+    },
+    "advisories": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_real_advisories_do_not_mutate_durable_job_state",
+      "assertions": "Real maximum-delivery and termination advisories are observable without database mutations."
+    },
+    "observability_privacy": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_observability_real_transport_execution_recovery_and_privacy",
+      "assertions": "Independent inspection/transport observations and allowlisted telemetry; sentinels never escape."
+    },
+    "reconstruction": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_reconstruction_broker_loss_restart_overlap_and_delivery",
+      "assertions": "Complete stream loss and overlapping reconstruction/maintenance restore only eligible work."
+    },
+    "diagnostic_reconstruction": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_diagnostic_worker.py::test_reconstruction_restores_diagnostic_without_replaying_reserved_effects",
+      "assertions": "Rebuilt broker cannot replay terminal/reserved diagnostic effects."
+    },
+    "cross_process_sse": {
+      "suite": "transport",
+      "type": "cross-process",
+      "node": "tests/integration/test_cross_process_event_wakeups.py::test_cross_process_event_delivery",
+      "assertions": "Separate API and worker processes verify hinted wake-ups, missed hints, polling and event replay."
+    },
+    "adk_resume": {
+      "suite": "sessions",
+      "type": "cross-process",
+      "node": "tests/integration/test_adk_postgres.py::test_migrated_storage_resumes_state_and_events_across_app_lifecycles",
+      "assertions": "Actual subprocess resumes persisted ADK state/events; resources close and retained binding is protected."
+    },
+    "worker_shutdown": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_shutdown_drain_and_forced_loss_redelivery",
+      "assertions": "Bounded graceful settlement or forced cancellation leaves durable running state and broker redelivery."
+    },
+    "api_lifecycle": {
+      "suite": "unit",
+      "type": "unit",
+      "node": "tests/unit/test_job_maintenance_runtime.py::test_fastapi_lifespan_runs_maintenance_while_broker_unavailable",
+      "assertions": "API lifespan owns asynchronous maintenance and closes resources without route logic."
+    },
+    "multi_host": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_two_hosts_claim_and_reconcile_without_duplicate_attempts",
+      "assertions": "Two independent API maintenance hosts publish/reconcile without duplicate attempts."
+    },
+    "cleanup_race": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_cleanup_waits_and_rechecks_concurrent_confirmation",
+      "assertions": "Row-lock recheck observes renewed retention after concurrent confirmation."
+    },
+    "retention": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_job_maintenance.py::test_retention_boundaries_refusals_and_competing_cleanup",
+      "assertions": "Bounded competing cleanup never deletes nonterminal, pending or too-young rows."
+    },
+    "retained_delivery": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_cleanup_preserves_terminal_identity_through_retained_delivery",
+      "assertions": "Publication generation changes reset retention; retained terminal notifications resolve and settle without effects."
+    },
+    "rolling_versions": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_worker_runtime.py::test_worker_first_version_rollout_and_producer_rollback",
+      "assertions": "Compatible worker replicas precede new producers; both definitions remain through retained delivery and producer rollback."
+    },
+    "capacity_steady": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "steady",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_burst": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "burst",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_profile_backlog": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "profile_backlog",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_profile_failure": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "profile_failure",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_nats_outage": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "nats_outage",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_worker_loss": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "worker_loss",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_broker_restart": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "broker_restart",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_duplicates": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "duplicates",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_wakeup_loss": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "wakeup_loss",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "capacity_timing": {
+      "suite": "capacity",
+      "type": "capacity",
+      "scenario": "timing",
+      "assertions": "Task 4.4 production topology: real HTTP/SSE, two replicas per role, PostgreSQL product/effect and pool assertions, independent JetStream pending/ACK drain, nonempty broker/log/trace/metric privacy captures and scenario budgets."
+    },
+    "compatibility": {
+      "suite": "transport",
+      "type": "postgresql+jetstream",
+      "node": "tests/integration/test_queue_compatibility.py::test_locked_clients_driver_resources_and_tuned_topology",
+      "assertions": "Pinned server/client and locked asyncpg/SQLAlchemy/ADK; real async pools, durable ADK schema/lifecycle and tuned stream/consumer settings."
+    },
+    "diagnostic_strict_input": {
+      "suite": "unit",
+      "type": "unit",
+      "node": "tests/unit/schemas/test_diagnostic_job_input.py::test_accepts_only_turn_identity",
+      "assertions": "Diagnostic input contains precisely the immutable accepted turn identity."
+    },
+    "diagnostic_reject_input": {
+      "suite": "unit",
+      "type": "unit",
+      "node": "tests/unit/schemas/test_diagnostic_job_input.py::test_rejects_invalid_input",
+      "assertions": "Missing, malformed, extra or non-string instructions are rejected."
+    },
+    "profile_strict_input": {
+      "suite": "unit",
+      "type": "unit",
+      "node": "tests/unit/services/test_background_jobs.py::test_profile_input_has_exact_pinned_immutable_fields",
+      "assertions": "All three pinned identities are required and immutable."
+    },
+    "profile_extra_input": {
+      "suite": "unit",
+      "type": "unit",
+      "node": "tests/unit/services/test_background_jobs.py::test_profile_input_forbids_additional_data",
+      "assertions": "Additional user, artifact, prompt or kind data is forbidden."
+    }
+  },
+  "items": [
+    {
+      "number": 1,
+      "obligation": "atomic creation and rollback of product state, jobs, inputs, and publication generations, including both independently executable jobs for an eligible image turn, without calling the ADK session adapter;",
+      "evidence": [
+        "atomic_rollback",
+        "independent_jobs",
+        "adk_independent_acceptance"
+      ]
+    },
+    {
+      "number": 2,
+      "obligation": "HTTP idempotency and concurrent job recording cannot create duplicate logical jobs, with `(job_kind, deduplication_key)` enforcing the race-safe identity independently of the client key;",
+      "evidence": [
+        "logical_identity",
+        "http_idempotency"
+      ]
+    },
+    {
+      "number": 3,
+      "obligation": "acknowledged publication survives the configured broker restart;",
+      "evidence": [
+        "pinned_transport",
+        "acceptance_restarts",
+        "capacity_broker_restart"
+      ]
+    },
+    {
+      "number": 4,
+      "obligation": "a publisher crash in the acknowledgement window cannot duplicate effects;",
+      "evidence": [
+        "publication_ack_window",
+        "acceptance_restarts",
+        "capacity_nats_outage"
+      ]
+    },
+    {
+      "number": 5,
+      "obligation": "deterministic job-generation message IDs provide broker deduplication;",
+      "evidence": [
+        "publication_ack_window"
+      ]
+    },
+    {
+      "number": 6,
+      "obligation": "an older in-flight publication confirmation cannot confirm a newer desired generation, while unpublished intermediate generations coalesce safely;",
+      "evidence": [
+        "publication_ack_window",
+        "reconstruction_ack_race"
+      ]
+    },
+    {
+      "number": 7,
+      "obligation": "completed jobs handle duplicate delivery as a no-op;",
+      "evidence": [
+        "diagnostic_duplicate"
+      ]
+    },
+    {
+      "number": 8,
+      "obligation": "atomic claim-and-load prevents concurrent duplicate execution;",
+      "evidence": [
+        "concurrent_claim",
+        "replica_matrix",
+        "capacity_duplicates"
+      ]
+    },
+    {
+      "number": 9,
+      "obligation": "replaced execution tokens prevent stale protected writes;",
+      "evidence": [
+        "protected_writes"
+      ]
+    },
+    {
+      "number": 10,
+      "obligation": "a handler timeout and timeout grace finish by the hard execution deadline, progress acknowledgements do not extend it, and late protected writes are rejected;",
+      "evidence": [
+        "timeout",
+        "inflight_fence",
+        "protected_writes",
+        "capacity_timing"
+      ]
+    },
+    {
+      "number": 11,
+      "obligation": "early redelivery cannot bypass `eligible_at`;",
+      "evidence": [
+        "early_retry",
+        "replica_matrix"
+      ]
+    },
+    {
+      "number": 12,
+      "obligation": "pre-effect crashes recover within policy;",
+      "evidence": [
+        "preboundary_recovery",
+        "profile_process_budget",
+        "capacity_worker_loss"
+      ]
+    },
+    {
+      "number": 13,
+      "obligation": "post-effect diagnostic crashes atomically become interrupted, restore the session to `awaiting_user`, and append exactly one `diagnostic_processing_error` and `turn.completed` pair without another ADK run;",
+      "evidence": [
+        "interruption",
+        "recovery_rollback"
+      ]
+    },
+    {
+      "number": 14,
+      "obligation": "a phase session is accepted with a null ADK ID, deterministic ADK session ensure-and-bind is idempotent across a crash between creation and binding, occurs before the effect boundary, and never recreates or replaces a confirmed missing session after binding;",
+      "evidence": [
+        "deferred_crash",
+        "missing_binding"
+      ]
+    },
+    {
+      "number": 15,
+      "obligation": "an ambiguous profile-inference crash may repeat the model call but cannot duplicate claims or profile mutations, and all calls share one attempt budget;",
+      "evidence": [
+        "ambiguous_profile",
+        "profile_process_budget",
+        "provider_budget",
+        "capacity_profile_failure"
+      ]
+    },
+    {
+      "number": 16,
+      "obligation": "delayed NAK implements only application-classified retries;",
+      "evidence": [
+        "classified_retry",
+        "early_retry"
+      ]
+    },
+    {
+      "number": 17,
+      "obligation": "duplicate delivery does not consume an application attempt;",
+      "evidence": [
+        "diagnostic_duplicate",
+        "replica_matrix",
+        "capacity_duplicates"
+      ]
+    },
+    {
+      "number": 18,
+      "obligation": "an unexpired running duplicate receives a delayed NAK until the execution deadline and remains available for deadline recovery;",
+      "evidence": [
+        "concurrent_claim",
+        "replica_matrix"
+      ]
+    },
+    {
+      "number": 19,
+      "obligation": "diagnostic and profile-inference work publish independently and neither outcome controls the other's eligibility;",
+      "evidence": [
+        "independent_jobs",
+        "capacity_steady"
+      ]
+    },
+    {
+      "number": 20,
+      "obligation": "diagnostic execution preserves immutable accepted turn content and artifact references while reading mutable supporting context from current authoritative state, including same-turn inferred profile facts when already committed;",
+      "evidence": [
+        "independent_jobs",
+        "diagnostic_duplicate"
+      ]
+    },
+    {
+      "number": 21,
+      "obligation": "`diagnostic_turn.v1` accepts only a `turn_id` and resolves all accepted instruction data through the immutable authoritative turn;",
+      "evidence": [
+        "diagnostic_input",
+        "diagnostic_strict_input",
+        "diagnostic_reject_input"
+      ]
+    },
+    {
+      "number": 22,
+      "obligation": "`profile_inference.v1` pins the turn, inference schema, and extractor versions, rejects additional fields, and idempotently resolves one authoritative inference run;",
+      "evidence": [
+        "profile_definition",
+        "ambiguous_profile",
+        "profile_strict_input",
+        "profile_extra_input"
+      ]
+    },
+    {
+      "number": 23,
+      "obligation": "profile backlog cannot consume diagnostic capacity;",
+      "evidence": [
+        "workload_isolation",
+        "capacity_profile_backlog",
+        "capacity_profile_failure"
+      ]
+    },
+    {
+      "number": 24,
+      "obligation": "lower stale generations become attempt-free acknowledged no-ops while impossible future generations and subject mismatches terminate without changing job state;",
+      "evidence": [
+        "delivery_resolution",
+        "replica_matrix"
+      ]
+    },
+    {
+      "number": 25,
+      "obligation": "malformed or missing identities terminate without mutation, while a trusted job with an unknown kind, unsupported version, or invalid stored input becomes `dead` without consuming an application attempt;",
+      "evidence": [
+        "delivery_resolution",
+        "diagnostic_input"
+      ]
+    },
+    {
+      "number": 26,
+      "obligation": "a `dead` job cannot return to a nonterminal state, and any later job-kind-specific recovery creates a replacement without editing the original;",
+      "evidence": [
+        "immutable_terminal"
+      ]
+    },
+    {
+      "number": 27,
+      "obligation": "pre-boundary diagnostic exhaustion atomically marks the job `dead`, restores the session to `awaiting_user`, and appends exactly one `diagnostic_processing_error` and `turn.completed` pair;",
+      "evidence": [
+        "diagnostic_exhaustion",
+        "preboundary_outcomes"
+      ]
+    },
+    {
+      "number": 28,
+      "obligation": "long work sends progress acknowledgement in time;",
+      "evidence": [
+        "progress",
+        "capacity_timing"
+      ]
+    },
+    {
+      "number": 29,
+      "obligation": "acknowledgement failure after commit redelivers safely;",
+      "evidence": [
+        "ack_loss",
+        "diagnostic_ack_loss"
+      ]
+    },
+    {
+      "number": 30,
+      "obligation": "an eligible nonterminal job with no execution progress beyond the configured threshold advances publication intent without consuming an application attempt, bypassing `eligible_at`, or replaying unsafe post-effect work;",
+      "evidence": [
+        "maintenance_policy",
+        "preboundary_recovery",
+        "capacity_nats_outage"
+      ]
+    },
+    {
+      "number": 31,
+      "obligation": "maximum-delivery and termination advisories reach metrics and alerts without directly mutating job or product state;",
+      "evidence": [
+        "advisories",
+        "observability_privacy"
+      ]
+    },
+    {
+      "number": 32,
+      "obligation": "the explicit broker-reconstruction procedure cannot replay terminal or unsafe post-effect work;",
+      "evidence": [
+        "reconstruction",
+        "diagnostic_reconstruction",
+        "reconstruction_ack_race"
+      ]
+    },
+    {
+      "number": 33,
+      "obligation": "worker events wake another API process and polling recovers missed hints;",
+      "evidence": [
+        "cross_process_sse",
+        "adk_resume",
+        "capacity_wakeup_loss",
+        "capacity_worker_loss"
+      ]
+    },
+    {
+      "number": 34,
+      "obligation": "graceful and forced shutdown produce safe outcomes;",
+      "evidence": [
+        "worker_shutdown",
+        "api_lifecycle",
+        "capacity_worker_loss",
+        "capacity_steady"
+      ]
+    },
+    {
+      "number": 35,
+      "obligation": "publication and reconciliation modules pass their FastAPI-hosted lifecycle tests without depending on route logic;",
+      "evidence": [
+        "api_lifecycle",
+        "multi_host",
+        "capacity_steady",
+        "capacity_burst"
+      ]
+    },
+    {
+      "number": 36,
+      "obligation": "cleanup cannot delete a nonterminal or publication-pending job, and a terminal job remains resolvable for longer than JetStream can deliver it;",
+      "evidence": [
+        "cleanup_race",
+        "retention",
+        "retained_delivery"
+      ]
+    },
+    {
+      "number": 37,
+      "obligation": "a rolling kind or input-version migration cannot route new work to an incompatible worker, and old support is retained through its final possible redelivery; and",
+      "evidence": [
+        "rolling_versions"
+      ]
+    },
+    {
+      "number": 38,
+      "obligation": "messages, headers, logs, and metrics contain no prohibited content.",
+      "evidence": [
+        "observability_privacy",
+        "capacity_steady",
+        "capacity_burst",
+        "capacity_profile_backlog",
+        "capacity_profile_failure",
+        "capacity_nats_outage",
+        "capacity_worker_loss",
+        "capacity_broker_restart",
+        "capacity_duplicates",
+        "capacity_wakeup_loss",
+        "capacity_timing"
+      ]
+    }
+  ]
+}
