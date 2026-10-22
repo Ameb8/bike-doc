@@ -87,12 +87,15 @@ if [[ "${1:-}" == certification ]]; then
   exit 0
 fi
 if [[ "${1:-}" == queue-cutover ]]; then
+  # Reconstruction expects clean publication batches. Run it before the
+  # diagnostic loss/drain cases intentionally retain accepted queued jobs,
+  # matching the full certification's maintenance-before-worker suite order.
   uv run pytest -vv -m nats \
+    tests/integration/test_job_maintenance.py::test_reconstruction_broker_loss_restart_overlap_and_delivery \
     tests/integration/test_profile_worker.py::test_acceptance_outage_ack_window_broker_and_worker_restart \
     tests/integration/test_diagnostic_worker.py::test_two_jobs_execute_independently_and_read_only_committed_facts \
     tests/integration/test_diagnostic_worker.py::test_live_http_sse_with_external_diagnostic_process_and_rollback \
     tests/integration/test_diagnostic_worker.py::test_cutover_accounts_for_historical_inflight_without_backfilling_jobs \
-    tests/integration/test_job_maintenance.py::test_reconstruction_broker_loss_restart_overlap_and_delivery \
     tests/integration/test_worker_runtime.py::test_observability_real_transport_execution_recovery_and_privacy \
     tests/integration/test_worker_runtime.py::test_shutdown_drain_and_forced_loss_redelivery \
     tests/integration/test_worker_runtime.py::test_worker_first_version_rollout_and_producer_rollback \

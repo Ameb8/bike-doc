@@ -21,7 +21,7 @@ Before rollout, run from the root with Docker/Compose and locked dependencies:
 ```bash
 task format
 task check
-task test:queue-certification -- --output .certification/queue-only-release
+task test:queue-certification -- --output "$PWD/.certification/queue-only-release"
 task test:queue-cutover
 ```
 
@@ -31,6 +31,16 @@ both compatibility gates true. Functional-only evidence cannot authorize release
 No tests use live providers. A changed source fingerprint invalidates the gate;
 rerun after code/configuration changes. Keep bounded certificates with release
 records; never retain raw credentials, request content or provider traces.
+
+Queue-only revalidation on 2026-10-22 passed the full command with output
+`$PWD/.certification/issue-158-final-20261022`. The certificate records
+`passed: true`, `mode: full`, all six stages passing, and source fingerprint
+`cfe771e4bfdafb4d67e7595dfc1c59b097bd695e884756e210357252468faac1`.
+Each clean run passed 10 session/migration, 122 transport, 48 persistence and
+173 focused contract tests, all 38 obligations and compatibility, and all ten
+capacity/privacy scenarios. Peak PostgreSQL connections were 33 and 32 against
+the gate of 52. These measurements cover the tuned local topology and fake
+external providers.
 
 ## Deployment order
 
@@ -141,6 +151,16 @@ scenarios additionally exercise effect-aware deadline accounting.
 `task test:queue-cutover` runs secured production deployment validation/smoke
 then focused real PostgreSQL/JetStream acceptance/recovery tests. All
 projects, secrets and volumes are disposable. See [deploy/VERIFICATION.md](../../deploy/VERIFICATION.md).
+Reconstruction runs first because later worker loss and drain fixtures
+intentionally retain accepted queued jobs. Its bounded publication batches
+therefore start from clean state.
+
+On 2026-10-22, `task test:queue-cutover` passed after the full certificate above:
+19 deployment-validation tests, synthetic alert checks, the secured production
+topology smoke, and all 16 real PostgreSQL/JetStream acceptance/recovery cases.
+Run these gates sequentially on the certification host. No assertions, timeout
+budgets or capacity gates were relaxed. Disposable containers and volumes were
+removed; pre-existing infrastructure was preserved.
 
 | Contract | Executed owner |
 | --- | --- |
