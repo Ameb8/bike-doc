@@ -84,8 +84,6 @@ async def context(tmp_path) -> AsyncIterator[tuple]:
         nats_diagnostic_subject=f"diagnostic.{suffix}.diagnostic",
         nats_profile_consumer=f"profile_{suffix}",
         nats_diagnostic_consumer=f"diagnostic_{suffix}",
-        diagnostic_execution="durable_queue",
-        profile_inference_execution="legacy",
         profile_inference_policy_mode="bootstrap-v1",
         image_analysis_mode="off",
         artifact_local_storage_root=tmp_path,
@@ -1420,13 +1418,11 @@ async def test_live_http_sse_with_external_diagnostic_process_and_rollback(
     from collections import deque
     from contextlib import asynccontextmanager
     from datetime import UTC, datetime
-    from unittest.mock import AsyncMock
 
     import httpx
     import uvicorn
 
     from bike_doc_api.api.deps import get_current_user, get_db_session
-    from bike_doc_api.api.v1 import turns as route
     from bike_doc_api.db.session import get_sessionmaker
     from bike_doc_api.main import create_app
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
@@ -1559,9 +1555,6 @@ asyncio.run(main())
 
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_db_session] = database
-    legacy = AsyncMock()
-    monkeypatch.setattr(route, "execute_diagnostic_turn_background", legacy)
-    monkeypatch.setattr(route, "execute_profile_inference_background", legacy)
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     port = listener.getsockname()[1]
@@ -1619,13 +1612,13 @@ asyncio.run(main())
                         assert (running.effect_boundary_at is not None) is (
                             crash_point == "post_boundary"
                         )
-                    # Roll back the producer while the external owner is running.
-                    settings.diagnostic_execution = "legacy"
+                    # Replay during worker loss preserves the original acceptance.
+
                     replay = await client.post(
                         f"/v1/repair-sessions/{repair_id}/turns", json=payload
                     )
                     assert replay.json() == accepted
-                    legacy.assert_not_awaited()
+
                     process.kill()
                     assert await process.wait() == -signal.SIGKILL
                     await asyncio.sleep(
@@ -1657,13 +1650,13 @@ asyncio.run(main())
                 assert sequences == sorted(set(sequences))
                 encoded = json.dumps(frames)
                 assert job.id not in encoded and "adk_diagnostic_" not in encoded
-            # Producer rollback never schedules a legacy task for this accepted key.
-            settings.diagnostic_execution = "legacy"
+            # Recreated producer dependencies preserve the original acceptance.
+
             replay = await client.post(
                 f"/v1/repair-sessions/{repair_id}/turns", json=payload
             )
             assert replay.json() == accepted
-            legacy.assert_not_awaited()
+
         async with sessions() as session:
             row = await session.get(BackgroundJob, job.id)
             assert row.state == (
@@ -1672,18 +1665,15 @@ asyncio.run(main())
             assert row.attempt_count == (2 if crash_point == "pre_boundary" else 1)
         process.terminate()
         assert await asyncio.wait_for(process.wait(), 10) == 0
-        # A fresh key after drain uses legacy exactly once and creates no queue job.
+        # A fresh key after consumer drain still records durable work.
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
             response = await client.post(
                 f"/v1/repair-sessions/{repair_id}/turns",
                 json={**payload, "client_turn_id": "after-drain"},
             )
             assert response.status_code == 202
-            legacy.assert_awaited_once_with(
-                user.id, repair_id, response.json()["turn_id"]
-            )
             async with sessions() as session:
-                assert not list(
+                rows = list(
                     await session.scalars(
                         select(BackgroundJob).where(
                             BackgroundJob.input["turn_id"].astext
@@ -1691,6 +1681,10 @@ asyncio.run(main())
                         )
                     )
                 )
+                assert len(rows) == 1
+                assert rows[0].state == "queued" and rows[0].attempt_count == 0
+                assert rows[0].confirmed_generation == 0
+
     finally:
         for process in children:
             if process.returncode is None:
@@ -1791,3 +1785,96 @@ async def test_reconstruction_restores_diagnostic_without_replaying_reserved_eff
             assert row.attempt_count == 1
     finally:
         await host.close()
+
+
+async def test_cutover_accounts_for_historical_inflight_without_backfilling_jobs(
+    context,
+):
+    """Exercise the runbook inventory and drain using a seeded pre-cutover turn."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import text
+
+    from bike_doc_api.repositories.diagnostic_terminalization import (
+        append_diagnostic_completion,
+    )
+    from bike_doc_api.repositories.events import RepairSessionEventRepository
+
+    settings, sessions, _, repair_id, _, _, _ = context
+    async with sessions() as session, session.begin():
+        repair = await session.get(RepairSession, repair_id)
+        repair.status = "awaiting_user"
+        user = await session.get(User, repair.user_id)
+    request = TurnCreate.model_validate(
+        {
+            "schema_version": "ai_turn.v1",
+            "client_turn_id": "historical-inflight",
+            "message": {"text": "Chain skips", "artifact_ids": []},
+        }
+    )
+    # Seed a pre-cutover product transaction without queue recording. Only this
+    # fixture uses a fake recorder; all subsequent acceptance uses real storage.
+    async with sessions() as session:
+        seed = get_turn_service(session, settings)
+        seed._background_jobs = AsyncMock()
+        historical = await seed.accept_turn(
+            current_user=user, repair_session_id=repair_id, request=request
+        )
+    inventory = text("""
+        SELECT t.id FROM repair_turns AS t
+        WHERE t.phase = 'diagnostic' AND t.repair_session_id = :repair_id
+          AND NOT EXISTS (
+            SELECT 1 FROM background_jobs AS j
+            WHERE j.job_kind = 'diagnostic_turn'
+              AND j.input->>'turn_id' = t.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM repair_session_events AS e
+            WHERE e.turn_id = t.id AND e.type = 'turn.completed'
+          )
+    """)
+    async with sessions() as session:
+        assert list(await session.scalars(inventory, {"repair_id": repair_id})) == [
+            historical.turn_id
+        ]
+        service = get_turn_service(session, settings)
+        replay = await service.accept_turn(
+            current_user=user, repair_session_id=repair_id, request=request
+        )
+        assert replay == historical
+        assert not list(
+            await session.scalars(
+                select(BackgroundJob).where(
+                    BackgroundJob.input["turn_id"].astext == historical.turn_id
+                )
+            )
+        )
+    # Simulate the old owner's normal durable completion while ingress is shut.
+    # No new executor is invoked to manufacture a result for the old acceptance.
+    async with sessions() as session, session.begin():
+        repair = await session.get(RepairSession, repair_id, with_for_update=True)
+        await append_diagnostic_completion(
+            RepairSessionEventRepository(session),
+            repair,
+            turn_id=historical.turn_id,
+            status="awaiting_user",
+            now=datetime.now(UTC),
+            processing_error=False,
+        )
+    async with sessions() as session:
+        assert not list(await session.scalars(inventory, {"repair_id": repair_id}))
+        accepted = await get_turn_service(session, settings).accept_turn(
+            current_user=user,
+            repair_session_id=repair_id,
+            request=request.model_copy(update={"client_turn_id": "after-cutover"}),
+        )
+        jobs = list(
+            await session.scalars(
+                select(BackgroundJob).where(
+                    BackgroundJob.input["turn_id"].astext == accepted.turn_id
+                )
+            )
+        )
+        assert len(jobs) == 1 and jobs[0].job_kind == "diagnostic_turn"
+        assert jobs[0].state == "queued" and jobs[0].confirmed_generation == 0

@@ -1,4 +1,5 @@
 # Standalone file: do not merge development Compose or its automatic overrides.
+# Queue-only producers: start compatible workers and verify maintenance before ingress.
 x-process: &process
   image: ${BIKEDOC_RUNTIME_IMAGE:-bikedoc-runtime:local}
   init: true

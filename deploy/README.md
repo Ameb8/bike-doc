@@ -5,7 +5,7 @@ shared Python runtime. Development `compose.yaml` remains a local convenience;
 it is not a secured production configuration. No standalone maintenance daemon
 is deployed. Every API replica hosts publication, reconciliation and cleanup.
 Both worker services scale independently and share one durable per workload.
-Capacity numbers and provisional alert thresholds here require #156 measurements.
+Tuned budgets and measured limits are recorded in [CAPACITY.md](CAPACITY.md).
 
 ## Secrets and network policy
 
@@ -53,7 +53,7 @@ Edit **only the relevant role file**, with a secure editor:
 
 | File | Required contract |
 | --- | --- |
-| api.json | PostgreSQL, API NATS identity, Firebase project/auth, local artifact volume, producer switches, API-hosted maintenance/timing, OTLP; no model key |
+| api.json | PostgreSQL, API NATS identity, Firebase project/auth, local artifact volume, API-hosted maintenance/timing, OTLP; no model key |
 | diagnostic.json | PostgreSQL (including durable ADK schema), diagnostic NATS identity, diagnostic/observation/price provider choices and its own provider key, storage, runtime budgets, OTLP; no Firebase or profile configuration |
 | profile.json | PostgreSQL, profile NATS identity, profile provider key/model/policy, storage, shared-runtime budgets, OTLP; no diagnostic, Firebase or ADK configuration |
 | migrate.json | PostgreSQL URL only |
@@ -96,10 +96,8 @@ credentials. Do not grant workers `$JS.API.>` or `bikedoc.work.>` subscriptions.
 
    Alembic migrates product and pinned ADK schemas before any process starts.
    Back up before schema upgrades; never let ADK lazily create production tables.
-2. Keep ingress closed at the reverse proxy until producer verification is
-   complete. The legacy flags are execution selection, not admission control.
-   Initially set both API `DIAGNOSTIC_EXECUTION` and
-   `PROFILE_INFERENCE_EXECUTION` to `legacy` in api.json. Provision topology
+2. Keep ingress closed until producer verification is complete. All new work
+   records durable jobs; there are no executor switches. Provision topology
    before starting workers (the API also verifies it on publication):
 
    ```bash
@@ -112,16 +110,10 @@ credentials. Do not grant workers `$JS.API.>` or `bikedoc.work.>` subscriptions.
    Check each container's `/ready` using the command below. Only a complete
    compatible registry may join a durable consumer; never split old/new kinds
    among replicas expecting subject delivery to find the right handler.
-3. Set both API execution switches to `durable_queue`, recreate APIs, and accept
-   a controlled diagnostic turn (with an image for profile coverage). Inspect
-   confirmed generations, attempts, outcomes, persisted SSE, publication age and
-   worker heartbeats. Each acceptance selects exactly one executor; changing a
-   producer flag never migrates existing accepted work.
-
-   ```bash
-   "${c[@]}" up -d --wait --no-deps --force-recreate api
-   "${c[@]}" exec -T api python -c 'import json,urllib.request; print(json.load(urllib.request.urlopen("http://127.0.0.1:8081/ready")))'
-   ```
+3. Follow [the final cutover runbook](../apps/api/QUEUE_CUTOVER.md): certify,
+   verify maintenance and both worker roles, drain/account for historical work,
+   deploy the API, then accept a controlled image turn and inspect PostgreSQL
+   outcomes, consumer state, metrics, alerts and persisted SSE before opening ingress.
 
 ## Health, supervision, stop-fetch and forced loss
 
@@ -198,13 +190,14 @@ Stop-fetch/drain workers before replacing an incompatible registry. Running jobs
 must finish or expire/reconcile; do not reset a post-effect diagnostic job.
 Keep compatible workers until every queued definition is resolvable. Roll API
 back only if it understands stored schema and outcomes; restore no old database
-over newer committed work. Producer flags can return to `legacy` for **new**
-turns while compatible workers finish previously accepted queue jobs. Before
-enabling that fallback, restore the prior API release's required legacy provider
-configuration and credentials in the API-only secret and verify its existing
-canary: the queue-only API template intentionally contains no model keys. Never
-schedule those queued turns through legacy executors. Do not downgrade schema
-until retained jobs, ADK sessions and rollback compatibility permit it.
+over newer committed work. There is no in-process executor in this release.
+Accepted jobs remain owned by the queue and wait for compatible consumers.
+Fallback to an older release requires explicit per-work accounting proving safety;
+never translate queue jobs or replay post-effect diagnostics. Historical work
+without durable jobs must be drained or classified before cutover. See the
+[effect-aware rollback procedure](../apps/api/QUEUE_CUTOVER.md).
+Do not downgrade schema until retained jobs, ADK sessions and rollback
+compatibility permit it.
 
 ## NATS outage and credentials
 

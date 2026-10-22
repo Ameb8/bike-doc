@@ -6,14 +6,14 @@ import json
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from conftest import ApiTestUser, assert_error_response, assert_repair_session_shape
-from fastapi import FastAPI, Header
+from fastapi import BackgroundTasks, FastAPI, Header
 
 from bike_doc_api.api.deps import get_current_user
-from bike_doc_api.api.v1 import turns as turns_route
 from bike_doc_api.api.v1.events import get_event_service
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.errors import AuthenticationError
@@ -31,6 +31,7 @@ from bike_doc_api.schemas.event import (
     validate_repair_session_event_data,
 )
 from bike_doc_api.schemas.repair_session import repair_session_from_model
+from bike_doc_api.services.background_jobs import BackgroundJobService
 from bike_doc_api.services.events import EventService
 from bike_doc_api.services.turns import TurnService
 
@@ -78,8 +79,7 @@ class _InMemoryTurnStore:
         self.phase_sessions: dict[tuple[str, str], RepairPhaseSessionModel] = {}
         self.turns: dict[tuple[str, str], RepairTurnModel] = {}
         self.events: list[RepairSessionEventModel] = []
-        self.background_calls: list[tuple[str, str, str]] = []
-        self.profile_inference_calls: list[str] = []
+        self.recorder = AsyncMock()
         self.artifact_lookup_ids: list[str] = []
         self.artifacts = {
             OWNED_ARTIFACT_ID: ArtifactRefModel(
@@ -264,16 +264,13 @@ class _InMemoryTurnStore:
         ][:limit]
 
 
-async def _complete_turn_in_background(
+async def _persist_worker_completion(
     store: _InMemoryTurnStore,
     *,
-    user_id: str,
-    repair_session_id: str,
     turn_id: str,
 ) -> None:
-    """Fake background task that records primitive IDs and completes the turn."""
+    """Persist a fake worker outcome for transport-only SSE replay coverage."""
 
-    store.background_calls.append((user_id, repair_session_id, turn_id))
     turn = next(
         persisted_turn
         for persisted_turn in store.turns.values()
@@ -324,6 +321,10 @@ def turn_service_override(
 ) -> Iterator[_InMemoryTurnStore]:
     """Override turn and event services with shared in-memory storage."""
 
+    def forbidden_schedule(*args: object, **kwargs: object) -> None:
+        raise AssertionError("acceptance must never schedule in-process execution")
+
+    monkeypatch.setattr(BackgroundTasks, "add_task", forbidden_schedule)
     store = _InMemoryTurnStore(test_user.id)
     turn_service = TurnService(
         store,
@@ -331,35 +332,10 @@ def turn_service_override(
         store,
         store,
         store,
+        background_jobs=BackgroundJobService(store.recorder),
     )
     event_service = EventService(store, store)
 
-    async def execute_background(
-        user_id: str,
-        repair_session_id: str,
-        turn_id: str,
-    ) -> None:
-        await _complete_turn_in_background(
-            store,
-            user_id=user_id,
-            repair_session_id=repair_session_id,
-            turn_id=turn_id,
-        )
-
-    monkeypatch.setattr(
-        turns_route,
-        "execute_diagnostic_turn_background",
-        execute_background,
-    )
-
-    async def execute_profile_inference(turn_id: str) -> None:
-        store.profile_inference_calls.append(turn_id)
-
-    monkeypatch.setattr(
-        turns_route,
-        "execute_profile_inference_background",
-        execute_profile_inference,
-    )
     app.dependency_overrides[get_turn_service] = lambda: turn_service
     app.dependency_overrides[get_event_service] = lambda: event_service
     yield store
@@ -424,17 +400,17 @@ async def test_submit_valid_diagnostic_turn_returns_accepted(
         user_id=test_user.id,
         bike_id=OWNED_BIKE_ID,
     )
-    assert turn_service_override.background_calls == [
-        (test_user.id, OWNED_SESSION_ID, body["turn_id"]),
-    ]
-    assert all(
-        isinstance(value, str) for value in turn_service_override.background_calls[0]
+    assert turn_service_override.recorder.record.await_count == 1
+    assert (
+        turn_service_override.recorder.record.call_args.args[0].job_kind
+        == "diagnostic_turn"
     )
 
 
 async def test_accepted_text_turn_replays_started_and_completed_events(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
 ) -> None:
     accepted = await _post_turn(
         api_client,
@@ -444,6 +420,10 @@ async def test_accepted_text_turn_replays_started_and_completed_events(
     )
     assert accepted.status_code == 202
     accepted_body = accepted.json()
+    await _persist_worker_completion(
+        turn_service_override,
+        turn_id=accepted_body["turn_id"],
+    )
 
     events = await api_client.get(
         f"/v1/repair-sessions/{OWNED_SESSION_ID}/events",
@@ -479,17 +459,10 @@ async def test_repeating_client_turn_id_returns_original_acceptance(
     assert first.status_code == 202
     assert retry.status_code == 202
     assert retry.json() == first.json()
-    expected_call = (
-        turn_service_override.sessions[OWNED_SESSION_ID].user_id,
-        OWNED_SESSION_ID,
-        first.json()["turn_id"],
-    )
-    assert turn_service_override.background_calls == [
-        expected_call,
-    ]
+    assert turn_service_override.recorder.record.await_count == 1
 
 
-async def test_accepted_image_turn_schedules_one_shadow_inference_run(
+async def test_accepted_image_turn_records_independent_jobs(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     turn_service_override: _InMemoryTurnStore,
@@ -505,10 +478,12 @@ async def test_accepted_image_turn_schedules_one_shadow_inference_run(
     )
 
     assert response.status_code == 202
-    assert turn_service_override.profile_inference_calls == [response.json()["turn_id"]]
+    assert [
+        c.args[0].job_kind for c in turn_service_override.recorder.record.call_args_list
+    ] == ["diagnostic_turn", "profile_inference"]
 
 
-async def test_accepted_multi_image_turn_schedules_one_shadow_inference_run(
+async def test_accepted_multi_image_turn_records_one_profile_job(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     turn_service_override: _InMemoryTurnStore,
@@ -543,10 +518,12 @@ async def test_accepted_multi_image_turn_schedules_one_shadow_inference_run(
     )
 
     assert response.status_code == 202
-    assert turn_service_override.profile_inference_calls == [response.json()["turn_id"]]
+    assert [
+        c.args[0].job_kind for c in turn_service_override.recorder.record.call_args_list
+    ] == ["diagnostic_turn", "profile_inference"]
 
 
-async def test_text_only_turn_does_not_schedule_profile_inference(
+async def test_text_only_turn_records_only_diagnostic_job(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     turn_service_override: _InMemoryTurnStore,
@@ -559,10 +536,10 @@ async def test_text_only_turn_does_not_schedule_profile_inference(
     )
 
     assert response.status_code == 202
-    assert turn_service_override.profile_inference_calls == []
+    assert turn_service_override.recorder.record.await_count == 1
 
 
-async def test_replayed_image_turn_does_not_schedule_another_profile_inference_run(
+async def test_replayed_image_turn_does_not_record_more_jobs(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     turn_service_override: _InMemoryTurnStore,
@@ -577,7 +554,9 @@ async def test_replayed_image_turn_does_not_schedule_another_profile_inference_r
 
     assert first.status_code == 202
     assert replay.status_code == 202
-    assert turn_service_override.profile_inference_calls == [first.json()["turn_id"]]
+    assert [
+        c.args[0].job_kind for c in turn_service_override.recorder.record.call_args_list
+    ] == ["diagnostic_turn", "profile_inference"]
 
 
 async def test_new_turn_while_session_running_returns_409(
@@ -688,8 +667,7 @@ async def test_rejects_non_diagnostic_image_artifact(
     assert_error_response(response, status_code=422, error_code="validation_error")
     assert turn_service_override.turns == {}
     assert turn_service_override.events == []
-    assert turn_service_override.background_calls == []
-    assert turn_service_override.profile_inference_calls == []
+    turn_service_override.recorder.record.assert_not_awaited()
 
 
 @pytest.mark.parametrize("status", ["uploaded", "processing"])
@@ -715,8 +693,7 @@ async def test_not_ready_artifact_is_retryable_and_does_not_schedule_work(
     assert_error_response(response, status_code=409, error_code="artifact_not_ready")
     assert turn_service_override.turns == {}
     assert turn_service_override.events == []
-    assert turn_service_override.background_calls == []
-    assert turn_service_override.profile_inference_calls == []
+    turn_service_override.recorder.record.assert_not_awaited()
 
 
 async def test_rejected_artifact_does_not_schedule_work(
@@ -741,11 +718,10 @@ async def test_rejected_artifact_does_not_schedule_work(
     assert_error_response(response, status_code=422, error_code="validation_error")
     assert turn_service_override.turns == {}
     assert turn_service_override.events == []
-    assert turn_service_override.background_calls == []
-    assert turn_service_override.profile_inference_calls == []
+    turn_service_override.recorder.record.assert_not_awaited()
 
 
-async def test_mixed_artifact_list_is_all_or_nothing_before_background_processing(
+async def test_mixed_artifact_list_is_all_or_nothing_before_job_recording(
     api_client: httpx.AsyncClient,
     auth_headers: dict[str, str],
     turn_service_override: _InMemoryTurnStore,
@@ -788,8 +764,7 @@ async def test_mixed_artifact_list_is_all_or_nothing_before_background_processin
     ]
     assert turn_service_override.turns == {}
     assert turn_service_override.events == []
-    assert turn_service_override.background_calls == []
-    assert turn_service_override.profile_inference_calls == []
+    turn_service_override.recorder.record.assert_not_awaited()
 
 
 async def test_referencing_unknown_input_request_returns_404(
@@ -884,8 +859,7 @@ async def test_invalid_artifact_ids_are_rejected_before_turn_work(
     assert turn_service_override.artifact_lookup_ids == []
     assert turn_service_override.turns == {}
     assert turn_service_override.events == []
-    assert turn_service_override.background_calls == []
-    assert turn_service_override.profile_inference_calls == []
+    turn_service_override.recorder.record.assert_not_awaited()
 
 
 async def test_post_turn_with_missing_or_invalid_auth_returns_401(
@@ -976,87 +950,9 @@ async def test_lifespan_maintenance_broker_failure_does_not_block_valid_acceptan
             api_client, auth_headers, OWNED_SESSION_ID, _valid_turn_payload()
         )
         assert response.status_code == 202
-        assert turn_service_override.background_calls
+        assert turn_service_override.recorder.record.await_count == 1
         repository.confirm_publication.assert_not_awaited()
     publisher.close.assert_awaited_once()
-
-
-@pytest.mark.parametrize("has_image", [False, True])
-async def test_queue_selected_turn_uses_only_external_profile_executor(
-    app: FastAPI,
-    api_client: httpx.AsyncClient,
-    auth_headers: dict[str, str],
-    turn_service_override: _InMemoryTurnStore,
-    has_image: bool,
-) -> None:
-    from unittest.mock import AsyncMock
-
-    from bike_doc_api.services.background_jobs import BackgroundJobService
-
-    store = turn_service_override
-    recorder = AsyncMock()
-    service = TurnService(
-        store,
-        store,
-        store,
-        store,
-        store,
-        background_jobs=BackgroundJobService(recorder),
-        profile_inference_execution="durable_queue",
-    )
-    app.dependency_overrides[get_turn_service] = lambda: service
-    payload = _valid_turn_payload(
-        message={
-            "text": "Inspect this",
-            "artifact_ids": [OWNED_ARTIFACT_ID] if has_image else [],
-        }
-    )
-    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
-    assert first.status_code == 202
-    assert len(store.background_calls) == 1
-    assert store.profile_inference_calls == []
-    assert recorder.record.await_count == int(has_image)
-    # A replay under the opposite rollout selection cannot schedule either executor.
-    legacy = TurnService(store, store, store, store, store)
-    app.dependency_overrides[get_turn_service] = lambda: legacy
-    second = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
-    assert second.json() == first.json()
-    assert len(store.background_calls) == 1 and store.profile_inference_calls == []
-    assert recorder.record.await_count == int(has_image)
-
-
-async def test_legacy_replay_after_queue_enablement_does_not_enqueue(
-    app: FastAPI,
-    api_client: httpx.AsyncClient,
-    auth_headers: dict[str, str],
-    turn_service_override: _InMemoryTurnStore,
-) -> None:
-    from unittest.mock import AsyncMock
-
-    from bike_doc_api.services.background_jobs import BackgroundJobService
-
-    store = turn_service_override
-    payload = _valid_turn_payload(
-        message={"text": "Inspect", "artifact_ids": [OWNED_ARTIFACT_ID]}
-    )
-    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
-    assert first.status_code == 202
-    recorder = AsyncMock()
-    queue = TurnService(
-        store,
-        store,
-        store,
-        store,
-        store,
-        background_jobs=BackgroundJobService(recorder),
-        profile_inference_execution="durable_queue",
-    )
-    app.dependency_overrides[get_turn_service] = lambda: queue
-    replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
-    assert replay.json() == first.json()
-    recorder.record.assert_not_awaited()
-    assert len(store.background_calls) == 1
-    assert store.profile_inference_calls == [first.json()["turn_id"]]
 
 
 @pytest.mark.parametrize("has_image", [False, True])
@@ -1080,7 +976,6 @@ async def test_diagnostic_queue_acceptance_never_schedules_legacy_work(
         store,
         store,
         background_jobs=BackgroundJobService(recorder),
-        diagnostic_execution="durable_queue",
     )
     app.dependency_overrides[get_turn_service] = lambda: service
     payload = _valid_turn_payload(
@@ -1092,11 +987,25 @@ async def test_diagnostic_queue_acceptance_never_schedules_legacy_work(
     response = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
     assert response.status_code == 202
     assert recorder.record.await_count == 1 + int(has_image)
-    assert not store.background_calls and not store.profile_inference_calls
     assert next(iter(store.phase_sessions.values())).adk_session_id is None
-    # Rollback changes only future acceptances; replay never schedules fallback.
-    service._diagnostic_execution = "legacy"
+    # Replay never records or schedules more work.
     replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
     assert replay.json() == response.json()
     assert recorder.record.await_count == 1 + int(has_image)
-    assert not store.background_calls and not store.profile_inference_calls
+
+
+async def test_historical_acceptance_without_jobs_is_not_reinterpreted(
+    api_client: httpx.AsyncClient,
+    auth_headers: dict[str, str],
+    turn_service_override: _InMemoryTurnStore,
+) -> None:
+    # Seed the historical product record and its original acceptance snapshot.
+    # No corresponding job is present in the recorder for this imported history.
+    payload = _valid_turn_payload()
+    first = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert first.status_code == 202
+    turn_service_override.recorder.reset_mock()
+    turn_service_override.sessions[OWNED_SESSION_ID].status = "awaiting_user"
+    replay = await _post_turn(api_client, auth_headers, OWNED_SESSION_ID, payload)
+    assert replay.status_code == 202 and replay.json() == first.json()
+    turn_service_override.recorder.record.assert_not_awaited()

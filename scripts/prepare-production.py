@@ -104,8 +104,6 @@ def prepare(directory: Path, trusted_single_host: bool) -> None:
                 {
                     prefix + "AUTH_MODE": "firebase",
                     prefix + "FIREBASE_PROJECT_ID": "REPLACE_ME",
-                    prefix + "DIAGNOSTIC_EXECUTION": "durable_queue",
-                    prefix + "PROFILE_INFERENCE_EXECUTION": "durable_queue",
                 }
             )
         if role in {"diagnostic", "profile"}:

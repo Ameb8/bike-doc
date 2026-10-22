@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -21,6 +22,7 @@ from bike_doc_api.models.repair_session import (
 )
 from bike_doc_api.models.user import User
 from bike_doc_api.schemas.turn import TurnCreate
+from bike_doc_api.services.background_jobs import BackgroundJobService
 from bike_doc_api.services.turns import TurnService
 
 
@@ -98,7 +100,7 @@ class _TurnRepositories:
         model: RepairTurn | RepairSessionEvent,
     ) -> RepairTurn | RepairSessionEvent:
         if isinstance(model, RepairTurn):
-            model.id = f"turn_{len(self.turns) + 1}"
+            model.id = f"turn_{len(self.turns) + 1:026d}"
             model.created_at = datetime(2026, 1, 1, tzinfo=UTC)
             self.turns.append(model)
         else:
@@ -121,14 +123,6 @@ class _PhaseSessionManager:
             status="active",
             created_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
-
-
-class _OrchestratorSpy:
-    def __init__(self) -> None:
-        self.calls: list[str] = []
-
-    async def process_turn(self, *, current_user: User, turn: RepairTurn) -> None:
-        self.calls.append(turn.id)
 
 
 def _artifact(artifact_id: str, **values: Any) -> ArtifactRef:
@@ -175,7 +169,6 @@ def _user() -> User:
 
 def _service(
     repositories: _TurnRepositories,
-    orchestrator: _OrchestratorSpy,
     *,
     image_analysis_mode: str = "enabled",
 ) -> TurnService:
@@ -186,24 +179,24 @@ def _service(
         repositories,
         repositories,
         phase_session_manager=_PhaseSessionManager(),
-        orchestrator=orchestrator,
+        background_jobs=BackgroundJobService(AsyncMock()),
         image_analysis_mode=image_analysis_mode,
     )
 
 
 async def test_accept_turn_accepts_ready_owned_diagnostic_image() -> None:
     repositories = _TurnRepositories()
-    orchestrator = _OrchestratorSpy()
 
-    accepted = await _service(repositories, orchestrator).accept_turn(
+    accepted = await _service(repositories).accept_turn(
         current_user=_user(),
         repair_session_id=repositories.session.id,
         request=_request("art_ready"),
     )
 
-    assert accepted.turn_id == "turn_1"
-    assert [turn.id for turn in repositories.turns] == ["turn_1"]
-    assert orchestrator.calls == ["turn_1"]
+    assert accepted.turn_id == "turn_00000000000000000000000001"
+    assert [turn.id for turn in repositories.turns] == [
+        "turn_00000000000000000000000001"
+    ]
 
 
 async def test_accept_turn_snapshots_the_configured_image_analysis_mode() -> None:
@@ -211,7 +204,6 @@ async def test_accept_turn_snapshots_the_configured_image_analysis_mode() -> Non
 
     await _service(
         repositories,
-        _OrchestratorSpy(),
         image_analysis_mode="shadow",
     ).accept_turn(
         current_user=_user(),
@@ -228,7 +220,6 @@ async def test_idempotent_image_turn_replay_keeps_the_original_mode_snapshot() -
 
     await _service(
         repositories,
-        _OrchestratorSpy(),
         image_analysis_mode="shadow",
     ).accept_turn(
         current_user=_user(),
@@ -237,7 +228,6 @@ async def test_idempotent_image_turn_replay_keeps_the_original_mode_snapshot() -
     )
     await _service(
         repositories,
-        _OrchestratorSpy(),
         image_analysis_mode="off",
     ).accept_turn(
         current_user=_user(),
@@ -261,7 +251,6 @@ async def test_text_only_turn_has_no_image_analysis_mode_snapshot() -> None:
 
     await _service(
         repositories,
-        _OrchestratorSpy(),
         image_analysis_mode="enabled",
     ).accept_turn(
         current_user=_user(),
@@ -297,10 +286,9 @@ async def test_accept_turn_rejects_artifact_that_fails_diagnostic_metadata_accep
 ) -> None:
     repositories = _TurnRepositories()
     repositories.artifacts = {artifact.id: artifact}
-    orchestrator = _OrchestratorSpy()
 
     with pytest.raises(error):
-        await _service(repositories, orchestrator).accept_turn(
+        await _service(repositories).accept_turn(
             current_user=_user(),
             repair_session_id=repositories.session.id,
             request=_request(artifact.id),
@@ -308,22 +296,19 @@ async def test_accept_turn_rejects_artifact_that_fails_diagnostic_metadata_accep
 
     assert repositories.turns == []
     assert repositories.events == []
-    assert orchestrator.calls == []
 
 
 async def test_accept_turn_rejects_missing_artifact_without_disclosing_it() -> None:
     repositories = _TurnRepositories()
-    orchestrator = _OrchestratorSpy()
 
     with pytest.raises(NotFoundError):
-        await _service(repositories, orchestrator).accept_turn(
+        await _service(repositories).accept_turn(
             current_user=_user(),
             repair_session_id=repositories.session.id,
             request=_request("art_missing"),
         )
 
     assert repositories.turns == []
-    assert orchestrator.calls == []
 
 
 async def test_accept_turn_validates_every_mixed_artifact_before_rejecting_all() -> (
@@ -332,10 +317,9 @@ async def test_accept_turn_validates_every_mixed_artifact_before_rejecting_all()
     repositories = _TurnRepositories()
     invalid = _artifact("art_invalid_mixed", mime_type="image/gif")
     repositories.artifacts[invalid.id] = invalid
-    orchestrator = _OrchestratorSpy()
 
     with pytest.raises(ValidationAppError):
-        await _service(repositories, orchestrator).accept_turn(
+        await _service(repositories).accept_turn(
             current_user=_user(),
             repair_session_id=repositories.session.id,
             request=_request("art_ready", invalid.id),
@@ -344,14 +328,11 @@ async def test_accept_turn_validates_every_mixed_artifact_before_rejecting_all()
     assert repositories.lookups == ["art_ready", invalid.id]
     assert repositories.turns == []
     assert repositories.events == []
-    assert orchestrator.calls == []
 
 
-@pytest.mark.parametrize("diagnostic_queue", [False, True])
 @pytest.mark.parametrize("has_image", [False, True])
-async def test_queue_selection_records_pinned_input_before_commit_and_replay(
+async def test_acceptance_records_pinned_inputs_before_commit_and_replay(
     has_image: bool,
-    diagnostic_queue: bool,
 ) -> None:
     from unittest.mock import AsyncMock
 
@@ -382,8 +363,6 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
         repositories,
         repositories,
         background_jobs=BackgroundJobService(recorder),
-        diagnostic_execution="durable_queue" if diagnostic_queue else "legacy",
-        profile_inference_execution="legacy" if diagnostic_queue else "durable_queue",
         profile_inference_extractor_version="accepted.v1",
         profile_inference_max_attempts=2,
         commit=commit,
@@ -392,13 +371,10 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
     accepted = await service.accept_turn(
         current_user=_user(), repair_session_id=repositories.session.id, request=request
     )
-    assert service.last_diagnostic_job_recorded is diagnostic_queue
-    if diagnostic_queue:
-        definition = recorder.record.call_args_list[0].args[0]
-        assert definition.input == {"turn_id": accepted.turn_id}
-        assert definition.deduplication_key == accepted.turn_id
-        assert definition.workload_class == "diagnostic"
-    assert service.last_profile_job_recorded is has_image
+    definition = recorder.record.call_args_list[0].args[0]
+    assert definition.input == {"turn_id": accepted.turn_id}
+    assert definition.deduplication_key == accepted.turn_id
+    assert definition.workload_class == "diagnostic"
     if has_image:
         definition = recorder.record.call_args.args[0]
         assert definition.input == {
@@ -407,16 +383,14 @@ async def test_queue_selection_records_pinned_input_before_commit_and_replay(
             "extractor_version": "accepted.v1",
         }
         assert definition.attempt_limit == 2
-    elif not diagnostic_queue:
-        recorder.record.assert_not_awaited()
     commit.assert_awaited_once()
     # Configuration changes must not reinterpret accepted work.
     repositories.session.status = "awaiting_user"
     repositories.session.latest_event_sequence = 5
     repositories.session.updated_at = datetime(2026, 2, 1, tzinfo=UTC)
-    legacy = _service(repositories, _OrchestratorSpy())
-    replay = await legacy.accept_turn(
+    restarted = _service(repositories)
+    replay = await restarted.accept_turn(
         current_user=_user(), repair_session_id=repositories.session.id, request=request
     )
-    assert replay == accepted and legacy.last_acceptance_was_idempotent_replay
-    assert recorder.record.await_count == int(has_image) + int(diagnostic_queue)
+    assert replay == accepted and restarted.last_acceptance_was_idempotent_replay
+    assert recorder.record.await_count == int(has_image) + 1

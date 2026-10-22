@@ -755,9 +755,9 @@ planning or execution agent flow wired into the API. The live agent path is:
    `client_turn_id` idempotency, creates or resumes the diagnostic phase session,
    persists the turn, marks the repair session `running`, and emits
    `turn.started`.
-5. The route schedules `execute_diagnostic_turn_background`, which rebuilds the
-   service/repository graph around a fresh async database session and runs the
-   diagnostic orchestrator outside the request scope.
+5. The acceptance transaction records a diagnostic job and an independent profile
+   job for eligible images. API maintenance publishes notifications; workload
+   workers rebuild services around fresh sessions and execute outside the API.
 6. The client watches `/v1/repair-sessions/{sessionId}/events` to receive
    assistant deltas, artifact references, input requests, safety escalations,
    report creation, phase transitions, errors, and turn completion.
@@ -891,8 +891,8 @@ The implemented diagnostic turn flow is:
    `POST /v1/repair-sessions/{sessionId}/turns`.
 2. `TurnService` validates ownership, phase state, artifact references, and
    idempotency, then persists the turn and emits `turn.started`.
-3. The route schedules `execute_diagnostic_turn_background` as a FastAPI
-   background task.
+3. The same transaction records durable diagnostic and eligible profile jobs;
+   API maintenance publishes notifications to the independent worker roles.
 4. The background worker rebuilds the service and repository graph around a
    fresh async database session.
 5. The worker constructs the diagnostic ADK agent and `DiagnosticRunner`.
@@ -1076,7 +1076,7 @@ library.
 
 Run migrations and the private PostgreSQL/NATS services first. With the root
 `.env` configured, `task run:profile` starts the independent native async role.
-For Compose, run `docker compose --profile profile-worker up --build profile-worker`.
+For Compose, run `docker compose up --build profile-worker`.
 The optional Google credential override also mounts ADC into this role. API
 and worker local artifact roots must resolve to the same storage; the Compose
 bind mount shares the existing API artifact directory. For production, run
@@ -1085,14 +1085,12 @@ provide the explicit settings/secrets, and allow at least 120 seconds for proces
 shutdown. The role needs the profile workload consumer and advisory subjects;
 publication belongs to the API maintenance host.
 
-Turn acceptance defaults to the legacy profile executor. Set
-`BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` only after the compatible
-worker and API maintenance host are running. The accepted job records this
-selection permanently; settings changes affect only future acceptances. Never
-manually enqueue legacy-selected work. The profile role supports `profile_inference.v1`, schema
-`bike_profile_inference.v1`, and extractor `drivetrain-specifications.v1`.
-Unsupported pins fail permanently before consuming an application attempt.
-Future behavior/version changes require deploying compatible workers first.
+Every accepted turn records a durable diagnostic job and every eligible image
+turn also records an independent profile job. There are no executor switches.
+Start compatible workers before opening API ingress. The profile role supports
+`profile_inference.v1`, schema `bike_profile_inference.v1`, and extractor
+`drivetrain-specifications.v1`. Unsupported pins fail before an application
+attempt. Later version changes also require compatible workers first.
 
 | Setting suffix (prefix `BIKE_DOC_API_`) | Default | Constraint |
 | --- | --- | --- |
@@ -1123,66 +1121,29 @@ recovery, idempotent effects, database resolution retries, timeout and provider
 exhaustion. It accepts queue-selected turns with fake providers and never calls a real model.
 
 
-### Profile queue canary and rollback
+### Queue-only cutover and rollback
 
-1. Apply migrations through `0010` before running the new API/worker image.
-   Keep `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=legacy` during expansion.
-2. Start PostgreSQL and pinned NATS, then the API with
-   `BIKE_DOC_API_JOB_MAINTENANCE_ENABLED=true` and the profile worker using the
-   invocation above. The worker logs `profile_worker_ready` after connecting,
-   verifying migrated job storage, validating topology and constructing its
-   supported registry. Inspect the
-   profile durable consumer separately from PostgreSQL job state. The worker
-   can start idle while producers remain disabled; no standalone maintenance
-   deployment is needed.
-3. Run `task format`, `task check`, then `task test:profile-canary`. This command
-   creates disposable PostgreSQL 16 and NATS 2.12.1 with file-backed volumes,
-   migrates them, and combines maintenance/runtime failure injection with the
-   accepted-turn profile role tests. No model credentials are required. It
-   verifies acceptance during broker outage, pinned inputs, rollback, concurrent
-   replay, publisher loss after broker acknowledgement, broker/worker restart,
-   duplicate/stale/future/wrong-subject/malformed/unsupported delivery, early and
-   running duplicates, timeout, dropped acknowledgements, graceful/forced loss,
-   no-progress reconciliation, and ambiguous provider loss within one attempt
-   budget. A separate Python worker process is killed with SIGKILL inside fake
-   extraction, recovered through the publisher, restarted, and drained with
-   SIGTERM; it verifies the shared budget and one committed profile effect. Each suite inspects database rows and consumer state independently.
-4. Enable `BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION=durable_queue` on API producers
-   (`task run` with root `.env`, or recreate the Compose API). Eligible image turns
-   now commit one profile job, input and generation intent with `turn.started`.
-   Text-only turns create no job. HTTP `202` needs no broker connection. Diagnostic
-   processing continues through its existing background executor and does not
-   wait for profile inference. The route never publishes a notification.
-
-For rollback, stop/drain the profile consumer (`docker compose stop profile-worker`
-with its 120-second grace period), inspect running jobs and deadlines, and retain
-all PostgreSQL intent and inference rows. Select `legacy` for future work only
-when it is proven safe; do not send accepted queue jobs to the legacy executor.
-Pending queue work waits for a compatible worker to resume, using maintenance
-recovery and the same bounded attempt budget. Replays create or schedule no work
-under either setting. Do not downgrade migration `0010` while unbound accepted
-phase references remain; its downgrade fails instead of deleting accepted work.
-
-The canary adds no diagnostic jobs and removes no diagnostic executor. Production
-monitoring/load certification, broker reconstruction and diagnostic queue cutover
-remain later Chunk work.
+Follow [the final cutover runbook](apps/api/QUEUE_CUTOVER.md). The release gates
+are `task test:queue-certification` and `task test:queue-cutover`. Close ingress,
+verify compatible worker roles and API maintenance, account for all historical
+in-flight work, then roll the API and verify durable outcomes and public SSE.
+Rollback preserves PostgreSQL jobs and inspects effect boundaries after consumer
+drain. Accepted queue work always waits for a compatible worker; it is never
+blindly replayed in-process.
 
 ### Diagnostic worker preparation
 
 Run `task run:diagnostic`, or
-`docker compose --profile diagnostic-worker up --build diagnostic-worker`.
+`docker compose up --build diagnostic-worker`.
 The role logs `diagnostic_worker_ready` after database/topology validation and
 registers the complete `diagnostic_turn.v1` workload. It uses the same diagnostic
-composition as the transitional background executor, with durable ADK sessions
+composition in `adk/execution.py`, with durable ADK sessions
 and one process-owned NATS connection. The Google credential override also
 supports this role.
 
-Diagnostic producers remain disabled. Deploying this role alone does not change
-turn acceptance or select a new executor. Effect fencing (#150), atomic failure
-terminalization (#151), and producer/canary selection (#152) must land before
-production queue work is enabled. Expired diagnostic jobs intentionally wait
-for that product-aware recovery instead of replaying effects or being repaired
-by generic job maintenance.
+Diagnostic production is unconditional. The worker enforces effect fencing,
+atomic terminalization and bounded recovery; expired post-effect work is
+interrupted without replay.
 
 `BIKE_DOC_API_DIAGNOSTIC_WORKER_*` settings in `.env.example` set role-specific
 fetch/concurrency, handler and hard duration, grace, progress, shutdown, retry,
@@ -1197,7 +1158,7 @@ pools, separately from API and profile roles. Compose grants 120 seconds for
 shared-runtime drain followed by bounded transport/telemetry cleanup.
 
 `task test:diagnostic` starts disposable PostgreSQL 16 and pinned JetStream,
-migrates schemas, seeds strict diagnostic jobs without enabling a producer,
+migrates schemas, accepts strict diagnostic jobs,
 and runs the role with a fake model over real durable ADK. It checks immutable
 input, execution-time context, bound-session failure, normal/handled-error
 completion before acknowledgement, duplicate no-op behavior, consumer isolation,

@@ -103,7 +103,7 @@ not production credentials.
 | 11. Required verification sequence | `task format`, `task check`, then `task test:recovery` using disposable PostgreSQL/JetStream |
 
 Inspection UX, dashboards, production deployment hardening, capacity tuning and
-final legacy executor removal belong to subsequent tasks.
+queue-only cutover is documented in [QUEUE_CUTOVER.md](QUEUE_CUTOVER.md).
 
 For the secured single-host topology, use the containerized finite command,
 volume backup/restore ordering and rollback procedure in the

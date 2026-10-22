@@ -37,7 +37,6 @@ def test_secret_generation_and_role_permissions(tmp_path: Path) -> None:
         assert settings.database_url.startswith("postgresql+")
         if role == "api":
             assert "GOOGLE_API_KEY" not in values
-            assert settings.diagnostic_execution == "durable_queue"
         if role == "profile":
             assert not any(
                 "DIAGNOSTIC" in k or "ADK" in k or "AUTH" in k for k in values

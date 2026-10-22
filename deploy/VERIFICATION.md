@@ -16,14 +16,14 @@ Python bytecode for cold startup and no package-download cache in its layers.
 | Independent health without provider calls | Boolean loopback probes; unit database/broker/consumer failures, maintenance freshness/dead-loop tests, historical connection-error recovery versus authorization denial; real broker/database outages with live process and failed readiness |
 | Bounded graceful and forced shutdown | Existing shared runtime stop-fetch/settlement/close; outer Compose budget and supervision; smoke graceful stop with clean exit-code assertions, SIGKILL/restart; recovery suite external process loss, deadline/fencing and terminal redelivery |
 | Required versioned alerts | Metric/dimension validation plus every rule's synthetic crossing/recovery; stale/missing availability, resource and telemetry signals; backend window and OTLP mapping in runbook |
-| Worker-first rollout and safe rollback | Smoke replaces complete v1 workers before APIs; shared-runtime real PostgreSQL/NATS `test_worker_first_version_rollout_and_producer_rollback` drains v1-only workers, readies two complete v1/v2 registries before new production, and retains both through producer rollback/terminal redelivery; real diagnostic test `test_live_http_sse_with_external_diagnostic_process_and_rollback` preserves accepted executor across producer rollback and schedules fresh legacy work once |
+| Worker-first rollout and safe rollback | Smoke replaces complete v1 workers before APIs; shared-runtime real PostgreSQL/NATS `test_worker_first_version_rollout_and_producer_rollback` drains v1-only workers, readies two complete v1/v2 registries before new production, and retains both through producer rollback/terminal redelivery; real diagnostic test `test_live_http_sse_with_external_diagnostic_process_and_rollback` preserves acceptance through worker loss/restart and records a fresh durable job after consumer drain |
 | Safe backup/reconstruction | Smoke offline archive restored onto a fresh disk with every source file's SHA-256 verified before restart, empty-disk recovery suffix preserving the old volume, and finite containerized reconstruction; Task 4.1 real reconstruction suites preserve running/future/exhausted/terminal/unsafe work, generations and product outcomes |
 | Configuration/operational smoke and repository checks | Task targets above; deployment smoke also exercises inspection, reconnect and overlapping credential rotation/reload/revocation and incident-log secret exclusion |
 
 There is no new maintenance deployment, second worker runtime, provider call in
 readiness, public API endpoint, instrumentation exporter or canonical-spec edit.
-The later capacity, full certification and legacy-removal tasks retain their
-boundaries. Alert routing and backend-specific OTLP TLS credentials are supplied
+Final capacity, certification and queue-only gates are documented in
+[QUEUE_CUTOVER.md](../apps/api/QUEUE_CUTOVER.md). Alert routing and backend-specific OTLP TLS credentials are supplied
 by the operator; synthetic contract validation does not claim vendor delivery.
 
 Verified on 2026-10-19 with disposable Docker infrastructure:

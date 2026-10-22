@@ -173,3 +173,43 @@ unrelated containers were preserved.
 These results certify the tuned local topology with deterministic fake external
 providers. Deployment on different hardware and live provider behavior remain
 outside this certification's capacity claim.
+
+### Revalidation on 2026-10-22
+
+The #157 implementation was already present in commit `4783f46`. Revalidation
+preserved the pending cutover changes and restored missing user/session ownership
+on two API-test artifact fixtures. Without those fields, the fixtures received
+404 responses before reaching their multi-image acceptance and atomic rejection
+assertions. No runtime behavior, assertion, timing budget, or capacity gate was
+changed.
+
+`task test:queue-certification` subsequently passed both complete clean runs.
+The private certificate is
+`.certification/run-20261022-072311/certification.json`, with `passed: true` and
+source fingerprint
+`fb83d72be6eb36f1137dd495d61de8a6bd2fae1a83db85b7b82c77672b312b91`.
+
+| Evidence | Clean run 1 | Clean run 2 |
+| --- | --- | --- |
+| Session/migration tests | 10 passed | 10 passed |
+| PostgreSQL/JetStream transport tests | 122 passed | 122 passed |
+| PostgreSQL persistence tests | 48 passed | 48 passed |
+| Focused contract tests | 173 passed | 173 passed |
+| Capacity/privacy scenarios | 10 passed | 10 passed |
+| Numbered obligations and compatibility | 38/38; passed | 38/38; passed |
+| Peak measured PostgreSQL connections | 33 (gate: 52) | 32 (gate: 52) |
+
+The ordered formatting and standard checks passed before these runs. Manifest
+validation, the two repaired fixture tests, and final diff whitespace checks also
+passed. The disposable infrastructure and temporary raw capacity captures were
+removed; pre-existing containers were preserved.
+
+Earlier attempts remain failed evidence, rather than being combined into this
+certificate. The first stopped on the fixture failures. Later attempts missed
+broker-restart SSE p95 (3.51s versus 3s), then forced-loss acceptance p95 (4.29s
+versus 4s) and publication acknowledgement p95 (1.35s versus 1s). Focused
+reproductions passed with unchanged gates, followed by the complete successful
+two-run workflow above. In the final runs, broker-restart SSE p95 was
+2.70s/1.96s; forced-loss acceptance p95 was 2.40s/1.99s and publication
+acknowledgement p95 was 0.14s/0.27s. These variations reinforce the existing
+host-specific capacity limitation; the suite continues to reject budget misses.

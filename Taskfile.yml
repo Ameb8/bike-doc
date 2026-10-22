@@ -206,3 +206,10 @@ tasks:
     dir: apps/api
     cmds:
       - uv run python tests/certification/certify.py {{.CLI_ARGS}}
+
+  test:queue-cutover:
+    desc: Exercise queue-only deployment, operations and real acceptance/recovery smoke.
+    cmds:
+      - task: deployment:validate
+      - task: test:deployment
+      - bash scripts/verify-backend-compatibility.sh queue-cutover

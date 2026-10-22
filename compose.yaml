@@ -64,9 +64,7 @@ x-api-environment: &api-environment
   BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE: ${BIKE_DOC_API_DIAGNOSTIC_AGENT_TEMPERATURE:-0.2}
   BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS: ${BIKE_DOC_API_DIAGNOSTIC_AGENT_MAX_OUTPUT_TOKENS:-2048}
   BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS: ${BIKE_DOC_API_DIAGNOSTIC_AGENT_TIMEOUT_SECONDS:-30}
-  BIKE_DOC_API_DIAGNOSTIC_EXECUTION: ${BIKE_DOC_API_DIAGNOSTIC_EXECUTION:-legacy}
   BIKE_DOC_API_DIAGNOSTIC_WORKER_ATTEMPT_LIMIT: ${BIKE_DOC_API_DIAGNOSTIC_WORKER_ATTEMPT_LIMIT:-3}
-  BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION: ${BIKE_DOC_API_PROFILE_INFERENCE_EXECUTION:-legacy}
   BIKE_DOC_API_PROFILE_INFERENCE_LLM_PROVIDER: ${BIKE_DOC_API_PROFILE_INFERENCE_LLM_PROVIDER:-google_ai}
   BIKE_DOC_API_PROFILE_INFERENCE_MODEL: ${BIKE_DOC_API_PROFILE_INFERENCE_MODEL:-gemini-2.5-flash}
   BIKE_DOC_API_PROFILE_INFERENCE_TIMEOUT_SECONDS: ${BIKE_DOC_API_PROFILE_INFERENCE_TIMEOUT_SECONDS:-30}
@@ -185,7 +183,6 @@ services:
         condition: service_completed_successfully
 
   profile-worker:
-    profiles: ["profile-worker"]
     build: *api-build
     working_dir: /workspace/apps/api
     command: ["python", "-m", "bike_doc_api.workers.profile_role"]
@@ -211,7 +208,6 @@ services:
         condition: service_healthy
 
   diagnostic-worker:
-    profiles: ["diagnostic-worker"]
     build: *api-build
     working_dir: /workspace/apps/api
     command: ["python", "-m", "bike_doc_api.workers.diagnostic_role"]
