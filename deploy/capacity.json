@@ -1,0 +1,53 @@
+{
+  "api": {
+    "api_pool_size": 13,
+    "api_adk_pool_size": 1,
+    "maintenance_pool_size": 2,
+    "database_pool_timeout_seconds": 5,
+    "nats_ack_wait_seconds": 30,
+    "nats_diagnostic_max_ack_pending": 8,
+    "nats_profile_max_ack_pending": 8,
+    "job_publication_batch_limit": 8,
+    "job_publication_poll_seconds": 1,
+    "job_publication_claim_seconds": 30,
+    "job_publish_timeout_seconds": 10,
+    "job_reconciliation_batch_limit": 100,
+    "job_reconciliation_poll_seconds": 30,
+    "job_backoff_initial_seconds": 2,
+    "job_backoff_max_seconds": 60,
+    "job_no_progress_seconds": 300,
+    "job_shutdown_timeout_seconds": 10
+  },
+  "diagnostic": {
+    "diagnostic_worker_concurrency": 2,
+    "diagnostic_worker_fetch_batch": 2,
+    "diagnostic_worker_pool_size": 4,
+    "diagnostic_worker_adk_pool_size": 2,
+    "nats_ack_wait_seconds": 30,
+    "nats_diagnostic_max_ack_pending": 8,
+    "diagnostic_worker_handler_seconds": 110,
+    "diagnostic_worker_hard_seconds": 120,
+    "diagnostic_worker_timeout_grace_seconds": 5,
+    "diagnostic_worker_progress_seconds": 10,
+    "diagnostic_worker_shutdown_seconds": 30,
+    "diagnostic_agent_timeout_seconds": 30,
+    "observation_extraction_timeout_seconds": 30,
+    "price_lookup_timeout_seconds": 20,
+    "diagnostic_worker_storage_seconds": 20,
+    "database_pool_timeout_seconds": 5
+  },
+  "profile": {
+    "worker_concurrency": 1,
+    "worker_fetch_batch": 1,
+    "profile_worker_pool_size": 3,
+    "nats_ack_wait_seconds": 30,
+    "nats_profile_max_ack_pending": 8,
+    "profile_worker_handler_seconds": 50,
+    "profile_worker_hard_seconds": 60,
+    "profile_worker_timeout_grace_seconds": 5,
+    "worker_progress_seconds": 10,
+    "worker_shutdown_seconds": 30,
+    "profile_inference_timeout_seconds": 30,
+    "database_pool_timeout_seconds": 5
+  }
+}

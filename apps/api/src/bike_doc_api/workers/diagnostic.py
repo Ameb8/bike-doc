@@ -86,6 +86,16 @@ def diagnostic_policy(settings: Settings) -> HandlerPolicy:
         )
     if settings.diagnostic_worker_shutdown_seconds < grace:
         raise ValueError("diagnostic shutdown budget must cover cancellation grace")
+    if (
+        settings.diagnostic_worker_concurrency
+        > settings.nats_diagnostic_max_ack_pending
+    ):
+        raise ValueError("local concurrency must fit consumer MaxAckPending")
+    if (
+        settings.diagnostic_worker_progress_seconds
+        >= settings.nats_ack_wait_seconds / 2
+    ):
+        raise ValueError("progress must leave acknowledgement timing margin")
     return HandlerPolicy(
         settings.diagnostic_worker_attempt_limit,
         timedelta(seconds=settings.diagnostic_worker_retry_seconds),

@@ -98,6 +98,17 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://bikedoc:bikedoc@localhost:5432/bikedoc",
         min_length=1,
     )
+    process_role: Literal["api", "diagnostic", "profile"] = "api"
+    api_pool_size: int = Field(default=13, ge=2, le=128)
+    api_adk_pool_size: int = Field(default=1, ge=1, le=128)
+    maintenance_pool_size: int = Field(default=2, ge=1, le=16)
+    database_pool_timeout_seconds: float = Field(default=5, gt=0, le=30)
+    nats_ack_wait_seconds: float = Field(default=30, ge=1, le=600)
+    nats_diagnostic_max_ack_pending: int = Field(default=8, ge=1, le=1024)
+    nats_profile_max_ack_pending: int = Field(default=8, ge=1, le=1024)
+    health_port: int = Field(default=0, ge=0, le=65535)
+
+    nats_inbox_prefix: str = "_INBOX"
     nats_url: SecretStr = SecretStr("nats://127.0.0.1:4222")
     event_poll_interval_seconds: float = Field(default=2.0, ge=1.0, le=10.0)
     nats_work_stream: str = "BIKEDOC_WORK_V1"
@@ -114,12 +125,12 @@ class Settings(BaseSettings):
     profile_worker_timeout_grace_seconds: float = Field(
         default=5, gt=0, le=30, allow_inf_nan=False
     )
-    profile_worker_pool_size: int = Field(default=6, ge=2, le=130)
+    profile_worker_pool_size: int = Field(default=3, ge=2, le=130)
     profile_worker_retry_seconds: float = Field(
         default=10, gt=0, le=300, allow_inf_nan=False
     )
-    worker_concurrency: int = Field(default=4, ge=1, le=128)
-    worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    worker_concurrency: int = Field(default=1, ge=1, le=128)
+    worker_fetch_batch: int = Field(default=1, ge=1, le=128)
     worker_fetch_timeout_seconds: float = Field(
         default=1, gt=0, le=30, allow_inf_nan=False
     )
@@ -135,14 +146,14 @@ class Settings(BaseSettings):
     diagnostic_worker_timeout_grace_seconds: float = Field(
         default=5, gt=0, le=30, allow_inf_nan=False
     )
-    diagnostic_worker_pool_size: int = Field(default=6, ge=3, le=130)
-    diagnostic_worker_adk_pool_size: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_pool_size: int = Field(default=4, ge=3, le=130)
+    diagnostic_worker_adk_pool_size: int = Field(default=2, ge=1, le=128)
     diagnostic_worker_attempt_limit: int = Field(default=3, ge=1, le=100)
     diagnostic_worker_retry_seconds: float = Field(
         default=10, gt=0, le=300, allow_inf_nan=False
     )
-    diagnostic_worker_concurrency: int = Field(default=4, ge=1, le=128)
-    diagnostic_worker_fetch_batch: int = Field(default=4, ge=1, le=128)
+    diagnostic_worker_concurrency: int = Field(default=2, ge=1, le=128)
+    diagnostic_worker_fetch_batch: int = Field(default=2, ge=1, le=128)
     diagnostic_worker_fetch_timeout_seconds: float = Field(
         default=1, gt=0, le=30, allow_inf_nan=False
     )
@@ -156,8 +167,25 @@ class Settings(BaseSettings):
         default=20, gt=0, le=600, allow_inf_nan=False
     )
 
+    nats_work_max_age_seconds: float = Field(
+        default=86400, gt=0, le=604800, allow_inf_nan=False
+    )
+    job_terminal_retention_seconds: float = Field(
+        default=604800, gt=0, le=31536000, allow_inf_nan=False
+    )
+    job_audit_horizon_seconds: float = Field(
+        default=172800, ge=0, le=31536000, allow_inf_nan=False
+    )
+    job_recovery_backoff_seconds: float = Field(
+        default=30, gt=0, le=3600, allow_inf_nan=False
+    )
+    job_cleanup_batch_limit: int = Field(default=100, ge=1, le=1000)
+    job_cleanup_poll_seconds: float = Field(
+        default=3600, ge=30, le=86400, allow_inf_nan=False
+    )
+    job_reconstruction_page_limit: int = Field(default=100, ge=1, le=1000)
     job_maintenance_enabled: bool = True
-    job_publication_batch_limit: int = Field(default=16, ge=1, le=100)
+    job_publication_batch_limit: int = Field(default=8, ge=1, le=100)
     job_reconciliation_batch_limit: int = Field(default=100, ge=1, le=1000)
     job_publication_poll_seconds: float = Field(default=1, ge=0.1, le=30)
     job_publish_timeout_seconds: float = Field(default=10, ge=0.1, le=60)
@@ -203,8 +231,6 @@ class Settings(BaseSettings):
     diagnostic_agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     diagnostic_agent_max_output_tokens: int = Field(default=2048, gt=0)
     diagnostic_agent_timeout_seconds: float = Field(default=30.0, gt=0.0)
-    diagnostic_execution: Literal["legacy", "durable_queue"] = "legacy"
-    profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy"
     profile_inference_llm_provider: Literal["google_ai", "vertex_ai"] = "google_ai"
     profile_inference_model: str = Field(default="gemini-2.5-flash", min_length=1)
     profile_inference_timeout_seconds: float = Field(default=30.0, gt=0.0)
@@ -292,6 +318,13 @@ class Settings(BaseSettings):
             raise ValueError("NATS workload subjects must contain literal tokens")
         return value
 
+    @field_validator("nats_inbox_prefix")
+    @classmethod
+    def validate_nats_inbox_prefix(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", value):
+            raise ValueError("NATS inbox prefix must contain literal tokens")
+        return value
+
     @model_validator(mode="after")
     def validate_nats_topology(self) -> "Settings":
         if self.nats_diagnostic_subject == self.nats_profile_subject:
@@ -312,6 +345,32 @@ class Settings(BaseSettings):
             self.job_reconciliation_poll_seconds,
         ):
             raise ValueError("no-progress threshold must exceed maintenance timings")
+        recovery_horizon = max(
+            self.profile_inference_max_attempts
+            * (
+                self.profile_worker_hard_seconds
+                + self.profile_worker_retry_seconds
+                + self.job_recovery_backoff_seconds
+                + self.job_reconciliation_poll_seconds
+            ),
+            self.diagnostic_worker_attempt_limit
+            * (
+                self.diagnostic_worker_hard_seconds
+                + self.diagnostic_worker_retry_seconds
+                + self.job_recovery_backoff_seconds
+                + self.job_reconciliation_poll_seconds
+            ),
+            self.job_no_progress_seconds + self.job_backoff_max_seconds,
+        )
+        if self.job_terminal_retention_seconds <= max(
+            self.nats_work_max_age_seconds,
+            self.job_audit_horizon_seconds,
+            recovery_horizon,
+        ):
+            raise ValueError(
+                "terminal retention must exceed broker, retry, recovery "
+                "and audit horizons"
+            )
         return self
 
     @field_validator("auth_mode", mode="before")
@@ -558,7 +617,11 @@ class Settings(BaseSettings):
     def validate_auth_environment(self) -> "Settings":
         """Prevent local fixed-token auth from being enabled in production."""
         environment = self.environment.lower()
-        if environment == "production" and self.auth_mode != "firebase":
+        if (
+            self.process_role == "api"
+            and environment == "production"
+            and self.auth_mode != "firebase"
+        ):
             raise ValueError("only firebase auth mode is permitted in production")
         if self.auth_mode == "firebase" and self.firebase_project_id is None:
             raise ValueError("firebase_project_id is required in firebase auth mode")

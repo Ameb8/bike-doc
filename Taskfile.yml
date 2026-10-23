@@ -70,6 +70,26 @@ tasks:
     cmds:
       - bash scripts/verify-backend-compatibility.sh worker
 
+  jobs:reconstruct:
+    desc: Finite operator recovery of topology and PostgreSQL notification intent.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.maintenance.reconstruction
+
+  jobs:inspect:
+    desc: Read-only PostgreSQL job truth with optional JetStream transport observations.
+    cmds:
+      - set -a && . ./.env && set +a && cd apps/api && uv run python -m bike_doc_api.operations.inspection {{.CLI_ARGS}}
+
+  test:observability:
+    desc: Verify queue observations with disposable PostgreSQL/JetStream and failure injection.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh observability
+
+  test:recovery:
+    desc: Verify recovery, retention and reconstruction with disposable PostgreSQL/JetStream.
+    cmds:
+      - bash scripts/verify-backend-compatibility.sh recovery
+
   test:maintenance:
     desc: Verify maintenance with disposable PostgreSQL and pinned JetStream.
     cmds:
@@ -159,3 +179,37 @@ tasks:
       - task: ci:sync
       - task: check
       - task: build
+
+  deployment:validate:
+    desc: Validate deployment security, topology and synthetic alert behavior.
+    dir: apps/api
+    cmds:
+      - uv run ruff format --check ../../scripts/prepare-production.py ../../deploy/verify_permissions.py ../../deploy/verify_rotation.py
+      - uv run ruff check ../../scripts/prepare-production.py ../../deploy/verify_permissions.py ../../deploy/verify_rotation.py
+      - bash -n ../../scripts/verify-production.sh
+      - uv run pytest tests/unit/test_deployment.py tests/unit/test_health.py
+      - uv run python -m bike_doc_api.operations.alerts ../../deploy/alerts.json
+
+  test:deployment:
+    desc: Exercise isolated production topology, role ACLs, scaling and shutdown.
+    cmds:
+      - bash scripts/verify-production.sh
+
+  test:capacity:
+    desc: Certify workload budgets on disposable production topology (Docker; opt-in).
+    dir: apps/api
+    cmds:
+      - uv run python tests/capacity/certify.py --output ../../.capacity/run-$(date +%Y%m%d-%H%M%S) {{.CLI_ARGS}}
+
+  test:queue-certification:
+    desc: Certify all 38 durable-queue obligations twice on clean real infrastructure.
+    dir: apps/api
+    cmds:
+      - uv run python tests/certification/certify.py {{.CLI_ARGS}}
+
+  test:queue-cutover:
+    desc: Exercise queue-only deployment, operations and real acceptance/recovery smoke.
+    cmds:
+      - task: deployment:validate
+      - task: test:deployment
+      - bash scripts/verify-backend-compatibility.sh queue-cutover

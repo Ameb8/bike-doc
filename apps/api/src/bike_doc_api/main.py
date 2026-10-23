@@ -27,7 +27,9 @@ from bike_doc_api.core.event_wakeups import (
 )
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.telemetry import TelemetryRuntime, initialize_telemetry
+from bike_doc_api.db.session import get_sessionmaker
 from bike_doc_api.maintenance.hosting import create_job_maintenance
+from bike_doc_api.operations.health import dependencies, health_server
 
 logger = structlog.get_logger(__name__)
 
@@ -50,7 +52,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         maintenance = create_job_maintenance(app.state.settings)
         maintenance.start()
         try:
-            yield
+            async with health_server(
+                app.state.settings,
+                lambda: dependencies(
+                    get_sessionmaker(
+                        app.state.settings.database_url,
+                        app.state.settings.api_pool_size,
+                        app.state.settings.database_pool_timeout_seconds,
+                    ),
+                    app.state.settings,
+                    maintenance=maintenance,
+                ),
+            ):
+                yield
         finally:
             await maintenance.close()
             await wakeups.drain()
@@ -71,6 +85,8 @@ def create_app(
 ) -> FastAPI:
     """Create the FastAPI application shell."""
     settings = settings or get_settings()
+    if settings.process_role != "api":
+        raise ValueError("HTTP application requires API process role")
     validate_artifact_storage_runtime_configuration(settings)
     validate_diagnostic_telemetry_runtime_configuration(settings)
     configure_logging(

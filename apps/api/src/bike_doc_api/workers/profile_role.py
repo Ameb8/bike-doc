@@ -16,7 +16,11 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
+from bike_doc_api.core.telemetry import initialize_telemetry
+from bike_doc_api.db.pool_observation import observe_pool
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.operations.health import dependencies, health_server
+from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.providers.profile_inference import GeminiProfileInferenceExtractor
 from bike_doc_api.providers.storage import GCSStorageProvider, LocalStorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
@@ -38,7 +42,6 @@ from bike_doc_api.services.profile_inference_resolution import ProfileResolverPo
 from bike_doc_api.workers.adapters import (
     NatsPullTransport,
     PostgresJobStore,
-    subscribe_work_advisories,
 )
 from bike_doc_api.workers.profile_inference import (
     ProfileInferenceHandler,
@@ -121,7 +124,9 @@ async def profile_worker(
         pool_pre_ping=True,
         pool_size=settings.profile_worker_pool_size,
         max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
     )
+    observe_pool(engine, "worker")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     application = ProfileApplication(
         sessions, settings, storage, extractor, resolver_policy
@@ -133,15 +138,14 @@ async def profile_worker(
             await session.execute(select(BackgroundJob.id).limit(0))
         async with nats_connection(settings) as client:
             js = jetstream(client)
-            await ensure_work_topology(js, settings)
+            await ensure_work_topology(js, settings, workload="profile_inference")
             subscription = await js.pull_subscribe(
                 settings.nats_profile_subject,
                 durable=settings.nats_profile_consumer,
                 stream=settings.nats_work_stream,
+                inbox_prefix=settings.nats_inbox_prefix.encode() + b".",
             )
-            await subscribe_work_advisories(
-                client, settings.nats_work_stream, settings.nats_profile_consumer
-            )
+            await QueueMonitor(settings, workload="profile_inference").subscribe(client)
             runtime = create_workload_worker(
                 settings,
                 registry,
@@ -149,7 +153,17 @@ async def profile_worker(
                 NatsPullTransport(subscription, client=client),
             )
             try:
-                yield runtime
+                async with health_server(
+                    settings,
+                    lambda: dependencies(
+                        sessions,
+                        settings,
+                        client=client,
+                        workload="profile_inference",
+                        worker=runtime,
+                    ),
+                ):
+                    yield runtime
             finally:
                 await runtime.close()
     finally:
@@ -158,6 +172,14 @@ async def profile_worker(
 
 
 async def run_profile_role(settings: Settings) -> None:
+    telemetry = initialize_telemetry(settings)
+    try:
+        await _run_profile_role(settings)
+    finally:
+        await telemetry.shutdown()
+
+
+async def _run_profile_role(settings: Settings) -> None:
     """Run until SIGINT/SIGTERM, then use bounded shared-runtime shutdown."""
     profile_policy(settings)
     validate_profile_inference_runtime_configuration(settings)

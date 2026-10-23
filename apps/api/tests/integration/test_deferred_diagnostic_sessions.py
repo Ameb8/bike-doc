@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bike_doc_api.adk.sessions import (
     DIAGNOSTIC_ADK_APP_NAME,
@@ -40,7 +40,16 @@ async def context() -> AsyncIterator[
     assert TEST_URL is not None
     settings = Settings(environment="test", database_url=TEST_URL)
     adk = await open_adk_session_service(settings)
-    sessions = async_sessionmaker(adk.db_engine, expire_on_commit=False)
+    # App transactions and ADK persistence own separate pools in production.
+    # Sharing ADK's tuned single connection deadlocks concurrent product reads
+    # and an ensure-or-resume call nested inside a product transaction.
+    engine = create_async_engine(
+        TEST_URL,
+        pool_size=settings.api_pool_size,
+        max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
+    )
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with sessions() as session, session.begin():
         user = User(
             auth_subject=os.urandom(16).hex(),
@@ -96,6 +105,7 @@ async def context() -> AsyncIterator[
                     {"id": f"adk_diagnostic_{retained_id}"},
                 )
         await adk.close()
+        await engine.dispose()
 
 
 async def test_migration_roundtrip_and_null_constraints(context: tuple) -> None:
@@ -251,7 +261,7 @@ async def test_lost_binding_commit_then_resume_in_another_process(
 
     child_code = """
 import asyncio, sys
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
 from bike_doc_api.adk.storage import open_adk_session_service
 from bike_doc_api.core.config import Settings
@@ -260,8 +270,9 @@ from bike_doc_api.repositories.repair_sessions import RepairPhaseSessionReposito
 async def run():
     adk = await open_adk_session_service(
         Settings(environment='test', database_url=sys.argv[1]))
+    engine = create_async_engine(sys.argv[1], pool_size=2, max_overflow=0)
     try:
-        sessions = async_sessionmaker(adk.db_engine, expire_on_commit=False)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
         async with sessions() as session, session.begin():
             phase = await session.get(RepairPhaseSession, sys.argv[2])
             identity = await DiagnosticADKSessionClient(adk).ensure_or_resume(
@@ -270,6 +281,7 @@ async def run():
             assert identity == sys.argv[3]
     finally:
         await adk.close()
+        await engine.dispose()
 asyncio.run(run())
 """
     for _ in range(2):  # Recovery followed by exact bound resume in another process.
@@ -337,11 +349,9 @@ async def test_repository_preserves_winner_and_missing_binding_fails_closed(
         await adk.close()
 
 
-@pytest.mark.parametrize("selection", ["legacy", "durable_queue"])
 async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
     context: tuple,
     monkeypatch: pytest.MonkeyPatch,
-    selection: str,
 ) -> None:
     settings, sessions, phase_id, repair_id = context
     from bike_doc_api.adk import sessions as adk_sessions
@@ -367,12 +377,7 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
         user = await session.get(User, repair.user_id)
         service = get_turn_service(
             session,
-            settings.model_copy(
-                update={
-                    "profile_inference_execution": selection,
-                    "diagnostic_execution": selection,
-                }
-            ),
+            settings,
         )
         accepted = await service.accept_turn(
             current_user=user,
@@ -402,90 +407,12 @@ async def test_acceptance_ignores_unavailable_adk_and_snapshots_new_phase(
                 )
             )
         )
-        assert {job.job_kind for job in jobs} == (
-            {"diagnostic_turn"} if selection == "durable_queue" else set()
-        )
+        assert {job.job_kind for job in jobs} == ({"diagnostic_turn"})
 
 
-async def test_legacy_executor_initializes_and_missing_binding_terminalizes(
-    context: tuple,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from unittest.mock import AsyncMock
-
-    from bike_doc_api.adk import background
-    from bike_doc_api.models.event import RepairSessionEvent
-
-    settings, sessions, phase_id, repair_id = context
-    async with sessions() as session:
-        repair = await session.get(RepairSession, repair_id)
-        user = await session.get(User, repair.user_id)
-        accepted = await get_turn_service(session, settings).accept_turn(
-            current_user=user,
-            repair_session_id=repair_id,
-            request=TurnCreate.model_validate(
-                {
-                    "schema_version": "ai_turn.v1",
-                    "client_turn_id": "legacy",
-                    "message": {"text": "Chain skips", "artifact_ids": []},
-                }
-            ),
-        )
-    adk = await open_adk_session_service(settings)
-    monkeypatch.setattr(background, "get_settings", lambda: settings)
-    monkeypatch.setattr(background, "get_adk_session_service", lambda: adk)
-    monkeypatch.setattr(
-        background, "validate_diagnostic_runtime_configuration", lambda _: None
-    )
-    orchestrator = AsyncMock()
-    orchestrator.process_turn.return_value = None
-    monkeypatch.setattr(
-        background, "_build_background_orchestrator", lambda **_: orchestrator
-    )
-    try:
-        await background.execute_diagnostic_turn_background(
-            user.id, repair_id, accepted.turn_id
-        )
-        orchestrator.process_turn.assert_awaited_once()
-        async with sessions() as session, session.begin():
-            phase = await session.get(RepairPhaseSession, phase_id)
-            assert phase.adk_session_id == f"adk_diagnostic_{phase_id}"
-            # Simulate confirmed missing storage without deleting retained ADK
-            # data (the retention guard intentionally prevents that operation).
-            phase.adk_session_id = "missing_legacy_binding"
-        await background.execute_diagnostic_turn_background(
-            user.id, repair_id, accepted.turn_id
-        )
-        orchestrator.process_turn.assert_awaited_once()  # Failure before orchestration.
-        async with sessions() as session:
-            phase = await session.get(RepairPhaseSession, phase_id)
-            assert phase.adk_session_id == "missing_legacy_binding"
-            repair = await session.get(RepairSession, repair_id)
-            assert repair.status == "awaiting_user"
-            events = list(
-                await session.scalars(
-                    select(RepairSessionEvent)
-                    .where(RepairSessionEvent.repair_session_id == repair_id)
-                    .order_by(RepairSessionEvent.sequence)
-                )
-            )
-            assert [event.type for event in events] == [
-                "turn.started",
-                "error",
-                "turn.completed",
-            ]
-            assert events[1].data["code"] == "diagnostic_processing_error"
-            assert events[1].data["retryable"] is True
-            assert "adk" not in str([event.data for event in events]).lower()
-    finally:
-        await adk.close()
-
-
-@pytest.mark.parametrize("selection", ["legacy", "durable_queue"])
 async def test_phase_creation_rolls_back_with_acceptance_commit_failure(
     context: tuple,
     monkeypatch: pytest.MonkeyPatch,
-    selection: str,
 ) -> None:
     from bike_doc_api.core.errors import ServerError
     from bike_doc_api.models.event import RepairSessionEvent
@@ -501,11 +428,7 @@ async def test_phase_creation_rolls_back_with_acceptance_commit_failure(
         user = await session.get(User, repair.user_id)
         service = get_turn_service(
             session,
-            settings.model_copy(
-                update={
-                    "profile_inference_execution": selection,
-                }
-            ),
+            settings,
         )
 
         async def fail_commit() -> None:

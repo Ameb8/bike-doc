@@ -3,14 +3,16 @@
 import asyncio
 import json
 import random
-from collections.abc import Callable, Mapping
-from contextlib import AbstractAsyncContextManager
+from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import Protocol
 
 import structlog
 
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.queue_telemetry import QueueTelemetry, queue_telemetry
 from bike_doc_api.repositories.background_jobs import (
     BackgroundJobRepository,
     JobOutcome,
@@ -25,7 +27,9 @@ logger = structlog.get_logger(__name__)
 class Publisher(Protocol):
     """Returning means the broker acknowledged durable publication."""
 
-    async def publish(self, subject: str, payload: bytes, message_id: str) -> None: ...
+    async def publish(
+        self, subject: str, payload: bytes, message_id: str
+    ) -> bool | None: ...
 
     async def close(self) -> None: ...
 
@@ -85,8 +89,14 @@ class JobMaintenance:
         policies: Mapping[tuple[str, int], ReconciliationPolicy],
         *,
         clock: Clock | None = None,
+        telemetry: QueueTelemetry = queue_telemetry,
+        observe: Callable[[], Awaitable[None]] | None = None,
+        close_observer: Callable[[], Awaitable[None]] | None = None,
         jitter: Callable[[], float] = random.random,
     ) -> None:
+        self._close_observer = close_observer
+        self._observe = observe
+        self._telemetry = telemetry
         self._settings = settings
         self._transaction = transaction
         self._publisher = publisher
@@ -97,8 +107,24 @@ class JobMaintenance:
             "diagnostic": settings.nats_diagnostic_subject,
             "profile_inference": settings.nats_profile_subject,
         }
+        self._last_success: dict[str, float] = {}
         self._tasks: list[asyncio.Task[None]] = []
         self._failure_rounds = 0
+
+    def healthy(self) -> bool:
+        return (
+            len(self._tasks) == 3
+            and all(not task.done() for task in self._tasks)
+            and all(
+                name in self._last_success
+                and monotonic() - self._last_success[name] < max(30, interval * 3)
+                for name, interval in (
+                    ("publication", self._settings.job_publication_poll_seconds),
+                    ("reconciliation", self._settings.job_reconciliation_poll_seconds),
+                    ("cleanup", self._settings.job_cleanup_poll_seconds),
+                )
+            )
+        )
 
     def start(self) -> None:
         """Return immediately, including when PostgreSQL or NATS is unavailable."""
@@ -107,6 +133,7 @@ class JobMaintenance:
         self._tasks = [
             asyncio.create_task(self._run_publication(), name="job-publication"),
             asyncio.create_task(self._run_reconciliation(), name="job-reconciliation"),
+            asyncio.create_task(self._run_cleanup(), name="job-cleanup"),
         ]
 
     async def close(self) -> None:
@@ -127,7 +154,7 @@ class JobMaintenance:
             for task in done:
                 if not task.cancelled() and task.exception() is not None:
                     logger.warning("job_maintenance_shutdown_failed")
-        closing = asyncio.create_task(self._publisher.close())
+        closing = asyncio.create_task(self._close_resources())
         done, closing_pending = await asyncio.wait(
             [closing], timeout=max(0, deadline - asyncio.get_running_loop().time())
         )
@@ -140,6 +167,14 @@ class JobMaintenance:
         if pending:
             logger.warning("job_maintenance_shutdown_timeout")
 
+    async def _close_resources(self) -> None:
+        try:
+            await self._publisher.close()
+        finally:
+            if self._close_observer is not None:
+                with suppress(Exception):
+                    await self._close_observer()
+
     def _backoff(self) -> timedelta:
         ceiling = min(
             self._settings.job_backoff_max_seconds,
@@ -151,6 +186,11 @@ class JobMaintenance:
 
     async def publish_once(self) -> None:
         """Commit short claims before publishing a bounded concurrent batch."""
+        if self._observe is not None:
+            try:
+                await self._observe()
+            except Exception:
+                self._telemetry.observe("maintenance", maintenance="observation_failed")
         async with self._transaction() as repository:
             claims = await repository.claim_publications(
                 limit=self._settings.job_publication_batch_limit,
@@ -174,18 +214,31 @@ class JobMaintenance:
             self._failure_rounds = 0
 
     async def _publish(self, claim: PublicationClaim) -> bool:
+        started = monotonic()
         subject = self._subjects.get(claim.workload_class)
         error = TransportError.REJECTED
         if subject is not None:
             payload, message_id = publication_message(claim)
             try:
                 async with asyncio.timeout(self._settings.job_publish_timeout_seconds):
-                    await self._publisher.publish(subject, payload, message_id)
+                    duplicate = await self._publisher.publish(
+                        subject, payload, message_id
+                    )
             except TimeoutError:
                 error = TransportError.TIMEOUT
             except Exception:
                 error = TransportError.UNAVAILABLE
             else:
+                self._telemetry.observe(
+                    "publication_ack",
+                    monotonic() - started,
+                    workload=claim.workload_class,
+                )
+                self._telemetry.observe(
+                    "publication",
+                    workload=claim.workload_class,
+                    publication="duplicate" if duplicate else "confirmed",
+                )
                 # Cancellation/DB failure here deliberately leaves the durable
                 # claim unconfirmed, even though the broker accepted the message.
                 async with self._transaction() as repository:
@@ -195,6 +248,9 @@ class JobMaintenance:
             await repository.fail_publication(
                 claim, error=error, retry_after=self._backoff()
             )
+        self._telemetry.observe(
+            "publication", workload=claim.workload_class, publication=error.value
+        )
         logger.warning("job_publication_failed", category=error.value)
         return False
 
@@ -204,6 +260,7 @@ class JobMaintenance:
         now = self._clock.now()
         horizon = now - timedelta(seconds=self._settings.job_no_progress_seconds)
         # Separate short bounded scans avoid holding both batches simultaneously.
+        recovered = []
         async with self._transaction() as repository:
             expired = await repository.claim_scan(
                 purpose="expired",
@@ -215,11 +272,30 @@ class JobMaintenance:
                 policy = self._policies.get((job.job_kind, job.input_version))
                 outcome = policy.expired_outcome(job) if policy else None
                 if outcome is not None and job.execution_token is not None:
-                    await repository.recover_expired(
+                    result = await repository.recover_expired_and_load(
                         job_id=job.id,
                         execution_token=job.execution_token,
                         outcome=outcome,
                     )
+                    recovered.append((job.job_kind, outcome.state, result))
+        for kind, requested_state, result in recovered:
+            changed = result is not None
+            if result is not None:
+                self._telemetry.observe("recovery", kind=kind, outcome=result.state)
+                self._telemetry.observe(
+                    "outcome",
+                    kind=kind,
+                    version=str(result.input_version),
+                    workload=result.workload_class,
+                    outcome=result.state,
+                )
+            logger.info(
+                "job_recovery",
+                kind=kind,
+                requested_state=requested_state,
+                changed=changed,
+            )
+        repaired = []
         async with self._transaction() as repository:
             candidates = await repository.claim_scan(
                 purpose="no_progress",
@@ -230,17 +306,28 @@ class JobMaintenance:
             for job in candidates:
                 policy = self._policies.get((job.job_kind, job.input_version))
                 if policy is not None and policy.may_republish(job):
-                    await repository.advance_publication(
+                    changed = await repository.advance_publication(
                         job_id=job.id,
                         observed_generation=job.desired_generation,
                         no_progress_before=horizon,
                     )
+                    repaired.append((job.job_kind, changed))
+        for kind, changed in repaired:
+            if changed:
+                self._telemetry.observe(
+                    "maintenance", maintenance="notification_repair"
+                )
+            logger.info("job_notification_repair", kind=kind, changed=changed)
 
     async def _run_publication(self) -> None:
         while True:
             try:
                 await self.publish_once()
+                self._last_success["publication"] = monotonic()
             except Exception:
+                self._telemetry.observe(
+                    "maintenance", maintenance="publication_scan_failed"
+                )
                 logger.warning("job_publication_scan_failed")
             await self._clock.sleep(self._settings.job_publication_poll_seconds)
 
@@ -248,6 +335,50 @@ class JobMaintenance:
         while True:
             try:
                 await self.reconcile_once()
+                self._last_success["reconciliation"] = monotonic()
             except Exception:
+                self._telemetry.observe(
+                    "maintenance", maintenance="reconciliation_scan_failed"
+                )
                 logger.warning("job_reconciliation_scan_failed")
             await self._clock.sleep(self._settings.job_reconciliation_poll_seconds)
+
+    async def cleanup_once(self) -> int:
+        """One locked batch per cadence, independent of live broker contents."""
+        before = self._clock.now() - timedelta(
+            seconds=self._settings.job_terminal_retention_seconds
+        )
+        deleted = 0
+        async with self._transaction() as repository:
+            candidates = await repository.claim_scan(
+                purpose="retention",
+                before=before,
+                limit=self._settings.job_cleanup_batch_limit,
+            )
+            for job in candidates:
+                deleted += await repository.delete_retained(
+                    job_id=job.id, before=before
+                )
+        self._telemetry.observe(
+            "maintenance", len(candidates), maintenance="cleanup_scanned"
+        )
+        self._telemetry.observe("maintenance", deleted, maintenance="cleanup_deleted")
+        logger.info("job_cleanup", scanned=len(candidates), deleted=deleted)
+        return deleted
+
+    async def _run_cleanup(self) -> None:
+        while True:
+            delay = self._settings.job_cleanup_poll_seconds
+            try:
+                await self.cleanup_once()
+                self._last_success["cleanup"] = monotonic()
+            except Exception:
+                self._telemetry.observe(
+                    "maintenance", maintenance="cleanup_scan_failed"
+                )
+                logger.warning("job_cleanup_scan_failed")
+                # A transient checkout/DB failure during restart must not keep
+                # readiness false for the full low-frequency retention period.
+                # Retry a bounded batch without borrowing request/worker pools.
+                delay = min(delay, self._settings.job_reconciliation_poll_seconds)
+            await self._clock.sleep(delay)

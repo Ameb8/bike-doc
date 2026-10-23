@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import structlog
@@ -12,6 +13,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
 from bike_doc_api.core.event_wakeups import EventWakeupSubscriber, get_event_wakeups
+from bike_doc_api.core.queue_telemetry import QueueTelemetry, queue_telemetry
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
 from bike_doc_api.models.user import User
@@ -87,7 +89,11 @@ class EventService:
         wakeups: EventWakeupSubscriber | None = None,
         poll_interval_seconds: float = POLL_INTERVAL_SECONDS,
         clock: Callable[[], float] | None = None,
+        telemetry: QueueTelemetry = queue_telemetry,
+        observe_read: Callable[[], None] | None = None,
     ) -> None:
+        self._observe_read = observe_read
+        self._telemetry = telemetry
         self._events = events
         self._repair_sessions = repair_sessions
         self._commit = commit
@@ -211,6 +217,7 @@ class EventService:
         next_heartbeat_at = now_time() + heartbeat_interval
         next_poll_at = now_time() + self._poll_interval_seconds
 
+        source = "initial"
         try:
             while True:
                 now = now_time()
@@ -222,6 +229,17 @@ class EventService:
                     repair_session_id=stream.repair_session_id,
                     after_sequence=current_sequence,
                 ):
+                    if source == "poll":
+                        self._telemetry.observe("sse_recovery")
+                    elif source == "hint":
+                        self._telemetry.observe(
+                            "sse_latency",
+                            max(
+                                0,
+                                (datetime.now(UTC) - event.created_at).total_seconds(),
+                            ),
+                        )
+                    source = "initial"
                     current_sequence = event.sequence
                     next_heartbeat_at = now_time() + heartbeat_interval
                     yield format_sse_frame(event)
@@ -231,8 +249,10 @@ class EventService:
                 )
                 try:
                     await asyncio.wait_for(queue.get(), timeout=wait_seconds)
+                    source = "hint"
                 except TimeoutError:
                     if now_time() >= next_poll_at:
+                        source = "poll"
                         next_poll_at = now_time() + self._poll_interval_seconds
                         continue
                     if now_time() >= next_heartbeat_at:
@@ -271,6 +291,11 @@ class EventService:
     ) -> AsyncIterator[RepairSessionEvent]:
         """Yield all retained events newer than the cursor in sequence order."""
 
+        if self._observe_read is not None:
+            try:
+                self._observe_read()
+            except Exception:
+                logger.warning("event_read_observation_failed")
         cursor = after_sequence
         while True:
             events = await self._events.list_after_sequence(

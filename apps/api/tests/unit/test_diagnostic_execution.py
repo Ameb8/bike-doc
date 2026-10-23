@@ -172,7 +172,14 @@ async def test_service_seams_preserve_stale_authority_failure(family: str) -> No
             )
         elif family == "input":
             await TurnService(
-                repo, repo, repo, repo, repo, commit=commit, rollback=rollback
+                repo,
+                repo,
+                repo,
+                repo,
+                repo,
+                background_jobs=AsyncMock(),
+                commit=commit,
+                rollback=rollback,
             ).request_diagnostic_input(
                 current_user=user,
                 repair_session_id="repair",

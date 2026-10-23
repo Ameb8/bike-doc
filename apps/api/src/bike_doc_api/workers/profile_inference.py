@@ -76,6 +76,12 @@ def profile_policy(settings: Settings) -> HandlerPolicy:
         raise ValueError(
             "profile fetch/concurrency requires two spare database connections"
         )
+    if settings.worker_concurrency > settings.nats_profile_max_ack_pending:
+        raise ValueError("local concurrency must fit consumer MaxAckPending")
+    if settings.worker_progress_seconds >= settings.nats_ack_wait_seconds / 2:
+        raise ValueError("progress must leave acknowledgement timing margin")
+    if settings.worker_shutdown_seconds < grace:
+        raise ValueError("profile shutdown budget must cover cancellation grace")
     return HandlerPolicy(
         settings.profile_inference_max_attempts,
         timedelta(seconds=settings.profile_worker_retry_seconds),

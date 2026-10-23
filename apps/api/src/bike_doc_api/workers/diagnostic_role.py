@@ -21,12 +21,14 @@ from bike_doc_api.core.event_wakeups import (
 from bike_doc_api.core.logging import configure_logging
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.core.telemetry import initialize_telemetry
+from bike_doc_api.db.pool_observation import observe_pool
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.operations.health import dependencies, health_server
+from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
 from bike_doc_api.workers.adapters import (
     NatsPullTransport,
     PostgresJobStore,
-    subscribe_work_advisories,
 )
 from bike_doc_api.workers.diagnostic import (
     DiagnosticTurnHandler,
@@ -51,8 +53,10 @@ async def diagnostic_worker(
         pool_pre_ping=True,
         pool_size=settings.diagnostic_worker_pool_size,
         max_overflow=0,
+        pool_timeout=settings.database_pool_timeout_seconds,
     )
     try:
+        observe_pool(engine, "worker")
         sessions = async_sessionmaker(engine, expire_on_commit=False)
         application = DiagnosticExecutionApplication(sessions, settings, resources)
         registry = diagnostic_registry(
@@ -65,15 +69,14 @@ async def diagnostic_worker(
             await session.execute(select(BackgroundJob.id).limit(0))
         async with nats_connection(settings) as client:
             js = jetstream(client)
-            await ensure_work_topology(js, settings)
+            await ensure_work_topology(js, settings, workload="diagnostic")
             subscription = await js.pull_subscribe(
                 settings.nats_diagnostic_subject,
                 durable=settings.nats_diagnostic_consumer,
                 stream=settings.nats_work_stream,
+                inbox_prefix=settings.nats_inbox_prefix.encode() + b".",
             )
-            await subscribe_work_advisories(
-                client, settings.nats_work_stream, settings.nats_diagnostic_consumer
-            )
+            await QueueMonitor(settings, workload="diagnostic").subscribe(client)
             runtime = create_workload_worker(
                 settings,
                 registry,
@@ -84,7 +87,17 @@ async def diagnostic_worker(
             wakeups = EventWakeups(NatsEventPublisher(client))
             install_event_wakeups(wakeups)
             try:
-                yield runtime
+                async with health_server(
+                    settings,
+                    lambda: dependencies(
+                        sessions,
+                        settings,
+                        client=client,
+                        workload="diagnostic",
+                        worker=runtime,
+                    ),
+                ):
+                    yield runtime
             finally:
                 try:
                     await runtime.close()

@@ -28,7 +28,7 @@ async def append_diagnostic_completion(
     """Append an optional error and completion together, without committing.
 
     The caller owns locking, durable identity checks, and the job transition.
-    This operation is shared by normal orchestration, legacy setup failure,
+    This operation is shared by normal orchestration, worker preparation failure,
     and durable job terminalization. Repository commit hooks release hints.
     """
     repair.status = status

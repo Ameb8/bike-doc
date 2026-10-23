@@ -192,6 +192,10 @@ async def _stop_all(children: list[ChildProcess]) -> None:
 
 
 async def _child(role: str, db_url: str, nats_url: str, session_id: str) -> None:
+    from bike_doc_api.core.queue_telemetry import RecordingQueueTelemetry
+    from bike_doc_api.db.pool_observation import sample_session_pool
+
+    recorder = RecordingQueueTelemetry()
     settings = Settings(environment="test", database_url=db_url, nats_url=nats_url)
     wakeups = EventWakeups()
     install_event_wakeups(wakeups)
@@ -207,6 +211,8 @@ async def _child(role: str, db_url: str, nats_url: str, session_id: str) -> None
                 commit=session.commit,
                 rollback=session.rollback,
                 wakeups=wakeups,
+                telemetry=recorder,
+                observe_read=lambda: sample_session_pool(session, "sse"),
                 poll_interval_seconds=(
                     HINTED_POLL_INTERVAL_SECONDS
                     if role == "reader"
@@ -221,6 +227,11 @@ async def _child(role: str, db_url: str, nats_url: str, session_id: str) -> None
                 frame = await asyncio.wait_for(frame_task, timeout=10)
                 print(json.dumps({"frame": frame}), flush=True)
                 await frames.aclose()
+                expected_signal = "sse_latency" if role == "reader" else "sse_recovery"
+                assert any(o.metric == expected_signal for o in recorder.observations)
+                assert "private user-authored bicycle content" not in repr(
+                    recorder.observations
+                )
             else:
                 print("READY writer", flush=True)
                 await asyncio.to_thread(sys.stdin.readline)

@@ -92,7 +92,11 @@ class FakeRepository:
         self.claims = [CLAIM]
         self.confirmed: list[PublicationClaim] = []
         self.failed: list[tuple[PublicationClaim, TransportError, timedelta]] = []
-        self.scans: dict[str, list[JobSnapshot]] = {"expired": [], "no_progress": []}
+        self.scans: dict[str, list[JobSnapshot]] = {
+            "expired": [],
+            "no_progress": [],
+            "retention": [],
+        }
         self.recovered: list[dict[str, object]] = []
         self.advanced: list[dict[str, object]] = []
         self.in_transaction = False
@@ -125,8 +129,13 @@ class FakeRepository:
     async def claim_scan(self, *, purpose: str, **kwargs: object) -> list[JobSnapshot]:
         return self.scans[purpose]
 
-    async def recover_expired(self, **kwargs: object) -> bool:
+    async def recover_expired_and_load(self, **kwargs: object) -> JobSnapshot:
         self.recovered.append(kwargs)
+        outcome = kwargs["outcome"]
+        assert isinstance(outcome, JobOutcome)
+        return replace(self.scans["expired"][0], state=outcome.state)
+
+    async def delete_retained(self, **kwargs: object) -> bool:
         return True
 
     async def advance_publication(self, **kwargs: object) -> bool:
@@ -339,8 +348,8 @@ async def test_committed_work_is_discovered_by_repeated_bounded_polling() -> Non
     host.start()
     try:
         # One sleep belongs to the reconciler, one to the publisher.
-        sleeps = [await asyncio.wait_for(clock.sleeps.get(), 1) for _ in range(2)]
-        assert sorted(sleeps) == [1, 30]
+        sleeps = [await asyncio.wait_for(clock.sleeps.get(), 1) for _ in range(3)]
+        assert sorted(sleeps) == [1, 30, 3600]
         assert not publisher.messages
         repository.claims = [CLAIM]
         clock.resume.set()
@@ -362,3 +371,77 @@ def test_maintenance_settings_load_prefixed_environment(
     settings = Settings()
     assert settings.job_maintenance_enabled is False
     assert settings.job_publication_batch_limit == 8
+
+
+async def test_recovery_observes_final_state_after_product_normalization() -> None:
+    from bike_doc_api.core.queue_telemetry import RecordingQueueTelemetry
+
+    repository, publisher = FakeRepository(), FakePublisher()
+    job = snapshot(state="running", execution_token="execution")
+    repository.scans["expired"] = [job]
+    repository.recover_expired_and_load = AsyncMock(
+        return_value=replace(job, state="succeeded")
+    )
+    host = maintenance(repository, publisher)
+    recorder = RecordingQueueTelemetry()
+    host._telemetry = recorder
+    await host.reconcile_once()
+    assert any(
+        o.metric == "recovery" and o.attributes["outcome"] == "succeeded"
+        for o in recorder.observations
+    )
+    assert not any(
+        o.attributes.get("outcome") == "retrying" for o in recorder.observations
+    )
+
+
+async def test_readiness_requires_successful_fresh_loops() -> None:
+    from time import monotonic
+
+    maintenance = JobMaintenance(Settings(), AsyncMock(), FakePublisher(), {})
+    assert not maintenance.healthy()
+    maintenance._tasks = [asyncio.create_task(asyncio.sleep(60)) for _ in range(3)]
+    try:
+        assert not maintenance.healthy()
+        maintenance._last_success = {
+            name: monotonic() for name in ("publication", "reconciliation", "cleanup")
+        }
+        assert maintenance.healthy()
+        maintenance._last_success["publication"] -= 31
+        assert not maintenance.healthy()
+        maintenance._last_success["publication"] = monotonic()
+        maintenance._tasks[0].cancel()
+        await asyncio.gather(maintenance._tasks[0], return_exceptions=True)
+        assert not maintenance.healthy()
+    finally:
+        await maintenance.close()
+
+
+async def test_failed_cleanup_retries_before_normal_retention_cadence() -> None:
+    delays = []
+    recovered = asyncio.Event()
+
+    class RetryClock(FakeClock):
+        async def sleep(self, seconds: float) -> None:
+            delays.append(seconds)
+            if len(delays) == 2:
+                recovered.set()
+                await asyncio.Future[None]()
+
+    host = JobMaintenance(
+        Settings(job_cleanup_poll_seconds=600, job_reconciliation_poll_seconds=30),
+        AsyncMock(),
+        FakePublisher(),
+        {},
+        clock=RetryClock(),
+    )
+    host.cleanup_once = AsyncMock(side_effect=[TimeoutError(), 0])
+    task = asyncio.create_task(host._run_cleanup())
+    try:
+        await asyncio.wait_for(recovered.wait(), 1)
+        assert delays == [30, 600]
+        assert "cleanup" in host._last_success
+        assert host.cleanup_once.await_count == 2
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

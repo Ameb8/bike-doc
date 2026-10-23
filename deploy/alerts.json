@@ -1,0 +1,193 @@
+{
+  "schema_version": 1,
+  "window_seconds": 300,
+  "max_sample_age_seconds": 120,
+  "rules": [
+    {
+      "name": "publication_lag",
+      "metric": "publication_oldest",
+      "attributes": {},
+      "reduce": "max",
+      "operator": "gt",
+      "threshold": 60
+    },
+    {
+      "name": "publication_failure",
+      "metric": "publication",
+      "attributes": {
+        "publication": [
+          "unavailable",
+          "timeout",
+          "rejected"
+        ]
+      },
+      "reduce": "increase",
+      "operator": "gt",
+      "threshold": 0
+    },
+    {
+      "name": "queue_latency",
+      "metric": "queue_latency",
+      "attributes": {
+        "workload": [
+          "diagnostic"
+        ]
+      },
+      "reduce": "p95",
+      "operator": "gt",
+      "threshold": 6
+    },
+    {
+      "name": "diagnostic_workers_unavailable",
+      "metric": "worker_available",
+      "attributes": {
+        "workload": [
+          "diagnostic"
+        ]
+      },
+      "reduce": "max",
+      "operator": "lt",
+      "threshold": 1,
+      "missing_fires": true
+    },
+    {
+      "name": "profile_workers_unavailable",
+      "metric": "worker_available",
+      "attributes": {
+        "workload": [
+          "profile_inference"
+        ]
+      },
+      "reduce": "max",
+      "operator": "lt",
+      "threshold": 1,
+      "missing_fires": true
+    },
+    {
+      "name": "jetstream_storage",
+      "metric": "nats.storage_utilization",
+      "attributes": {},
+      "reduce": "max",
+      "operator": "gt",
+      "threshold": 0.8,
+      "missing_fires": true
+    },
+    {
+      "name": "jetstream_memory",
+      "metric": "nats.memory_utilization",
+      "attributes": {},
+      "reduce": "max",
+      "operator": "gt",
+      "threshold": 0.8,
+      "missing_fires": true
+    },
+    {
+      "name": "abnormal_redelivery",
+      "metric": "transport_messages",
+      "attributes": {
+        "transport": [
+          "redelivered"
+        ]
+      },
+      "reduce": "max",
+      "operator": "gt",
+      "threshold": 10
+    },
+    {
+      "name": "interrupted_work",
+      "metric": "outcome",
+      "attributes": {
+        "outcome": [
+          "interrupted"
+        ]
+      },
+      "reduce": "increase",
+      "operator": "gt",
+      "threshold": 0
+    },
+    {
+      "name": "forced_shutdown",
+      "metric": "worker_health",
+      "attributes": {
+        "health": [
+          "forced",
+          "unsettled"
+        ]
+      },
+      "reduce": "increase",
+      "operator": "gt",
+      "threshold": 0
+    },
+    {
+      "name": "maximum_delivery",
+      "metric": "advisory",
+      "attributes": {
+        "advisory": [
+          "max_deliver"
+        ]
+      },
+      "reduce": "increase",
+      "operator": "gt",
+      "threshold": 0
+    },
+    {
+      "name": "database_saturation",
+      "metric": "pool",
+      "attributes": {
+        "role": [
+          "api",
+          "worker",
+          "maintenance",
+          "adk"
+        ]
+      },
+      "reduce": "pool_utilization",
+      "operator": "gt",
+      "threshold": 0.8
+    },
+    {
+      "name": "maintenance_failure",
+      "metric": "maintenance",
+      "attributes": {
+        "maintenance": [
+          "publication_scan_failed",
+          "reconciliation_scan_failed",
+          "cleanup_scan_failed",
+          "observation_failed"
+        ]
+      },
+      "reduce": "increase",
+      "operator": "gt",
+      "threshold": 0
+    },
+    {
+      "name": "telemetry_missing",
+      "metric": "publication_oldest",
+      "attributes": {},
+      "reduce": "max",
+      "operator": "missing",
+      "threshold": 0
+    },
+    {
+      "name": "jetstream_resource_alarm",
+      "metric": "nats.resource_alarm",
+      "attributes": {},
+      "reduce": "max",
+      "operator": "gt",
+      "threshold": 0,
+      "missing_fires": true
+    },
+    {
+      "name": "profile_queue_latency",
+      "metric": "queue_latency",
+      "attributes": {
+        "workload": [
+          "profile_inference"
+        ]
+      },
+      "reduce": "p95",
+      "operator": "gt",
+      "threshold": 120
+    }
+  ]
+}

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from bike_doc_api.api.deps import get_current_user, get_db_session
 from bike_doc_api.api.responses import error_responses
 from bike_doc_api.core.config import Settings, get_settings
+from bike_doc_api.db.pool_observation import sample_session_pool
 from bike_doc_api.models.user import User as UserModel
 from bike_doc_api.repositories.events import RepairSessionEventRepository
 from bike_doc_api.repositories.repair_sessions import RepairSessionRepository
@@ -31,6 +32,7 @@ def get_event_service(
         commit=session.commit,
         rollback=session.rollback,
         poll_interval_seconds=settings.event_poll_interval_seconds,
+        observe_read=lambda: sample_session_pool(session, "sse"),
     )
 
 

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.maintenance.runtime import JobMaintenance
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.artifact import ArtifactRef
@@ -120,7 +121,6 @@ async def setup() -> AsyncIterator[
     suffix = uuid.uuid4().hex[:12]
     settings = Settings(
         environment="test",
-        profile_inference_execution="durable_queue",
         database_url=DB_URL,
         nats_url=NATS_URL,
         nats_work_stream=f"PROFILE_{suffix}",
@@ -136,6 +136,8 @@ async def setup() -> AsyncIterator[
         profile_worker_hard_seconds=2,
         profile_worker_timeout_grace_seconds=0.2,
     )
+    async with nats_connection(settings) as provisioner:
+        await ensure_work_topology(jetstream(provisioner), settings)
     engine = create_async_engine(DB_URL)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     user_id, bike_id, session_id, artifact_id = [
@@ -199,12 +201,12 @@ async def setup() -> AsyncIterator[
                 }
             ),
         )
-        assert service.last_profile_job_recorded
         turn_id = accepted.turn_id
         row = (
             await session.scalars(
                 select(BackgroundJob).where(
-                    BackgroundJob.input["turn_id"].astext == turn_id
+                    BackgroundJob.input["turn_id"].astext == turn_id,
+                    BackgroundJob.job_kind == "profile_inference",
                 )
             )
         ).one()
@@ -320,6 +322,8 @@ async def test_ambiguous_crash_replays_with_one_run_and_idempotent_effects(
                 await runtime.process(await notify(runtime, job))
         row, run, bike, claims = await state(sessions, job, bike_id)
         assert row.state == "running"
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == 0 and consumer.num_ack_pending == 1
         revision = bike.profile_revision
         await recover(settings, sessions, job)
         await runtime.process(await notify(runtime, job, 2))
@@ -332,6 +336,18 @@ async def test_ambiguous_crash_replays_with_one_run_and_idempotent_effects(
         assert (await state(sessions, job, bike_id))[
             2
         ].profile_revision == bike.profile_revision
+        # The lost original settlement is still transport-pending after durable
+        # success. Its eventual real redelivery must settle without another call.
+        message = (await runtime.transport.subscription.fetch(1, timeout=32))[0]
+        assert message.metadata.num_delivered == 2
+        calls = extractor.calls
+        await runtime.process(NatsDelivery(message))
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == consumer.num_ack_pending == 0
+        row, run, bike_after, claims = await state(sessions, job, bike_id)
+        assert row.state == "succeeded" and row.attempt_count == 2
+        assert extractor.calls == calls and len(claims) == 1
+        assert bike_after.profile_revision == bike.profile_revision
 
 
 @pytest.mark.parametrize("failure_phase", ["resolution", "commit"])
@@ -564,22 +580,15 @@ async def acceptance_context(
         return user, turn
 
 
-@pytest.mark.parametrize("diagnostic_queue", [False, True])
 @pytest.mark.parametrize("has_image", [False, True])
 async def test_concurrent_replay_does_not_reselect_executor(
     setup: ProfileSetup,
-    diagnostic_queue: bool,
     has_image: bool,
 ) -> None:
     from bike_doc_api.core.errors import IdempotencyConflictError
 
     settings, sessions, job, _ = setup
     user, turn = await acceptance_context(sessions, job)
-    settings = settings.model_copy(
-        update={
-            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
-        }
-    )
     # Reset this fixture's session so a new client key can race at acceptance.
     async with sessions() as session, session.begin():
         repair = await session.get(RepairSession, turn.repair_session_id)
@@ -594,19 +603,9 @@ async def test_concurrent_replay_does_not_reselect_executor(
         }
     )
 
-    async def accept(selection: str = "durable_queue") -> tuple[str, bool, bool]:
+    async def accept() -> tuple[str, bool]:
         async with sessions() as session:
-            service = get_turn_service(
-                session,
-                settings.model_copy(
-                    update={
-                        "profile_inference_execution": selection,
-                        "diagnostic_execution": settings.diagnostic_execution
-                        if selection == "durable_queue"
-                        else ("legacy" if diagnostic_queue else "durable_queue"),
-                    }
-                ),
-            )
+            service = get_turn_service(session, settings)
             result = await service.accept_turn(
                 current_user=user,
                 repair_session_id=turn.repair_session_id,
@@ -615,15 +614,13 @@ async def test_concurrent_replay_does_not_reselect_executor(
             return (
                 result.turn_id,
                 service.last_acceptance_was_idempotent_replay,
-                service.last_profile_job_recorded,
             )
 
     first, second = await asyncio.gather(accept(), accept())
     assert first[0] == second[0]
     assert sorted([first[1], second[1]]) == [False, True]
-    assert sorted([first[2], second[2]]) == [False, has_image]
-    replay = await accept("legacy")
-    assert replay == (first[0], True, False)
+    replay = await accept()
+    assert replay == (first[0], True)
     # A conflicting HTTP key must not modify either job, even after cutover.
     async with sessions() as session:
         service = get_turn_service(session, settings)
@@ -654,8 +651,7 @@ async def test_concurrent_replay_does_not_reselect_executor(
         )
         assert len(events) == 1
         assert {row.job_kind for row in jobs} == (
-            ({"diagnostic_turn"} if diagnostic_queue else set())
-            | ({"profile_inference"} if has_image else set())
+            {"diagnostic_turn"} | ({"profile_inference"} if has_image else set())
         )
         assert all(
             row.desired_generation == 1 and row.confirmed_generation == 0
@@ -663,23 +659,16 @@ async def test_concurrent_replay_does_not_reselect_executor(
         )
 
 
-@pytest.mark.parametrize("diagnostic_queue", [False, True])
 @pytest.mark.parametrize(
     "failure", ["commit", "invalid_pin", "invalid_artifact", "profile_record"]
 )
 async def test_acceptance_rollback_has_no_product_or_job_intent(
     setup: ProfileSetup,
     failure: str,
-    diagnostic_queue: bool,
 ) -> None:
     from bike_doc_api.core.errors import AppError
 
     settings, sessions, job, _ = setup
-    settings = settings.model_copy(
-        update={
-            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
-        }
-    )
     user, turn = await acceptance_context(sessions, job)
     repair_id = generate_prefixed_ulid("rs_")
     async with sessions() as session, session.begin():
@@ -730,8 +719,6 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
                     }
                 ),
             )
-        assert not service.last_diagnostic_job_recorded
-        assert not service.last_profile_job_recorded
     async with sessions() as session:
         assert not list(
             await session.scalars(
@@ -768,15 +755,13 @@ async def test_acceptance_rollback_has_no_product_or_job_intent(
                     )
                 )
             )
-            == 1
+            == 2
         )
 
 
-@pytest.mark.parametrize("diagnostic_queue", [False, True])
 async def test_acceptance_outage_ack_window_broker_and_worker_restart(
     setup: ProfileSetup,
     monkeypatch: pytest.MonkeyPatch,
-    diagnostic_queue: bool,
 ) -> None:
     from datetime import timedelta
 
@@ -787,17 +772,11 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
         get_db_session,
         get_diagnostic_adk_session_client,
     )
-    from bike_doc_api.api.v1 import turns as route
     from bike_doc_api.main import create_app
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
     from bike_doc_api.repositories.background_jobs import PublicationClaim
 
     settings, sessions, initial, bike_id = setup
-    settings = settings.model_copy(
-        update={
-            "diagnostic_execution": "durable_queue" if diagnostic_queue else "legacy"
-        }
-    )
     container = os.getenv("BIKE_DOC_API_MAINTENANCE_TEST_NATS_CONTAINER")
     assert container, "canary requires disposable broker restart injection"
 
@@ -825,7 +804,7 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
     try:
         # Expand-first: a compatible idle worker is constructed before producing.
         async with profile_worker(
-            settings.model_copy(update={"profile_inference_execution": "legacy"}),
+            settings,
             extractor=Extractor(),
             storage=Storage(),
         ) as runtime:
@@ -849,12 +828,6 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
         app.dependency_overrides[get_diagnostic_adk_session_client] = lambda: (
             AsyncMock()
         )
-        diagnostic = AsyncMock()
-        legacy_profile = AsyncMock()
-        monkeypatch.setattr(route, "execute_diagnostic_turn_background", diagnostic)
-        monkeypatch.setattr(
-            route, "execute_profile_inference_background", legacy_profile
-        )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://canary"
         ) as client:
@@ -872,13 +845,6 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
         assert response.status_code == 202
         accepted_id = response.json()["turn_id"]
         assert "job_id" not in response.json()
-        if diagnostic_queue:
-            diagnostic.assert_not_awaited()
-        else:
-            diagnostic.assert_awaited_once_with(
-                user.id, turn.repair_session_id, accepted_id
-            )
-        legacy_profile.assert_not_awaited()
         async with sessions() as session:
             row = (
                 await session.scalars(
@@ -947,56 +913,6 @@ async def test_acceptance_outage_ack_window_broker_and_worker_restart(
         await exclusion.close()
 
 
-async def test_queue_acceptance_remains_runnable_by_diagnostic_executor(
-    setup: ProfileSetup,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from bike_doc_api.adk import background
-    from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
-    from bike_doc_api.adk.storage import open_adk_session_service
-
-    settings, sessions, job, _ = setup
-    user, turn = await acceptance_context(sessions, job)
-    adk = await open_adk_session_service(settings)
-    try:
-        # Simulate ADK creation committed but the app binding lost to a crash.
-        async with sessions() as session:
-            phase = await session.get(RepairPhaseSession, turn.repair_phase_session_id)
-            identity = await DiagnosticADKSessionClient(adk).ensure_unbound_session(
-                phase_session_id=phase.id, repair_session_id=turn.repair_session_id
-            )
-            assert phase.adk_session_id is None
-        monkeypatch.setattr(background, "get_settings", lambda: settings)
-        monkeypatch.setattr(background, "get_adk_session_service", lambda: adk)
-        monkeypatch.setattr(
-            background, "validate_diagnostic_runtime_configuration", lambda _: None
-        )
-        orchestrator = AsyncMock()
-        orchestrator.process_turn.return_value = None
-        monkeypatch.setattr(
-            background, "_build_background_orchestrator", lambda **_: orchestrator
-        )
-        await background.execute_diagnostic_turn_background(
-            user.id, turn.repair_session_id, turn.id
-        )
-        orchestrator.process_turn.assert_awaited_once()
-        async with sessions() as session:
-            phase = await session.get(RepairPhaseSession, turn.repair_phase_session_id)
-            assert phase.adk_session_id == identity
-            row = await session.get(BackgroundJob, job.id)
-            assert row.state == "queued" and row.attempt_count == 0
-        # Existing bindings are never replaced by subsequent diagnostic execution.
-        await background.execute_diagnostic_turn_background(
-            user.id, turn.repair_session_id, turn.id
-        )
-        assert orchestrator.process_turn.await_count == 2
-        async with sessions() as session:
-            phase = await session.get(RepairPhaseSession, turn.repair_phase_session_id)
-            assert phase.adk_session_id == identity
-    finally:
-        await adk.close()
-
-
 async def test_concurrent_distinct_turns_cannot_bypass_running_session(
     setup: ProfileSetup,
 ) -> None:
@@ -1043,7 +959,10 @@ async def test_concurrent_distinct_turns_cannot_bypass_running_session(
                 )
             )
         )
-        assert len(jobs) == 1
+        assert {row.job_kind for row in jobs} == {
+            "diagnostic_turn",
+            "profile_inference",
+        }
 
 
 async def test_external_process_loss_and_restart_share_one_provider_budget(

@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from copy import copy
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal, Protocol
+from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
@@ -158,18 +158,6 @@ class ArtifactRepositoryProtocol(Protocol):
         """Return an artifact owned by a user."""
 
 
-class DiagnosticTurnOrchestratorProtocol(Protocol):
-    """Accepted-turn orchestration boundary."""
-
-    async def process_turn(
-        self,
-        *,
-        current_user: User,
-        turn: RepairTurnModel,
-    ) -> None:
-        """Process an accepted diagnostic turn."""
-
-
 class TurnService:
     """Application-owned user-turn acceptance behavior."""
 
@@ -184,29 +172,17 @@ class TurnService:
         commit: Callable[[], Awaitable[None]] | None = None,
         rollback: Callable[[], Awaitable[None]] | None = None,
         phase_session_manager: DiagnosticPhaseSessionManager | None = None,
-        orchestrator: DiagnosticTurnOrchestratorProtocol | None = None,
         image_analysis_mode: ImageAnalysisMode = "off",
-        background_jobs: BackgroundJobService | None = None,
-        diagnostic_execution: Literal["legacy", "durable_queue"] = "legacy",
+        background_jobs: BackgroundJobService,
         diagnostic_attempt_limit: int = 3,
-        profile_inference_execution: Literal["legacy", "durable_queue"] = "legacy",
         profile_inference_extractor_version: str = "drivetrain-specifications.v1",
         profile_inference_max_attempts: int = 3,
         diagnostic_report_version: DiagnosticReportVersion = "diagnostic_report.v2",
     ) -> None:
-        if (
-            diagnostic_execution == "durable_queue"
-            or profile_inference_execution == "durable_queue"
-        ) and background_jobs is None:
-            raise ValueError("queue acceptance requires a job recorder")
-        self._diagnostic_execution = diagnostic_execution
         self._diagnostic_attempt_limit = diagnostic_attempt_limit
-        self._last_diagnostic_job_recorded = False
         self._background_jobs = background_jobs
-        self._profile_execution = profile_inference_execution
         self._profile_extractor_version = profile_inference_extractor_version
         self._profile_max_attempts = profile_inference_max_attempts
-        self._last_profile_job_recorded = False
         self._repair_sessions = repair_sessions
         self._phase_sessions = phase_sessions
         self._turns = turns
@@ -220,19 +196,8 @@ class TurnService:
                 diagnostic_report_version=diagnostic_report_version,
             )
         )
-        self._orchestrator = orchestrator
         self._image_analysis_mode = image_analysis_mode
         self._last_acceptance_was_idempotent_replay = False
-
-    @property
-    def last_diagnostic_job_recorded(self) -> bool:
-        """Whether this new acceptance committed external diagnostic execution."""
-        return self._last_diagnostic_job_recorded
-
-    @property
-    def last_profile_job_recorded(self) -> bool:
-        """Whether this new acceptance durably selected the queue executor."""
-        return self._last_profile_job_recorded
 
     @property
     def last_acceptance_was_idempotent_replay(self) -> bool:
@@ -250,8 +215,6 @@ class TurnService:
         """Accept a diagnostic user turn and persist durable replay events."""
 
         self._last_acceptance_was_idempotent_replay = False
-        self._last_profile_job_recorded = False
-        self._last_diagnostic_job_recorded = False
         request_hash = _canonical_turn_request_hash(request)
         preflight_session = await self._repair_sessions.get_owned(
             repair_session_id=repair_session_id,
@@ -275,8 +238,6 @@ class TurnService:
         _validate_accepting_diagnostic_turns(preflight_session)
         _validate_input_request(preflight_session, request)
 
-        diagnostic_job_recorded = False
-        profile_job_recorded = False
         try:
             repair_session = await self._repair_sessions.get_owned_for_update(
                 repair_session_id=repair_session_id,
@@ -316,18 +277,12 @@ class TurnService:
                 request=request,
                 request_hash=request_hash,
             )
-            if self._diagnostic_execution == "durable_queue":
-                assert self._background_jobs is not None
-                await self._background_jobs.record_diagnostic_turn(
-                    DiagnosticTurnInputV1(turn_id=turn.id),
-                    attempt_limit=self._diagnostic_attempt_limit,
-                )
-                diagnostic_job_recorded = True
-            if request.message.artifact_ids and (
-                self._profile_execution == "durable_queue"
-                or self._diagnostic_execution == "durable_queue"
-            ):
-                assert self._background_jobs is not None
+            await self._background_jobs.record_diagnostic_turn(
+                DiagnosticTurnInputV1(turn_id=turn.id),
+                attempt_limit=self._diagnostic_attempt_limit,
+            )
+
+            if request.message.artifact_ids:
                 await self._background_jobs.record_profile_inference(
                     ProfileInferenceInputV1(
                         turn_id=turn.id,
@@ -336,7 +291,7 @@ class TurnService:
                     ),
                     attempt_limit=self._profile_max_attempts,
                 )
-                profile_job_recorded = True
+
             if self._commit is not None:
                 await self._commit()
         except (
@@ -363,18 +318,6 @@ class TurnService:
         except Exception as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc
-
-        self._last_diagnostic_job_recorded = diagnostic_job_recorded
-        self._last_profile_job_recorded = profile_job_recorded
-        if self._orchestrator is not None and not self._last_diagnostic_job_recorded:
-            try:
-                await self._orchestrator.process_turn(
-                    current_user=current_user,
-                    turn=turn,
-                )
-            except Exception as exc:
-                await self._rollback_if_configured()
-                raise ServerError() from exc
 
         return turn_accepted_from_model(
             turn, _turn_acceptance_session_snapshot(repair_session, turn)

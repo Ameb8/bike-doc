@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 
 import nats
 from nats.aio.client import Client
-from nats.errors import ConnectionReconnectingError
+from nats.errors import AuthorizationError, ConnectionReconnectingError
+from nats.errors import Error as NatsError
 from nats.js import JetStreamContext
 from nats.js.api import (
     AckPolicy,
@@ -22,7 +23,9 @@ from bike_doc_api.core.config import Settings
 
 
 @asynccontextmanager
-async def nats_connection(settings: Settings) -> AsyncIterator[Client]:
+async def nats_connection(
+    settings: Settings, *, max_reconnect_attempts: int = -1, drain_on_close: bool = True
+) -> AsyncIterator[Client]:
     """Connect with automatic reconnect and bounded graceful shutdown."""
 
     async def ignore_transport_error(_error: Exception) -> None:
@@ -34,11 +37,12 @@ async def nats_connection(settings: Settings) -> AsyncIterator[Client]:
         client = await nats.connect(
             servers=settings.nats_url.get_secret_value(),
             allow_reconnect=True,
-            max_reconnect_attempts=-1,
+            max_reconnect_attempts=max_reconnect_attempts,
             reconnect_time_wait=1,
             connect_timeout=2,
             drain_timeout=5,
             name="bike-doc-api",
+            inbox_prefix=settings.nats_inbox_prefix.encode(),
             error_cb=ignore_transport_error,
         )
     except Exception:
@@ -47,7 +51,7 @@ async def nats_connection(settings: Settings) -> AsyncIterator[Client]:
         yield client
     finally:
         try:
-            if not client.is_closed:
+            if drain_on_close and not client.is_closed:
                 await asyncio.wait_for(client.drain(), timeout=6)
         except (ConnectionReconnectingError, TimeoutError):
             pass
@@ -61,12 +65,26 @@ def jetstream(client: Client) -> JetStreamContext:
     return client.jetstream(timeout=3)
 
 
+def permission_denied(client: Client) -> bool:
+    """Identify asynchronous authorization failures without exposing their text.
+
+    The pinned client retains connection errors after a successful reconnect.
+    Permission violations use the server's generic Error type and otherwise
+    surface as ordinary empty-pull timeouts, so inspect only that error category.
+    """
+    error = client.last_error
+    return isinstance(error, AuthorizationError) or (
+        isinstance(error, NatsError) and "permissions violation" in str(error).lower()
+    )
+
+
 async def ensure_work_topology(
     js: JetStreamContext,
     settings: Settings,
     *,
-    ack_wait: float = 30,
+    ack_wait: float | None = None,
     max_deliver: int = 32,
+    workload: str | None = None,
 ) -> None:
     """Create or verify the allowlisted stream and durable pull consumers."""
     stream = StreamConfig(
@@ -74,16 +92,22 @@ async def ensure_work_topology(
         subjects=[settings.nats_diagnostic_subject, settings.nats_profile_subject],
         storage=StorageType.FILE,
         retention=RetentionPolicy.WORK_QUEUE,
+        max_age=settings.nats_work_max_age_seconds,
     )
     try:
         existing = (await js.stream_info(stream.name or "")).config
     except NotFoundError:
+        if workload is not None:
+            raise ValueError(
+                "work topology must be provisioned before workers"
+            ) from None
         await js.add_stream(config=stream)
     else:
         if (
             existing.subjects != stream.subjects
             or existing.storage != stream.storage
             or existing.retention != stream.retention
+            or existing.max_age != stream.max_age
         ):
             raise ValueError("existing NATS work stream has incompatible configuration")
 
@@ -91,20 +115,37 @@ async def ensure_work_topology(
         (settings.nats_diagnostic_subject, settings.nats_diagnostic_consumer),
         (settings.nats_profile_subject, settings.nats_profile_consumer),
     ):
+        if (
+            workload is not None
+            and subject
+            != {
+                "diagnostic": settings.nats_diagnostic_subject,
+                "profile_inference": settings.nats_profile_subject,
+            }[workload]
+        ):
+            continue
         config = ConsumerConfig(
             durable_name=durable,
             filter_subject=subject,
             ack_policy=AckPolicy.EXPLICIT,
             deliver_policy=DeliverPolicy.ALL,
-            ack_wait=ack_wait,
+            ack_wait=settings.nats_ack_wait_seconds if ack_wait is None else ack_wait,
             max_deliver=max_deliver,
-            max_ack_pending=128,
+            max_ack_pending=(
+                settings.nats_diagnostic_max_ack_pending
+                if subject == settings.nats_diagnostic_subject
+                else settings.nats_profile_max_ack_pending
+            ),
         )
         try:
             existing_consumer = (
                 await js.consumer_info(settings.nats_work_stream, durable)
             ).config
         except NotFoundError:
+            if workload is not None:
+                raise ValueError(
+                    "work consumer must be provisioned before workers"
+                ) from None
             await js.add_consumer(settings.nats_work_stream, config=config)
         else:
             if any(

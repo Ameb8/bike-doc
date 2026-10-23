@@ -1,0 +1,1833 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "platform": "Linux-6.12.75+rpt-rpi-v8-aarch64-with-glibc2.41",
+    "hardware_model": "Raspberry Pi 4 Model B Rev 1.5",
+    "cpus": 4,
+    "memory_kib": "3887804 kB",
+    "docker": "29.4.3",
+    "git_revision": "06d890671d793d7d7fbfd7548f4a0442db40f58a",
+    "dirty": true,
+    "replicas": {
+      "api": 2,
+      "diagnostic": 2,
+      "profile": 2
+    },
+    "capacity_settings": {
+      "api": {
+        "api_pool_size": 13,
+        "api_adk_pool_size": 1,
+        "maintenance_pool_size": 2,
+        "database_pool_timeout_seconds": 5,
+        "nats_ack_wait_seconds": 30,
+        "nats_diagnostic_max_ack_pending": 8,
+        "nats_profile_max_ack_pending": 8,
+        "job_publication_batch_limit": 8,
+        "job_publication_poll_seconds": 1,
+        "job_publication_claim_seconds": 30,
+        "job_publish_timeout_seconds": 10,
+        "job_reconciliation_batch_limit": 100,
+        "job_reconciliation_poll_seconds": 30,
+        "job_backoff_initial_seconds": 2,
+        "job_backoff_max_seconds": 60,
+        "job_no_progress_seconds": 300,
+        "job_shutdown_timeout_seconds": 10
+      },
+      "diagnostic": {
+        "diagnostic_worker_concurrency": 2,
+        "diagnostic_worker_fetch_batch": 2,
+        "diagnostic_worker_pool_size": 4,
+        "diagnostic_worker_adk_pool_size": 2,
+        "nats_ack_wait_seconds": 30,
+        "nats_diagnostic_max_ack_pending": 8,
+        "diagnostic_worker_handler_seconds": 110,
+        "diagnostic_worker_hard_seconds": 120,
+        "diagnostic_worker_timeout_grace_seconds": 5,
+        "diagnostic_worker_progress_seconds": 10,
+        "diagnostic_worker_shutdown_seconds": 30,
+        "diagnostic_agent_timeout_seconds": 30,
+        "observation_extraction_timeout_seconds": 30,
+        "price_lookup_timeout_seconds": 20,
+        "diagnostic_worker_storage_seconds": 20,
+        "database_pool_timeout_seconds": 5
+      },
+      "profile": {
+        "worker_concurrency": 1,
+        "worker_fetch_batch": 1,
+        "profile_worker_pool_size": 3,
+        "nats_ack_wait_seconds": 30,
+        "nats_profile_max_ack_pending": 8,
+        "profile_worker_handler_seconds": 50,
+        "profile_worker_hard_seconds": 60,
+        "profile_worker_timeout_grace_seconds": 5,
+        "worker_progress_seconds": 10,
+        "worker_shutdown_seconds": 30,
+        "profile_inference_timeout_seconds": 30,
+        "database_pool_timeout_seconds": 5
+      }
+    },
+    "source_sha256": {
+      "apps/api/Dockerfile": "545a569739a6e9324dea135483a3913b9086c1dea2e0085d75ec1ae519512a2e",
+      "apps/api/src/bike_doc_api/__init__.py": "eba86757f320847e56cf66a0fdc83a66ff0614504df72c73c9081cf0deabec2d",
+      "apps/api/src/bike_doc_api/adk/__init__.py": "8c53c8644ce696120c7d8d4dd4e61a7762ad75cc794075f76a3c93d5cea021a5",
+      "apps/api/src/bike_doc_api/adk/agents/__init__.py": "791bda8705e04ec355c70b455cde3447889ab14ff8bff71cb96dc0ff4e48f1d1",
+      "apps/api/src/bike_doc_api/adk/agents/diagnostic.py": "8509613cad370d3fae7014e8e477983b2ff3d752792ff9c3e7ef91e72a79b084",
+      "apps/api/src/bike_doc_api/adk/agents/execution.py": "145b02dbe5e8a63a38e0f2e915520a9d532272b6e5b9919ed2cc5f51b58c1b63",
+      "apps/api/src/bike_doc_api/adk/agents/planning.py": "746c209828353a909dbe977c0b05a772594cc133851149f72eac70f166b6f131",
+      "apps/api/src/bike_doc_api/adk/artifacts.py": "2bde8b1de464b2e208991ca8ffee30ab66875dc36c1feccda2b683e41e230c8d",
+      "apps/api/src/bike_doc_api/adk/background.py": "d0aed8ee1926f003662fbbaaf75661f46c1e026f7a1798ff00ecf6b19cde6440",
+      "apps/api/src/bike_doc_api/adk/diagnostic_model.py": "afbfdde93f76780ba5e1dddaf87fe1d54bf8188bd219d247a91c619d05484c8e",
+      "apps/api/src/bike_doc_api/adk/execution.py": "a9563b70e931469c0098749c9fe7ff7a5890316c8c860b373c9db39943f8b4b5",
+      "apps/api/src/bike_doc_api/adk/execution_telemetry.py": "791187847451ba5be9d586c695b79465c935998ba845128901a14496a837b2de",
+      "apps/api/src/bike_doc_api/adk/orchestration.py": "ef324b8086970d2fd4234c2c7496700a45c9395ea74716fbfd191eba975dcf2b",
+      "apps/api/src/bike_doc_api/adk/report_schemas/__init__.py": "48e73fd51380fe4a20dae1d0a08745e09517085433857491dc24203495572567",
+      "apps/api/src/bike_doc_api/adk/report_schemas/diagnostic.py": "a37eefd6aa6a40ad6d3d7db218493fbbe93fd91aa1045cf2f736db4e1005aa7d",
+      "apps/api/src/bike_doc_api/adk/report_schemas/execution.py": "25c12f05c73588249c9fa977949e5f8902ef8872c8ef727955dec51996b6af06",
+      "apps/api/src/bike_doc_api/adk/report_schemas/plan.py": "8191a52c6abd0545ea479816816fee1b1c1c5d00e8193de2fb080bc01554dbbf",
+      "apps/api/src/bike_doc_api/adk/resources.py": "d3469410e30ca3275d778916de6d5b2d11554101ab99ac59c849fe970df16311",
+      "apps/api/src/bike_doc_api/adk/runner.py": "bdcb3ee97af3c16902c4e86d9e1bf1966dc9cca47ba13cf4aeac39d2203703f3",
+      "apps/api/src/bike_doc_api/adk/sessions.py": "31689a4163a679670748e1e1afafd8b317fa31f952a8c4e59b9df66d424711d6",
+      "apps/api/src/bike_doc_api/adk/storage.py": "3d05c865e01a1bf3518c982819f0cfcdcc73c25c792c9ae0c3990665f810c737",
+      "apps/api/src/bike_doc_api/adk/telemetry.py": "3a91c36c1ec0568704d815546c050d541fbf91c588c176ddf193c5dfd9a8f0ee",
+      "apps/api/src/bike_doc_api/adk/tools/__init__.py": "6bf56a1a04ef0622a7b860e24b52b67732ff53ae4f608af587cf3eee7c7ff592",
+      "apps/api/src/bike_doc_api/adk/tools/artifacts.py": "6cf37d5ed401bf3cb658e5c30d4cfcf63c90eae82f94d5eb03e2673ce4933680",
+      "apps/api/src/bike_doc_api/adk/tools/bike_profile.py": "3038d49e3e4ab8b907313fad39f2ff5c2b057b5787fc19bd9f08ade38b902511",
+      "apps/api/src/bike_doc_api/adk/tools/common.py": "653109aa7057b177f82b1182188100b389516c26f51f11aef7d490e756361a32",
+      "apps/api/src/bike_doc_api/adk/tools/input_requests.py": "9e526b501bf36005ffd91cb03759a3f6743ea2f89bba4377dd8df42f84cdfc06",
+      "apps/api/src/bike_doc_api/adk/tools/price_lookup.py": "13cdb7e4bb2836fc3a7bb9f96ece3fbf86f3313bbdd32959b6ded5a45272319f",
+      "apps/api/src/bike_doc_api/adk/tools/repair_history.py": "c125f97f9843886b393953dd261b5d94ef368005bcc91a5a331d020f0919f72d",
+      "apps/api/src/bike_doc_api/adk/tools/repair_reference.py": "692524db74fd78d73de4f65f31d0ec9c94ef12a8e205e2a632cabc974b318c14",
+      "apps/api/src/bike_doc_api/adk/tools/reports.py": "d64aa1c7bf0d9d27705f70526d506c20f1f2f3e48d63a83bbd6a2565d72c0828",
+      "apps/api/src/bike_doc_api/adk/tools/safety.py": "347f1aafc28aaa1cb7e5f495e50f97f93c23dc7387f4b05acda6af5cfe1025cd",
+      "apps/api/src/bike_doc_api/adk/tools/tool_catalog.py": "e55b4dd2de3025f3d06796a6b757c06d803e2c1c753c64901477e45eea331002",
+      "apps/api/src/bike_doc_api/adk/turn_telemetry_state.py": "deecf60e306ba144593862f0ee234f37ed1ed3972025a78c7b6207f2c9076775",
+      "apps/api/src/bike_doc_api/api/__init__.py": "60ceac08771bf203419d20497b70c15fa88ce17f35244d0fa7b6506a1198fa07",
+      "apps/api/src/bike_doc_api/api/deps.py": "849e4d72e587afbd55a135b38f981a000ac5d7b2ceee004c92ccd1b78083fff0",
+      "apps/api/src/bike_doc_api/api/middleware.py": "ab22fb55bc8c29505d4f9a9cc66e8b4572a4e01643224b115da4a31470df44e2",
+      "apps/api/src/bike_doc_api/api/responses.py": "32c4108c7e085b82677ae8b0cc1ba3199164dde4e18429de09fd8f63068fe8ad",
+      "apps/api/src/bike_doc_api/api/router.py": "2c9882569957044ae3e72710c9e00c645a55ff3549dcbcbb0c642f391525fda7",
+      "apps/api/src/bike_doc_api/api/v1/__init__.py": "449e5c3ead1bb37a5b116ab66b82b98da9e2f9860d6f7ab4bd16d27f55e2657f",
+      "apps/api/src/bike_doc_api/api/v1/artifacts.py": "4a6613a6d2d7381202922aaf07afe3fc3795228b5c8bcc7e90641227941e54e6",
+      "apps/api/src/bike_doc_api/api/v1/bikes.py": "4518ff4847ca7b6fcfb3529f35ddbe3b7335efa7ed6f176766043417ea7aee0d",
+      "apps/api/src/bike_doc_api/api/v1/decisions.py": "8080c689c506a91aa10bec29458fbe33e0485ea263499de545dfc4c0031c4a4d",
+      "apps/api/src/bike_doc_api/api/v1/events.py": "5e2a080ee58bc9725b5cac6d0aca0d57bd735eb757238d1f4d141280eb4a270b",
+      "apps/api/src/bike_doc_api/api/v1/me.py": "d33b9432d61018e91097ff7be36d41721e7f33bf5d79405b00b77840fd365e53",
+      "apps/api/src/bike_doc_api/api/v1/repair_sessions.py": "b2196d6dce2aad7c22412336ec7fbe47a1bf13b38f1ec64bd6dfecb4c1c524c3",
+      "apps/api/src/bike_doc_api/api/v1/reports.py": "897ea2077e09fbc8342ec08c4a8e15168de14ef14312b015875020d0c0ce610b",
+      "apps/api/src/bike_doc_api/api/v1/turns.py": "074d5cec4d7042aa7cd76b2ecc99a16ea0979543a6686dae5a9496ecdda0fde5",
+      "apps/api/src/bike_doc_api/core/__init__.py": "2068b8e96a7ebf1b0cb0ef5643a8d6ea43f3dec513b1c146915602b346f40c97",
+      "apps/api/src/bike_doc_api/core/config.py": "bb45b19e7e9cf07eb9eed4dcbdc0b69efd514e743df589d0c0a395095d0a8e1e",
+      "apps/api/src/bike_doc_api/core/diagnostic_execution.py": "778526c2697cfe1a1de4227f34c58eb8d986f3ef4c02faec5faf92e940ebc0d5",
+      "apps/api/src/bike_doc_api/core/errors.py": "020c6c6a9a383abaa2d334fe4c9affb23f4a1cb3cae31a40697bdb66ba2e96e3",
+      "apps/api/src/bike_doc_api/core/event_notifications.py": "4848e2531516abd69fc69bae76d56cfb975db410221af3951158764970251b62",
+      "apps/api/src/bike_doc_api/core/event_wakeups.py": "e36b9de932663554995e605dd701f6c90acaf3016cf90149f83ad6690b46ae8e",
+      "apps/api/src/bike_doc_api/core/logging.py": "6dfa8a2e716b4a4c0c02660358a9f54a474e176d21f50830e1df8463e4d29f4f",
+      "apps/api/src/bike_doc_api/core/nats.py": "9b0302f1810810a789d480eb89fd38d5e6eedd8f08d907b616f5af4d3d54a8af",
+      "apps/api/src/bike_doc_api/core/queue_contract.py": "86f62fef39be25d90493ef1bb5c9b998e8f7f0bf90797f9cf7fb5d06e03fa28b",
+      "apps/api/src/bike_doc_api/core/queue_telemetry.py": "c3bc94c81f59f61e62ebae0b6a755cb671165ac49c155951e14a1b57b8c3df12",
+      "apps/api/src/bike_doc_api/core/security.py": "90531318ab91ad4ec63f24dde24bd2587afe73704833c85b010c655f0b059c84",
+      "apps/api/src/bike_doc_api/core/telemetry.py": "8a5ac9b9c51278d60139256f3dde6455d7db3fc408e74bff77ba32673fada7fa",
+      "apps/api/src/bike_doc_api/db/__init__.py": "fa2cd952011286d6f9d957037bbf21dbec4f1b4226d560e42951f2f1d31f83bf",
+      "apps/api/src/bike_doc_api/db/base.py": "f1bbad1337d682d57aaf8d6a776c71c5c763bb341e10e14014237558d23bfa5e",
+      "apps/api/src/bike_doc_api/db/migrations/env.py": "276fa332af0253e7754a1f944b841dee1ec0faf0663a8b16f5762fb5989b39c9",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_06_23_0001_0001_create_diagnostic_persistence_schema.py": "bbcbf0ba751927f54bcde919cd73f2f96f8aced694d1eef21d0a861be0bb9b44",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_07_11_0002_bike_profile_v2_claims.py": "93e94231c9c0884a58b75dcaa8b015be845bdfc170e736ce9c1948e90467b7b9",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_07_11_0003_profile_inference_runs.py": "3792bc4612607d95d7bd031b1ab8f9a23239b14aa4682d4a72bc32c61acd40ee",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_07_15_0004_profile_inference_lifecycle_safety.py": "3f1d901c7f6e75ead3d84568025558d368126fb82a125416e1355d12e2293d0e",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_07_24_0005_image_analysis_persistence.py": "16eb58b41d734f33dfbc81bfa27cf4fc24c4b5ee0e672f353a7f736dc1656e9c",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_07_25_0006_visual_evidence_invalidation.py": "eec5862c49b25f4dfed44fa906ddc99369e6111a79f08024b4737131bf7af043",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_08_01_0007_diagnostic_report_rollout_snapshot.py": "7e5b8c87764b029bd4e2a46c1c553711afec71ab60dc909758f6413877bc3fb6",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_09_27_0008_adk_sessions_v1.py": "f26b33d969f15f4b869c159560a166a5df9cd8dec1161c2488e81ad067b5aa11",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_09_30_0009_background_jobs.py": "b17c51b7e1a3711363a0bab975314d1976d6e836c5809a7bc7ac3ae5ec6577f4",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_09_30_0010_unbound_phase_sessions.py": "a7b889682809c47063e280818fbfcad6b85eb7a17f06afe6dcd01a8f64cef0f5",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_10_01_0011_phase_session_partial_uniqueness.py": "5e424825e509e6918d6c3ae3f672c343531701ce7992d977748afe60f24dd694",
+      "apps/api/src/bike_doc_api/db/migrations/versions/2026_10_01_0012_diagnostic_effect_token.py": "67cef6ac1a71c46316bc66f70bd84076be0f011b503e62045d307e30eb758b1d",
+      "apps/api/src/bike_doc_api/db/pool_observation.py": "31e61c1bde5044f6c10a999a85d322bdc686650dcb188c49f186b9c56fecd1f5",
+      "apps/api/src/bike_doc_api/db/session.py": "195bea9068131366461301854e32702dd1d08117a43c4fe613ec19cce39cb6e5",
+      "apps/api/src/bike_doc_api/main.py": "600f4fa742a4cb0b6f68f317146c7352bfcaff450b6ae712fb337537a88bfb54",
+      "apps/api/src/bike_doc_api/maintenance/__init__.py": "1163453c03f5155eee8267db7bd83f62339fbc3864e26fb49a3ea852da381d26",
+      "apps/api/src/bike_doc_api/maintenance/hosting.py": "d396918086f5c448c4e838662d6af6c8636f7402f84a8b2d2bbd66ee6fccaed7",
+      "apps/api/src/bike_doc_api/maintenance/nats_publisher.py": "e38fafdbc7e816fb15ff60e8bce2b8d81aea0eaddee5ea5fac84866f9d7f70df",
+      "apps/api/src/bike_doc_api/maintenance/reconstruction.py": "949f3f59bf99af70d750c727e8bb8b5bbecb26730fa17fa11e15eb8095207320",
+      "apps/api/src/bike_doc_api/maintenance/runtime.py": "d421deeae67f26631cc6eb95461e649de6c008d7e0470cabb29210facf58ee4d",
+      "apps/api/src/bike_doc_api/models/__init__.py": "f0dff806ef4905f1b7287ae9c455dd57f6736bcf9752a7e42aa67d831032a194",
+      "apps/api/src/bike_doc_api/models/_ids.py": "fa069fb8bb5b72da50107b585f351f67c37ad296f806a593f7c8d169e89cd495",
+      "apps/api/src/bike_doc_api/models/artifact.py": "fd4e98a5235a05688aa3d8cf17a410d15267c2b26486a10115c4849286b30d3b",
+      "apps/api/src/bike_doc_api/models/background_job.py": "e04c0751c23f2abe679a2d5203656b9baec8d0a1ac58970457f3d1eed701ba29",
+      "apps/api/src/bike_doc_api/models/bike.py": "8e01cedc9dd96e8e33da045df9b2d567e8e176686b86745efc8ecdd9dcd70440",
+      "apps/api/src/bike_doc_api/models/event.py": "2f08a708c4490fa129daf36fd1f264b85dc4fa2d14afa04a44e45bed0180da1d",
+      "apps/api/src/bike_doc_api/models/observation_extraction.py": "03b127c48f3781c1c886062defb96dd4c9e48b9edc80c4fed56958f914152bb3",
+      "apps/api/src/bike_doc_api/models/phase_report.py": "6e3a9d55b10d785040437727ddb1be206d5b69337eef17f04bf2be64e2af0fd6",
+      "apps/api/src/bike_doc_api/models/price_lookup.py": "6993b8f65185debd2115f8de3c8429b970ce512b52f857074bfc426db443612b",
+      "apps/api/src/bike_doc_api/models/profile_inference.py": "6268ea7fd8265398490c035bd190bbc0ea431f1a4d41e345ae60e934c051d371",
+      "apps/api/src/bike_doc_api/models/repair_history.py": "3ca8ee05e57be6b6a0cdf3c520f5e25f0ff37ad37015867784026f5aee83d13f",
+      "apps/api/src/bike_doc_api/models/repair_reference.py": "f464c9da615396c253b330e78e9963a0d6b1f0517e5d6b2337dbd3517f3db790",
+      "apps/api/src/bike_doc_api/models/repair_session.py": "ac75a0f1e219274eb998cbb41f5087faa62ebd902eaf3707c076a481b286cd32",
+      "apps/api/src/bike_doc_api/models/tool_catalog.py": "cd8021f43862175692edb63b8477504995f41d112a23bd480856b781b13081dc",
+      "apps/api/src/bike_doc_api/models/user.py": "1da889965ffd1f3bcc1fe3d415c46ef7e113776605f3915e2f88e715e689d378",
+      "apps/api/src/bike_doc_api/operations/__init__.py": "ae2b13e53bcf16e202e1ddc616b06842e5f9a634e5acc246c4eefbaf7dc5a722",
+      "apps/api/src/bike_doc_api/operations/alerts.py": "2fe41e611322132fc79ec1237da01d33e570b0fe8d769ff3329006cfc06463b7",
+      "apps/api/src/bike_doc_api/operations/deployment.py": "12389efa2da1df5d620137a7d53ec00234b7577b32b7c4a013f6660811aa87a2",
+      "apps/api/src/bike_doc_api/operations/health.py": "d74e7592b93628872e91ec15a5b0ed87d3d3053bb0e04b01c228306b3c610c0f",
+      "apps/api/src/bike_doc_api/operations/inspection.py": "600ac63c43f6f126652621f92dc18c1e95473e1188c3a093a73ade20aaeb3331",
+      "apps/api/src/bike_doc_api/operations/monitoring.py": "72caf6566185419a8109b9c331393d72d51fe316857f663618bcf39fd64c6e4a",
+      "apps/api/src/bike_doc_api/providers/__init__.py": "8827698ffcf7f6b26443b6fff9850452500b197d25c65e9cf498a4e867b150fd",
+      "apps/api/src/bike_doc_api/providers/observation_extraction/__init__.py": "95049f0480dd22f67529d7f6aa08cbfc94db07422c4adb141a31db8fa6846aaf",
+      "apps/api/src/bike_doc_api/providers/observation_extraction/gemini.py": "51c268311d1dc23850834e95b46291281f81f22bbc5b96d97232f775ee740cb1",
+      "apps/api/src/bike_doc_api/providers/price/__init__.py": "3cd53b841ae84968aae98ca1ecd16170ad98fff1ec3f2384933635e6b4dc03ce",
+      "apps/api/src/bike_doc_api/providers/price/base.py": "5c5541b9aa593b10b400d30372df31e7e4a88f2ddedcddbbba6a7f82cecf35d7",
+      "apps/api/src/bike_doc_api/providers/price/gemini.py": "e4bb34d5292d1ee54c5ebb29986fb5f81eb5726c663b79a514d3c291be22a00e",
+      "apps/api/src/bike_doc_api/providers/price/stub.py": "1521bf99356a313b5baf43d5342b293566cc291de807d0e07ebb949d6c5b43df",
+      "apps/api/src/bike_doc_api/providers/profile_inference/__init__.py": "eb41d6c0e0e3e19bc715a1819d11ab2c30606d7ef737f66cc7805102f140a12f",
+      "apps/api/src/bike_doc_api/providers/profile_inference/gemini.py": "025bc1c52d39155db4865415c35002028299a8a0abeb8bafdf815bad0f7b515b",
+      "apps/api/src/bike_doc_api/providers/repair_reference/__init__.py": "f951328c40ec4225e09749eb5658421bb1fced529da20fbd0f5834ae03931fcf",
+      "apps/api/src/bike_doc_api/providers/repair_reference/base.py": "42a4cd3322a21851bc52ccf114290fad7d91ee6c52ed9192f904366e02561fea",
+      "apps/api/src/bike_doc_api/providers/repair_reference/stub.py": "4802ac2f4b2a1dbfeb15f3cefa276c1971a6d365509155cacca92177a50479c8",
+      "apps/api/src/bike_doc_api/providers/storage/__init__.py": "3ce95e0dfa79cc1f9ec1bc844faa5f6b6510ad0041cd0c315087f364b3790f0b",
+      "apps/api/src/bike_doc_api/providers/storage/base.py": "e85d12d535bfeda5cd837c28d4db0fe56a44869f914f0e230fef972ebc28ac03",
+      "apps/api/src/bike_doc_api/providers/storage/gcs.py": "7e095aa64d83e970e5fc1f482d548160b9bfcb72cce341ba5c7bcb3e3c242de2",
+      "apps/api/src/bike_doc_api/providers/storage/local.py": "dc3a1ab401bdae7d3d2a07a10d8aae76e79de3cc0a084ede9a87375f5a272564",
+      "apps/api/src/bike_doc_api/repositories/__init__.py": "65e2516c835fc678793a7e03934d090bbe0acfc472c15e9be524f80516f85db8",
+      "apps/api/src/bike_doc_api/repositories/artifacts.py": "562791b846b8e0829a2534e430f5b475436c39421f2b8551e11e6dc1ae0e9d0c",
+      "apps/api/src/bike_doc_api/repositories/background_jobs.py": "31059358c4c2882fb81800a3dee5d9c475b9934e5068fccf0f3b9a640242f45e",
+      "apps/api/src/bike_doc_api/repositories/bikes.py": "e387dc07d0dc1a4a36763e70641351ee976d6d01c392e465f4385b1fbb4c773a",
+      "apps/api/src/bike_doc_api/repositories/diagnostic_execution.py": "f961274fae41994681ed026bb980b61e1c8212c03dfe0f2f39ac0cf092cb2c04",
+      "apps/api/src/bike_doc_api/repositories/diagnostic_jobs.py": "503ef2d69dd7bf1f2412c18481d4b5e47fb9459378209ea2eadf52c98f6db004",
+      "apps/api/src/bike_doc_api/repositories/diagnostic_terminalization.py": "067859609838eb187574c3833df0afd1705206d42a42ba9393ea13acff7a0132",
+      "apps/api/src/bike_doc_api/repositories/events.py": "fd102deca2ea3546c8ee98ace9de3f04a8798e14c31dbc938207a3f1bc85bf96",
+      "apps/api/src/bike_doc_api/repositories/job_inspection.py": "148e0a8b9f54f7998f8e9976986cb6d57226e0d8eec88ef2c41aacba113b0933",
+      "apps/api/src/bike_doc_api/repositories/observation_extraction.py": "5ff7d64c34e00b5477c9fafc244757d3d9d7c8559f2034e324c35da63dab41d1",
+      "apps/api/src/bike_doc_api/repositories/profile_inference.py": "418d1e3f9cb933330c4566de5b0d780d4d3647abde4ad57f47a8c3301cde6d55",
+      "apps/api/src/bike_doc_api/repositories/profile_jobs.py": "3a39cb681c810cc069252d2b3cf4acb31eb371260fdac18ac1cbb2029e8f3292",
+      "apps/api/src/bike_doc_api/repositories/repair_history.py": "c02a5ed0e5e8495652acfc29cb57b0005efb827a650f4fdb4c5fb3bf109be6d3",
+      "apps/api/src/bike_doc_api/repositories/repair_sessions.py": "31989b4df02cb9b201baf4ca273303f1e0de2bfc670ac56371c343cf227d6e57",
+      "apps/api/src/bike_doc_api/repositories/reports.py": "a7caec74dd7ac6ec9a0d511a260ded72fe620a613b4e50d121aac448462926f3",
+      "apps/api/src/bike_doc_api/repositories/tool_catalog.py": "1ea3cf08b640870de1a44f79aaa543ad0308123286feeb94752eaeee2577f82d",
+      "apps/api/src/bike_doc_api/repositories/users.py": "c5fc265fd3f12e489f6e04582629c29774b1c7df887b6d339d1e55ef10b792e6",
+      "apps/api/src/bike_doc_api/schemas/__init__.py": "68013c10fc6c43c3f63ccc8061a491a12cc8889171011b27c81e43e6bfc2b81e",
+      "apps/api/src/bike_doc_api/schemas/artifact.py": "7b7d9f544c974459d64ea75209370f1359f6995d5420c329a7e49b126f870a5d",
+      "apps/api/src/bike_doc_api/schemas/background_jobs.py": "fc17b71f4ba609a93daa640e2d51da33c4a390c0afdaca3dc34b1b78be997a8c",
+      "apps/api/src/bike_doc_api/schemas/bike.py": "c195479b206fc15acb89aa4bf333c6d760a30100802129ce44f3ff4afb06173b",
+      "apps/api/src/bike_doc_api/schemas/common.py": "d6d61f800feea107def0c5a544393854f06bca2349a6a8733d7a93abe71d1b2a",
+      "apps/api/src/bike_doc_api/schemas/decision.py": "e555dd10a235df5fac725b7269dc82a57ba483782d1addf50a9c71fde85d092f",
+      "apps/api/src/bike_doc_api/schemas/event.py": "bdcf3962017949ef682c397888692d8f211a7dfe1c971de5d380167adc645dc7",
+      "apps/api/src/bike_doc_api/schemas/observation_extraction.py": "d0af42821eaf59992f654056153b90d07fef8183cd6785a7b7ce149fe99ea26b",
+      "apps/api/src/bike_doc_api/schemas/profile_inference.py": "df567e3d8a4ab0328a4759e75327c4c35ae86ff14f320e7ea3b932c1a2722daf",
+      "apps/api/src/bike_doc_api/schemas/repair_session.py": "549e17dd6ce2531d864e8f38311b8c4711b415895b5cb9c76e36aa57e3bb1ca5",
+      "apps/api/src/bike_doc_api/schemas/report.py": "d3b0cc546fb832a73e11683fd0ec7ddd17360d7560b6ef99afe418d4a46585a2",
+      "apps/api/src/bike_doc_api/schemas/turn.py": "6592ccea1489cd2f05d05a4ca800df2249a34b2576ddf6508b9299b4faf483e6",
+      "apps/api/src/bike_doc_api/schemas/user.py": "9859e566e241e5a71f3e1e813235adcbbcd6a544c607024f25d0bde67413a1a6",
+      "apps/api/src/bike_doc_api/services/__init__.py": "014ffd231bb401f0e83d476b113b5b39de95362fba8600e01f92bb6d35aaac7e",
+      "apps/api/src/bike_doc_api/services/artifacts.py": "b83d9c4a9ae55cbc1d664b84ff987abb541252126cb386fc5f40898911cde3e3",
+      "apps/api/src/bike_doc_api/services/auth.py": "827408be2414c8508e245ade92be0f03ee785e03d6b9e469ebe40498ba172b03",
+      "apps/api/src/bike_doc_api/services/background_jobs.py": "e646d1a92fcc440abf332a3ee50b765385cf8848872b44e34f55013a1e95c87c",
+      "apps/api/src/bike_doc_api/services/bikes.py": "1067f689d130a084c148b223ed1803e7597e6f55b1b238691e9d31b05eb23cc1",
+      "apps/api/src/bike_doc_api/services/cost_estimates.py": "d2974d2f43bccee35828e77e6beb8b13a0e4783c21c118acce926280e9747b8c",
+      "apps/api/src/bike_doc_api/services/decisions.py": "4fc4a6df6e7904de0714bb08490a6101b87c102ec2783e8303a3b0b5753f8e1d",
+      "apps/api/src/bike_doc_api/services/diagnostic_completion_telemetry.py": "6e8062266c7726d2a88d59856376f8fd1052f5107a7cd6e0485ca3407af91d65",
+      "apps/api/src/bike_doc_api/services/diagnostic_evidence_invalidation.py": "7d587d66f225e4282c926ca9d9c49ce6cbbd4a25a84443aa60a3c58d83a1ba4f",
+      "apps/api/src/bike_doc_api/services/diagnostic_visual_context.py": "efbf44955f3afc6f941954b8dad905ad13d09943422299d4eb8da7b0fa21afd9",
+      "apps/api/src/bike_doc_api/services/events.py": "b8e59c87199f76663476b791963ecec73e8dd6498c4cb3367b02307dcc6e3e35",
+      "apps/api/src/bike_doc_api/services/image_preprocessing.py": "415f33b79b0143a5d5fdc3e70eb69da984cd20c01fd090afb5f3a0e106e06599",
+      "apps/api/src/bike_doc_api/services/observation_extraction.py": "39b7038762ba7344f2c1555e9795d65942948fd2e914fae3b54664fdda8f5631",
+      "apps/api/src/bike_doc_api/services/observation_extraction_privacy.py": "8c6ed0cd1e021cb2293c217585220584cf63731cb43afbfa40c5fb970f736f95",
+      "apps/api/src/bike_doc_api/services/observation_extraction_telemetry.py": "ee251503ae00eb4654ae362ef25ecf9d69aaf689a5166ce7cc71af9ec501abb1",
+      "apps/api/src/bike_doc_api/services/profile_inference.py": "950d4ba0db86a22976e564b86aadcd9c167bfb9e07aaa892a096e76d9925f0e5",
+      "apps/api/src/bike_doc_api/services/profile_inference_evaluation.py": "b8743aa8c768f3576a212792e5aae9c2b3df57d4294ae8650475835614bf9f90",
+      "apps/api/src/bike_doc_api/services/profile_inference_privacy.py": "b2ad7c75bd7a6d75565285eb57d33089bd2f5fa2955a689985c9f93942748e16",
+      "apps/api/src/bike_doc_api/services/profile_inference_resolution.py": "1c91b937c35087f1890945abc6885771642f3e397a85a6c52c83ffcc3c99a5c8",
+      "apps/api/src/bike_doc_api/services/profile_inference_telemetry.py": "30fcae4d7826910427350fb8eb442c6bc726fe9ccdb025bc4d5792c595acab34",
+      "apps/api/src/bike_doc_api/services/profile_registry.py": "7954239034665d98d8f53928fea0e43182200b6e24b21b62fc43cd456fb0e956",
+      "apps/api/src/bike_doc_api/services/profile_resolution.py": "7c6b1010c33c35ec6934469341e49df9a796bc7b1e67918773adc629ec1facdc",
+      "apps/api/src/bike_doc_api/services/repair_sessions.py": "dad3ef45f1c6cdc297424339712dbb4c0ae9331323a0f9ba96907dafe32c17f0",
+      "apps/api/src/bike_doc_api/services/reports.py": "b8d2595527078d42c35317d17ebdc1e4db9734cb72cde8f9f1e3f4a776271cca",
+      "apps/api/src/bike_doc_api/services/safety.py": "22975be5f1ad494a4852a440423e0106c4d6a36f6e616d216efb8af247da9f2b",
+      "apps/api/src/bike_doc_api/services/turns.py": "36356897082b3a94575131b6c16df2693b48fa69d4332630ba87f2915efa9fbf",
+      "apps/api/src/bike_doc_api/workers/__init__.py": "02c6c6536007a521670afb60218f670a0179a938c866b09e952e50eedc3c1faa",
+      "apps/api/src/bike_doc_api/workers/adapters.py": "322eb87a9ba1fb28413cae3b39f01c5a02863bcd670ae35ebac201605fae8698",
+      "apps/api/src/bike_doc_api/workers/diagnostic.py": "c8437baa119611fd2f827df715448c7bd1d4444f677c7a20bf5c05cfeba8ea43",
+      "apps/api/src/bike_doc_api/workers/diagnostic_application.py": "f4ec3f7f2d8294571e35d39e380d11880bd70e5a86ea8df1d799dc6e2970da2f",
+      "apps/api/src/bike_doc_api/workers/diagnostic_role.py": "5c31afcfa014b340c2a6e36d5322035416b3f83c616c962f7a8c93a19e269c3f",
+      "apps/api/src/bike_doc_api/workers/profile_inference.py": "582d28c3ae7e52dde1c57dac8bc13be4b6e10eaa240eb93babf861195160ddd6",
+      "apps/api/src/bike_doc_api/workers/profile_role.py": "a954fa565217c28945b4f4b5addd9d5591f9a7fe3e5d1f8cedd5f88404dd7e8c",
+      "apps/api/src/bike_doc_api/workers/registry.py": "fe9d2409672a4193be2f8727253178e7d39a952b626ddccdf36338bb681a525a",
+      "apps/api/src/bike_doc_api/workers/role.py": "cf314a83542799ec4352051b33d92667711a4099426fe1e8a592ebc311970962",
+      "apps/api/src/bike_doc_api/workers/runtime.py": "a4c5b2da173266011d6676b2717a1837a6bc1d048ce1dba86e85cd6cd675a2ec",
+      "apps/api/src/bike_doc_api_adk_agent/__init__.py": "c01b4256d9027f4df2fff5ebc19268eadd37bc55177579f9d12dfa37a9b50905",
+      "apps/api/tests/capacity/budget.py": "25dabbe603826e25ab9f027a5e6066f3b0388cd8b998958aa851ef28a71b41e1",
+      "apps/api/tests/capacity/certify.py": "bafcdf88ebea10b9d5acca9a9db53b7728fb9210c5616cc4b9373e40c866e34e",
+      "apps/api/tests/capacity/collector.yaml": "d4631c7af39aded9e6400890b1207aeef55918298f51d9fd041c62cd5da68a0e",
+      "apps/api/tests/capacity/compose.yaml": "69cec31b319e44a354af4168c2cbe7cce87490ab6b4a24c681152362f5fd6ff8",
+      "apps/api/tests/capacity/driver.py": "21fd821b882aabe5c7256d8d5a0d9bd1c4313e20834a50dd9d11c9926a55fab5",
+      "apps/api/tests/capacity/role.py": "11c9ed757d6831180c6e33627bea8dbb75d9ec48f305a035de94d2adb1236527",
+      "compose.production.yaml": "f1e68b8a47f449b087cd7d1c6108723fdb0df604416c449d4656bad96f64c42c",
+      "deploy/verify_permissions.py": "0e8ebbc1697a2b8a39cfcdb749b5878f17683070b42e22422a53479eab824768",
+      "scripts/prepare-production.py": "0d0e5765d87102a7dfcd9b3c8cc638bae0a231420ca2026c1e9216e06b96ac79",
+      "uv.lock": "c41fe1476c7d4ef1560b1642310267916ec7d9049022a47589ff9cf3fd095aaf"
+    },
+    "runtime_image_id": "sha256:7dc6099ff4f8d8dbd63e8ec2a7f79b29171d7467a8cfe32a616a1d34b68ab2ef"
+  },
+  "scenarios": [
+    {
+      "scenario": "nats_outage",
+      "accepted_turns": 48,
+      "jobs": 72,
+      "acceptance_p95_seconds": 0.6764569469960406,
+      "outage_acceptance_p95_seconds": 0.6764569469960406,
+      "restored_acceptance_p95_seconds": 0.6326197790331207,
+      "diagnostic_queue_p95_seconds": 102.527709,
+      "publication_ack_p95_seconds": 4.221199134015478,
+      "publication_ack_recovered_p95_seconds": 0.029402393964119256,
+      "publication_ack_recovered_samples": 37,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 5.344245996966492,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 2.0751609029830433,
+          "samples": 24
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 102.527709,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 98.71536,
+          "samples": 24
+        }
+      },
+      "sse_p95_seconds": 1.927429,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 2,
+      "recovery_seconds": 103.49527774297167,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.008429010980762541,
+      "database_connections_max": 32,
+      "pool_role_peaks": {
+        "diagnostic": {
+          "worker": 3,
+          "adk": 2
+        },
+        "profile": {
+          "worker": 2
+        },
+        "api": {
+          "api": 9,
+          "adk": 1,
+          "sse": 9,
+          "maintenance": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 2.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 15,
+          "ack_pending": 8,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 2,
+          "ack_pending": 5,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 27,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 36,
+      "outage_intents": 36,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 67,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 48,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 9.260639
+        },
+        "profile_inference": {
+          "jobs": 24,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 2.314983
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 72
+      },
+      "broker_samples": 72,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 150,
+        "publication_ack_p95_seconds": 10,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 150,
+        "transport_drain_seconds": 45.0,
+        "outage_acceptance_p95_seconds": 2,
+        "restored_acceptance_p95_seconds": 2
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "outage_acceptance_p95_seconds": true,
+        "restored_acceptance_p95_seconds": true,
+        "publication_ack_recovered": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "broker_restart",
+      "accepted_turns": 25,
+      "jobs": 37,
+      "acceptance_p95_seconds": 1.7786077280179597,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 38.267671,
+      "publication_ack_p95_seconds": 0.1166600679862313,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 14.299855456978548,
+          "samples": 25
+        },
+        "profile_inference": {
+          "p95_seconds": 7.426752618979663,
+          "samples": 12
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 38.267671,
+          "samples": 25
+        },
+        "profile_inference": {
+          "p95_seconds": 25.811258,
+          "samples": 12
+        }
+      },
+      "sse_p95_seconds": 2.12361,
+      "sse_samples": 26,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 2,
+      "recovery_seconds": 46.05908614199143,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.00817491696216166,
+      "database_connections_max": 34,
+      "pool_role_peaks": {
+        "diagnostic": {
+          "worker": 3,
+          "adk": 2
+        },
+        "api": {
+          "maintenance": 2,
+          "sse": 6,
+          "adk": 1,
+          "api": 7
+        },
+        "profile": {
+          "worker": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 2.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 20,
+          "ack_pending": 4,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 8,
+          "ack_pending": 2,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 34,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 7,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 37,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 25,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 14.162148
+        },
+        "profile_inference": {
+          "jobs": 12,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 7.253851
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 37
+      },
+      "broker_samples": 37,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 4,
+        "diagnostic_queue_p95_seconds": 60,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "duplicates",
+      "accepted_turns": 24,
+      "jobs": 36,
+      "acceptance_p95_seconds": 0.7547952019958757,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 1.734645,
+      "publication_ack_p95_seconds": 0.04768713499652222,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 3.704587289947085,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 1.8255579919787124,
+          "samples": 12
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 1.734645,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 2.247171,
+          "samples": 12
+        }
+      },
+      "sse_p95_seconds": 1.097237,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 4.9084579949849285,
+      "recovery_events": 0,
+      "transport_drain_seconds": 116.53594277100638,
+      "database_connections_max": 27,
+      "pool_role_peaks": {
+        "api": {
+          "maintenance": 2,
+          "sse": 6,
+          "api": 7,
+          "adk": 1
+        },
+        "diagnostic": {
+          "worker": 2,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 1.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 50,
+          "ack_pending": 6,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 12,
+          "ack_pending": 1,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 68,
+      "lock_waiters_max": 1,
+      "publication_pending_max": 2,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 35,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 24,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 3.832861
+        },
+        "profile_inference": {
+          "jobs": 12,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 1.595033
+        }
+      },
+      "resolution_counts": {
+        "running": 3,
+        "terminal": 108,
+        "executable": 36
+      },
+      "broker_samples": 144,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 8.0,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 165
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "wakeup_loss",
+      "accepted_turns": 24,
+      "jobs": 36,
+      "acceptance_p95_seconds": 0.5927931760088541,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 1.738247,
+      "publication_ack_p95_seconds": 0.07007847301429138,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 3.0412986099836417,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 1.3693418250186369,
+          "samples": 12
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 1.738247,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 2.067983,
+          "samples": 12
+        }
+      },
+      "sse_p95_seconds": 1.996883,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 16,
+      "recovery_seconds": 2.4027612439822406,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.007598569034598768,
+      "database_connections_max": 25,
+      "pool_role_peaks": {
+        "diagnostic": {
+          "worker": 2,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 1
+        },
+        "api": {
+          "api": 8,
+          "maintenance": 2,
+          "adk": 1,
+          "sse": 8
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 1.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 2,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 2,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 32,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 24,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 3.757463
+        },
+        "profile_inference": {
+          "jobs": 12,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 1.408824
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 36
+      },
+      "broker_samples": 36,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 8.0,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "timing",
+      "accepted_turns": 8,
+      "jobs": 12,
+      "acceptance_p95_seconds": 3.309945566987153,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 17.544453,
+      "publication_ack_p95_seconds": 0.1367988269776106,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 18.800782418984454,
+          "samples": 8
+        },
+        "profile_inference": {
+          "p95_seconds": 13.165942220948637,
+          "samples": 4
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 17.544453,
+          "samples": 8
+        },
+        "profile_inference": {
+          "p95_seconds": 11.897006,
+          "samples": 4
+        }
+      },
+      "sse_p95_seconds": 1.796355,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 30.040909992007073,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.01059189799707383,
+      "database_connections_max": 31,
+      "pool_role_peaks": {
+        "diagnostic": {
+          "worker": 2,
+          "adk": 2
+        },
+        "api": {
+          "api": 7,
+          "maintenance": 2,
+          "sse": 7,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 2.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 4,
+          "ack_pending": 4,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 2,
+          "ack_pending": 2,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 12,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 6,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 12,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 8,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 18.934987
+        },
+        "profile_inference": {
+          "jobs": 4,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 13.379234
+        }
+      },
+      "progress_acknowledgements": {
+        "diagnostic": 8,
+        "profile": 4
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 12
+      },
+      "broker_samples": 12,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 4,
+        "diagnostic_queue_p95_seconds": 30,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "profile_failure",
+      "accepted_turns": 48,
+      "jobs": 96,
+      "acceptance_p95_seconds": 0.7149685570038855,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 1.330789,
+      "publication_ack_p95_seconds": 0.03435739502310753,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 2.297441916016396,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 1.4252582549815997,
+          "samples": 144
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 1.330789,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 24.055498,
+          "samples": 144
+        }
+      },
+      "sse_p95_seconds": 0.534006,
+      "sse_samples": 32,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 24.57914454501588,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.014583209005650133,
+      "database_connections_max": 28,
+      "pool_role_peaks": {
+        "api": {
+          "sse": 7,
+          "api": 7,
+          "maintenance": 2,
+          "adk": 1
+        },
+        "diagnostic": {
+          "worker": 1,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 1.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 1,
+          "ack_pending": 7,
+          "redelivered": 4
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 8,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 2,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 192,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 48,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 2.715347
+        },
+        "profile_inference": {
+          "jobs": 48,
+          "max_attempts": 3,
+          "max_elapsed_seconds": 24.776495
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 192
+      },
+      "broker_samples": 96,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 8.0,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "burst",
+      "accepted_turns": 16,
+      "jobs": 24,
+      "acceptance_p95_seconds": 2.219080684997607,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 10.394334,
+      "publication_ack_p95_seconds": 0.12132564903004095,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 8.308259192039259,
+          "samples": 16
+        },
+        "profile_inference": {
+          "p95_seconds": 2.840326180041302,
+          "samples": 8
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 10.394334,
+          "samples": 16
+        },
+        "profile_inference": {
+          "p95_seconds": 3.419851,
+          "samples": 8
+        }
+      },
+      "sse_p95_seconds": 1.766136,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 1,
+      "recovery_seconds": 11.920946623955388,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.007240402977913618,
+      "database_connections_max": 33,
+      "pool_role_peaks": {
+        "profile": {
+          "worker": 2
+        },
+        "api": {
+          "sse": 7,
+          "maintenance": 2,
+          "api": 8,
+          "adk": 1
+        },
+        "diagnostic": {
+          "worker": 3,
+          "adk": 2
+        }
+      },
+      "active_role_peaks": {
+        "profile": 1.0,
+        "diagnostic": 2.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 12,
+          "ack_pending": 4,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 3,
+          "ack_pending": 2,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 19,
+      "lock_waiters_max": 2,
+      "publication_pending_max": 6,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 24,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 16,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 8.329795
+        },
+        "profile_inference": {
+          "jobs": 8,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 2.777531
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 24
+      },
+      "broker_samples": 24,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 4,
+        "diagnostic_queue_p95_seconds": 24,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "steady",
+      "accepted_turns": 24,
+      "jobs": 36,
+      "acceptance_p95_seconds": 0.4679271320346743,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 1.494605,
+      "publication_ack_p95_seconds": 0.05034078104654327,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 2.3475963650271297,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 1.1151199060259387,
+          "samples": 12
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 1.494605,
+          "samples": 24
+        },
+        "profile_inference": {
+          "p95_seconds": 1.499466,
+          "samples": 12
+        }
+      },
+      "sse_p95_seconds": 0.631954,
+      "sse_samples": 28,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 2.243524662044365,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.007988869969267398,
+      "database_connections_max": 25,
+      "pool_role_peaks": {
+        "diagnostic": {
+          "worker": 2,
+          "adk": 1
+        },
+        "api": {
+          "api": 6,
+          "sse": 6,
+          "maintenance": 2,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 1
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 1.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 2,
+      "lock_waiters_max": 1,
+      "publication_pending_max": 2,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 32,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 24,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 3.109002
+        },
+        "profile_inference": {
+          "jobs": 12,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 1.161293
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 36
+      },
+      "broker_samples": 36,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 8.0,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "profile_backlog",
+      "accepted_turns": 48,
+      "jobs": 96,
+      "acceptance_p95_seconds": 0.8088216810137965,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 1.237689,
+      "publication_ack_p95_seconds": 0.023305348004214466,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 1.886334604001604,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 20.580352237971965,
+          "samples": 48
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 1.237689,
+          "samples": 48
+        },
+        "profile_inference": {
+          "p95_seconds": 110.700719,
+          "samples": 48
+        }
+      },
+      "sse_p95_seconds": 0.298912,
+      "sse_samples": 32,
+      "sse_resumed_p95_seconds": null,
+      "sse_resumed_samples": 0,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 19.447308621020056,
+      "recovery_events": 0,
+      "transport_drain_seconds": 0.007674692024011165,
+      "database_connections_max": 31,
+      "pool_role_peaks": {
+        "api": {
+          "sse": 8,
+          "adk": 1,
+          "api": 8,
+          "maintenance": 2
+        },
+        "diagnostic": {
+          "worker": 2,
+          "adk": 1
+        },
+        "profile": {
+          "worker": 2
+        }
+      },
+      "active_role_peaks": {
+        "diagnostic": 1.0,
+        "profile": 1.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 1,
+          "redelivered": 0
+        },
+        "profile_inference": {
+          "pending": 29,
+          "ack_pending": 2,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 32,
+      "lock_waiters_max": 1,
+      "publication_pending_max": 2,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 0,
+      "fixed_deadlines_observed": 84,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 48,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 3.065133
+        },
+        "profile_inference": {
+          "jobs": 48,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 21.187052
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 0,
+        "executable": 96
+      },
+      "broker_samples": 96,
+      "process_counts": {
+        "api": 2,
+        "diagnostic": 2,
+        "profile": 2
+      },
+      "shutdown_exit_codes": {
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 2.0,
+        "diagnostic_queue_p95_seconds": 8.0,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 3.0,
+        "database_connections_max": 52,
+        "recovery_seconds": 180.0,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    },
+    {
+      "scenario": "worker_loss",
+      "accepted_turns": 25,
+      "jobs": 37,
+      "acceptance_p95_seconds": 1.8763134899782017,
+      "outage_acceptance_p95_seconds": null,
+      "restored_acceptance_p95_seconds": null,
+      "diagnostic_queue_p95_seconds": 164.760764,
+      "publication_ack_p95_seconds": 0.6244515319704078,
+      "execution": {
+        "diagnostic": {
+          "p95_seconds": 12.562000089033972,
+          "samples": 21
+        },
+        "profile_inference": {
+          "p95_seconds": 6.9381366960005835,
+          "samples": 12
+        }
+      },
+      "queue": {
+        "diagnostic": {
+          "p95_seconds": 164.760764,
+          "samples": 25
+        },
+        "profile_inference": {
+          "p95_seconds": 124.316166,
+          "samples": 12
+        }
+      },
+      "sse_p95_seconds": 7.407125,
+      "sse_samples": 31,
+      "sse_resumed_p95_seconds": 0.374462,
+      "sse_resumed_samples": 3,
+      "sse_poll_recoveries": 0,
+      "recovery_seconds": 181.9403812320088,
+      "recovery_events": 4,
+      "transport_drain_seconds": 0.008050449017900974,
+      "database_connections_max": 30,
+      "pool_role_peaks": {
+        "profile": {
+          "worker": 2
+        },
+        "diagnostic": {
+          "worker": 3,
+          "adk": 2
+        },
+        "api": {
+          "maintenance": 2,
+          "api": 9,
+          "adk": 1,
+          "sse": 9
+        }
+      },
+      "active_role_peaks": {
+        "profile": 1.0,
+        "diagnostic": 2.0
+      },
+      "consumer_peaks": {
+        "diagnostic": {
+          "pending": 19,
+          "ack_pending": 8,
+          "redelivered": 5
+        },
+        "profile_inference": {
+          "pending": 8,
+          "ack_pending": 2,
+          "redelivered": 0
+        }
+      },
+      "transport_final": {
+        "diagnostic": {
+          "pending": 0,
+          "ack_pending": 0
+        },
+        "profile_inference": {
+          "pending": 0,
+          "ack_pending": 0
+        }
+      },
+      "stream_messages_max": 34,
+      "lock_waiters_max": 0,
+      "publication_pending_max": 6,
+      "outage_intents": 0,
+      "durable_effects_unique": true,
+      "interrupted_jobs": 4,
+      "fixed_deadlines_observed": 37,
+      "timing": {
+        "diagnostic_turn": {
+          "jobs": 25,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 141.953018
+        },
+        "profile_inference": {
+          "jobs": 12,
+          "max_attempts": 1,
+          "max_elapsed_seconds": 6.838533
+        }
+      },
+      "resolution_counts": {
+        "running": 0,
+        "terminal": 4,
+        "executable": 37
+      },
+      "broker_samples": 37,
+      "process_counts": {
+        "api": 4,
+        "diagnostic": 4,
+        "profile": 4
+      },
+      "shutdown_exit_codes": {
+        "profile_backlog_graceful": [
+          0,
+          0
+        ],
+        "api": [
+          143,
+          143
+        ],
+        "diagnostic-worker": [
+          0,
+          0
+        ],
+        "profile-worker": [
+          0,
+          0
+        ]
+      },
+      "budgets": {
+        "acceptance_p95_seconds": 4,
+        "diagnostic_queue_p95_seconds": 240,
+        "publication_ack_p95_seconds": 1.0,
+        "sse_p95_seconds": 240,
+        "database_connections_max": 52,
+        "recovery_seconds": 240,
+        "drain_seconds": 90.0,
+        "transport_drain_seconds": 45.0,
+        "sse_resumed_p95_seconds": 3.0
+      },
+      "checks": {
+        "acceptance_p95_seconds": true,
+        "diagnostic_queue_p95_seconds": true,
+        "publication_ack_p95_seconds": true,
+        "sse_p95_seconds": true,
+        "database_connections_max": true,
+        "recovery_seconds": true,
+        "transport_drain_seconds": true,
+        "sse_resumed_p95_seconds": true,
+        "drain_seconds": true,
+        "execution_diagnostic": true,
+        "execution_profile": true
+      },
+      "passed": true
+    }
+  ],
+  "runs": [
+    {
+      "scenario": "nats_outage",
+      "evidence_directory": ".capacity/run-20261021-114527",
+      "source_sha256_overrides": {
+        "apps/api/tests/capacity/budget.py": "2a030c79dfb9669d34c3ad94116cc73c192857f2db0f0a8deb8502b7de2def4b",
+        "apps/api/tests/capacity/certify.py": "9bd31f10bc78136950d638055e572f56f4e2014c39d05e8f5dda377699642b9a"
+      }
+    },
+    {
+      "scenario": "broker_restart",
+      "evidence_directory": ".capacity/run-20261021-113352",
+      "source_sha256_overrides": {
+        "apps/api/tests/capacity/budget.py": "2a030c79dfb9669d34c3ad94116cc73c192857f2db0f0a8deb8502b7de2def4b",
+        "apps/api/tests/capacity/certify.py": "9bd31f10bc78136950d638055e572f56f4e2014c39d05e8f5dda377699642b9a"
+      }
+    },
+    {
+      "scenario": "duplicates",
+      "evidence_directory": ".capacity/run-20261021-005907",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "wakeup_loss",
+      "evidence_directory": ".capacity/run-20261021-010740",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "timing",
+      "evidence_directory": ".capacity/run-20261021-113945",
+      "source_sha256_overrides": {
+        "apps/api/tests/capacity/budget.py": "2a030c79dfb9669d34c3ad94116cc73c192857f2db0f0a8deb8502b7de2def4b",
+        "apps/api/tests/capacity/certify.py": "9bd31f10bc78136950d638055e572f56f4e2014c39d05e8f5dda377699642b9a"
+      }
+    },
+    {
+      "scenario": "profile_failure",
+      "evidence_directory": ".capacity/run-20261021-011948",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "burst",
+      "evidence_directory": ".capacity/run-20261021-012827",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "steady",
+      "evidence_directory": ".capacity/run-20261021-013249",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "profile_backlog",
+      "evidence_directory": ".capacity/run-20261021-013845",
+      "source_sha256_overrides": {}
+    },
+    {
+      "scenario": "worker_loss",
+      "evidence_directory": ".capacity/run-20261021-014636",
+      "source_sha256_overrides": {}
+    }
+  ],
+  "verification": {
+    "task format": "passed",
+    "task check": {
+      "passed": 1136,
+      "skipped": 72,
+      "deselected": 126
+    },
+    "task deployment:validate": {
+      "passed": 19
+    },
+    "load_command": "task test:capacity -- --scenario <scenario> --no-build",
+    "note": "Each scenario ran separately on a clean topology. Runtime image and application source fingerprints are identical; harness fingerprint differences are retained per run. No paid providers."
+  }
+}

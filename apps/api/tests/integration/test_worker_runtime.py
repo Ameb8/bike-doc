@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+import sys
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -20,6 +22,7 @@ from bike_doc_api.core.config import Settings
 from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.models.background_job import BackgroundJob
+from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.repositories.background_jobs import (
     BackgroundJobRepository,
     JobError,
@@ -32,7 +35,6 @@ from bike_doc_api.workers.adapters import (
     NatsDelivery,
     NatsPullTransport,
     PostgresJobStore,
-    subscribe_work_advisories,
 )
 from bike_doc_api.workers.registry import (
     ClaimedJob,
@@ -202,9 +204,7 @@ async def harness() -> AsyncIterator[Harness]:
                 durable=settings.nats_profile_consumer,
                 stream=settings.nats_work_stream,
             )
-            await subscribe_work_advisories(
-                client, settings.nats_work_stream, settings.nats_profile_consumer
-            )
+            await QueueMonitor(settings).subscribe(client)
             harness = Harness(sessions, settings, client, js, sub)
             try:
                 yield harness
@@ -491,7 +491,7 @@ async def test_real_advisories_do_not_mutate_durable_job_state(
 ) -> None:
     runtime = harness.worker(succeed)
     poisoned = await harness.create()
-    with caplog.at_level("WARNING"):
+    with caplog.at_level("INFO"):
         await harness.publish(poisoned, extra="not permitted")
         await runtime.process(NatsDelivery(await harness.message()))
         limited = await harness.create()
@@ -503,7 +503,424 @@ async def test_real_advisories_do_not_mutate_durable_job_state(
             await harness.subscription.fetch(1, timeout=0.5)
         await harness.client.flush()
         await asyncio.sleep(0.05)
-    assert "terminated" in caplog.text and "maximum_delivery" in caplog.text
+    assert "terminated" in caplog.text and "max_deliver" in caplog.text
     for job in (poisoned, limited):
         row = await harness.row(job)
         assert row.state == "queued" and row.attempt_count == 0
+
+
+async def test_observability_real_transport_execution_recovery_and_privacy(
+    harness: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from bike_doc_api.core.queue_telemetry import (
+        RecordingQueueTelemetry,
+        queue_telemetry,
+    )
+    from bike_doc_api.db.pool_observation import observe_pool
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.operations.inspection import inspect_jobs
+    from bike_doc_api.operations.monitoring import QueueMonitor
+    from bike_doc_api.repositories.job_inspection import (
+        InspectionFilter,
+        JobInspectionRepository,
+    )
+
+    sentinel = "PRIVATE_SENTINEL_EMAIL_prompt_artifact_credentials"
+    recorder = RecordingQueueTelemetry()
+    monkeypatch.setattr(queue_telemetry, "_sink", recorder.observations.append)
+    job = await harness.create(input={"private": sentinel})
+    before = await harness.row(job)
+    settings = harness.settings
+    monitor = QueueMonitor(settings, recorder)
+    await monitor.subscribe(harness.client)
+    bind = harness.sessions.kw["bind"]
+    observe_pool(bind, "worker", recorder)
+    async with bind.connect(), bind.connect():
+        assert any(
+            o.metric == "pool"
+            and o.attributes == {"role": "worker", "pool": "checked_out"}
+            and o.value >= 2
+            for o in recorder.observations
+        )
+    async with harness.sessions() as session:
+        count, oldest = await JobInspectionRepository(session).publication_pressure()
+    recorder.observe("publication_pending", count)
+    recorder.observe("publication_oldest", oldest)
+    assert count >= 1
+    snapshot = await inspect_jobs(
+        InspectionFilter(kind="profile_inference"), transport=True, settings=settings
+    )
+    assert sentinel not in json.dumps(snapshot, default=str)
+    assert snapshot["jetstream_transport_observations"]["status"] == "available"
+    assert (await harness.row(job)).input == before.input
+    assert (await harness.row(job)).attempt_count == 0
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "bike_doc_api.operations.inspection",
+        "--filters",
+        '{"kind":"profile_inference","limit":200}',
+        env={**os.environ, "BIKE_DOC_API_DATABASE_URL": settings.database_url},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), 15)
+    assert process.returncode == 0
+    assert sentinel.encode() not in stdout + stderr
+    assert settings.database_url.encode() not in stdout + stderr
+    assert json.loads(stdout)["postgresql_truth"]["jobs"]
+
+    # Real redelivery exhaustion produces a monitoring-only advisory, without
+    # resolving the intentionally invalid authoritative input or mutating a job.
+    await harness.publish(job)
+    transport_view = await monitor.snapshot()
+    assert any(
+        c["consumer"] == "profile_inference" and c["pending"] >= 1 and c["waiting"] == 0
+        for c in transport_view["consumers"]
+    )
+    # Pending transport notifications with no recent worker heartbeat expose an
+    # unavailable pool without changing PostgreSQL application state.
+    assert not any(
+        o.metric == "worker_health" and o.attributes["health"] == "ready"
+        for o in recorder.observations
+    )
+    for _ in range(3):
+        message = await harness.message()
+        assert message.metadata.num_delivered >= 1
+        assert sentinel not in repr((message.data, message.headers))
+        await asyncio.sleep(0.35)
+    with pytest.raises(TimeoutError):
+        await harness.subscription.fetch(1, timeout=0.5)
+    await asyncio.sleep(0.1)
+    assert any(
+        o.metric == "advisory" and o.attributes["advisory"] == "max_deliver"
+        for o in recorder.observations
+    )
+    assert (await harness.row(job)).attempt_count == 0
+    # A second physical notification can be terminated; this too is observation only.
+    await harness.publish(job)
+    await (await harness.message()).term()
+    await asyncio.sleep(0.1)
+    assert any(
+        o.metric == "advisory" and o.attributes["advisory"] == "terminated"
+        for o in recorder.observations
+    )
+    assert (await harness.row(job)).state == "queued"
+
+    async def succeed(_job: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        return JobOutcome("succeeded")
+
+    executable = await harness.create()
+    runtime = harness.worker(succeed)
+    await harness.publish(executable)
+    await runtime.process(NatsDelivery(await harness.message()))
+    assert (await harness.row(executable)).state == "succeeded"
+    assert {
+        "queue_latency",
+        "execution_duration",
+        "active",
+        "outcome",
+        "resolution",
+        "pool",
+    } <= {o.metric for o in recorder.observations}
+
+    # Leave another claim past its deadline and let maintenance recover it.
+    expired = await harness.create()
+    async with harness.sessions() as session, session.begin():
+        await BackgroundJobRepository(session).resolve_delivery(
+            job_id=expired.id,
+            generation=1,
+            workload_class="profile_inference",
+            validate_definition=runtime.registry.validate,
+        )
+    await asyncio.sleep(4.5)
+
+    @asynccontextmanager
+    async def transaction() -> AsyncIterator[BackgroundJobRepository]:
+        async with harness.sessions() as session, session.begin():
+            yield BackgroundJobRepository(session)
+
+    class NoPublisher:
+        async def publish(self, subject: str, payload: bytes, message_id: str) -> None:
+            raise AssertionError("recovery must only advance PostgreSQL intent")
+
+        async def close(self) -> None:
+            pass
+
+    maintenance = JobMaintenance(
+        settings,
+        transaction,
+        NoPublisher(),
+        runtime.registry.reconciliation_policies(),
+        telemetry=recorder,
+    )
+    await maintenance.reconcile_once()
+    assert (await harness.row(expired)).state == "dead"
+    assert any(
+        o.metric == "recovery" and o.attributes["outcome"] == "dead"
+        for o in recorder.observations
+    )
+    await monitor.snapshot()
+    assert sentinel not in repr(recorder.observations)
+    assert all("id" not in key for o in recorder.observations for key in o.attributes)
+
+
+async def test_worker_first_version_rollout_and_producer_rollback(
+    harness: Harness,
+) -> None:
+    """Synthetic versions exercise deployment ordering without adding product kinds."""
+    calls: list[str] = []
+
+    async def handle(job: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        calls.append(job.id)
+        return JobOutcome("succeeded")
+
+    policy = HandlerPolicy(
+        3,
+        timedelta(seconds=2),
+        timedelta(seconds=2),
+        timedelta(seconds=0.2),
+        timedelta(seconds=0.2),
+        JobOutcome("dead", JobError.EXECUTION_TIMEOUT),
+        EffectPolicy.IDEMPOTENT,
+        Recovery(),
+    )
+
+    @asynccontextmanager
+    async def host(versions: tuple[int, ...]) -> AsyncIterator[PullWorker]:
+        async with nats_connection(harness.settings) as client:
+            subscription = await jetstream(client).pull_subscribe(
+                harness.settings.nats_profile_subject,
+                durable=harness.settings.nats_profile_consumer,
+                stream=harness.settings.nats_work_stream,
+            )
+            runtime = PullWorker(
+                HandlerRegistry(
+                    "profile_inference",
+                    [
+                        HandlerDefinition(
+                            "rollout_probe",
+                            version,
+                            "profile_inference",
+                            ProfileInferenceInputV1,
+                            handle,
+                            policy,
+                        )
+                        for version in versions
+                    ],
+                ),
+                PostgresJobStore(harness.sessions),
+                NatsPullTransport(subscription, client=client),
+                RuntimeOptions(
+                    harness.settings.nats_profile_subject,
+                    ack_wait=0.3,
+                    progress_interval=0.05,
+                    fetch_timeout=0.1,
+                ),
+            )
+            runtime.start()
+            try:
+                yield runtime
+            finally:
+                await runtime.close()
+
+    async def completed(*jobs: JobSnapshot) -> None:
+        for _ in range(300):
+            rows = [await harness.row(job) for job in jobs]
+            if all(row.state == "succeeded" for row in rows):
+                assert all(row.attempt_count == 1 for row in rows)
+                return
+            await asyncio.sleep(0.01)
+        pytest.fail("rollout work failed to reach durable completion")
+
+    original = await harness.create(job_kind="rollout_probe")
+    async with host((1,)) as old_worker:
+        await harness.publish(original)
+        await completed(original)
+    assert not old_worker.healthy()
+    # Old producers can leave v1 backlog before the worker upgrade barrier.
+    backlog = await harness.create(job_kind="rollout_probe")
+    async with host((1, 2)) as first, host((1, 2)) as second:
+        for _ in range(300):
+            if first.healthy() and second.healthy():
+                break
+            await asyncio.sleep(0.01)
+        else:
+            pytest.fail("compatible worker replicas did not become ready")
+        for runtime in (first, second):
+            assert set(runtime.registry.reconciliation_policies()) == {
+                ("rollout_probe", 1),
+                ("rollout_probe", 2),
+            }
+        # Only complete upgraded replicas are fetching when v2 producers enable.
+        upgraded = await harness.create(job_kind="rollout_probe", input_version=2)
+        await harness.publish(backlog)
+        await harness.publish(upgraded)
+        await completed(backlog, upgraded)
+        # Roll back the producer while retaining compatible workers through all
+        # possible v2 deliveries; never send accepted queue work to legacy code.
+        rollback = await harness.create(job_kind="rollout_probe", input_version=1)
+        await harness.publish(rollback)
+        await harness.publish(upgraded)
+        await completed(rollback)
+        for _ in range(300):
+            consumer = await harness.js.consumer_info(
+                harness.settings.nats_work_stream,
+                harness.settings.nats_profile_consumer,
+            )
+            if consumer.num_pending == consumer.num_ack_pending == 0:
+                break
+            await asyncio.sleep(0.01)
+        else:
+            pytest.fail("retained-version duplicate did not settle")
+        await completed(original, backlog, upgraded, rollback)
+        assert sorted(calls) == sorted(
+            job.id for job in (original, backlog, upgraded, rollback)
+        )
+
+
+async def test_replicas_resolve_mixed_generations_and_running_delivery(
+    harness: Harness,
+) -> None:
+    """Concurrent transport replicas must agree with authoritative job state."""
+    running = await harness.create(desired_generation=2)
+    early = await harness.create(eligible_at=datetime.now(UTC) + timedelta(seconds=4))
+    entered, release = asyncio.Event(), asyncio.Event()
+    calls = []
+
+    async def handle(claim: ClaimedJob[ProfileInferenceInputV1]) -> JobOutcome:
+        calls.append(claim)
+        entered.set()
+        await release.wait()
+        return JobOutcome("succeeded")
+
+    first = harness.worker(handle)
+    async with nats_connection(harness.settings) as other_client:
+        other_sub = await jetstream(other_client).pull_subscribe(
+            harness.settings.nats_profile_subject,
+            durable=harness.settings.nats_profile_consumer,
+            stream=harness.settings.nats_work_stream,
+        )
+        second = PullWorker(
+            first.registry,
+            PostgresJobStore(harness.sessions),
+            NatsPullTransport(other_sub, client=other_client),
+            first.options,
+        )
+        execution: asyncio.Task[None] | None = None
+        try:
+            await harness.publish(running, 2)
+            execution = asyncio.create_task(
+                first.process(NatsDelivery(await harness.message()))
+            )
+            await asyncio.wait_for(entered.wait(), 3)
+            before = await harness.row(running)
+            assert before.state == "running" and before.attempt_count == 1
+            # Stale and impossible future notifications race a running duplicate.
+            for generation in (1, 3, 2):
+                await harness.publish(running, generation)
+                delivery = (await other_sub.fetch(1, timeout=3))[0]
+                await second.process(NatsDelivery(delivery))
+                current = await harness.row(running)
+                assert current.state == "running" and current.attempt_count == 1
+                assert current.execution_token == before.execution_token
+                assert current.execution_deadline == before.execution_deadline
+            await harness.publish(early)
+            await second.process(NatsDelivery((await other_sub.fetch(1, timeout=3))[0]))
+            row = await harness.row(early)
+            assert row.state == "queued" and row.attempt_count == 0
+            consumer = await harness.js.consumer_info(
+                harness.settings.nats_work_stream,
+                harness.settings.nats_profile_consumer,
+            )
+            assert consumer.num_pending == 0
+            # Original, running duplicate and early delivery remain unsettled.
+            assert consumer.num_ack_pending == 3
+            release.set()
+            await asyncio.wait_for(execution, 3)
+            assert len(calls) == 1
+            row = await harness.row(running)
+            assert row.state == "succeeded" and row.attempt_count == 1
+            # Delayed duplicates remain available until their original deadline;
+            # then PostgreSQL success, not the transport state, makes them no-ops.
+            deadline = asyncio.get_running_loop().time() + 7
+            while asyncio.get_running_loop().time() < deadline:
+                info = await harness.js.consumer_info(
+                    harness.settings.nats_work_stream,
+                    harness.settings.nats_profile_consumer,
+                )
+                if info.num_pending == info.num_ack_pending == 0:
+                    break
+                try:
+                    deliveries = await other_sub.fetch(1, timeout=0.5)
+                except TimeoutError:
+                    continue
+                for message in deliveries:
+                    await second.process(NatsDelivery(message))
+            else:
+                pytest.fail("mixed replica transport did not drain")
+            assert (await harness.row(running)).attempt_count == 1
+            assert (await harness.row(early)).state == "succeeded"
+            assert (await harness.row(early)).attempt_count == 1
+            assert sorted(c.id for c in calls) == sorted((running.id, early.id))
+        finally:
+            release.set()
+            await second.close()
+            if execution is not None:
+                await asyncio.wait_for(execution, 3)
+
+
+async def test_cleanup_preserves_terminal_identity_through_retained_delivery(
+    harness: Harness,
+) -> None:
+    from test_job_maintenance import historical_job
+
+    from bike_doc_api.maintenance.runtime import publication_message
+
+    # Generation two was requested before terminalization; terminal intent and
+    # outcome are immutable. Seed the historical accepted state without editing
+    # a terminal timestamp or advancing terminal intent through forbidden SQL.
+    job_id = await historical_job(
+        harness,
+        state="succeeded",
+        desired_generation=2,
+        confirmed_generation=1,
+    )
+    async with harness.sessions() as session:
+        job = JobSnapshot.from_row(await session.get(BackgroundJob, job_id))
+    runtime = harness.worker(succeed)
+    await harness.publish(job, 1)
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    async with harness.sessions() as session, session.begin():
+        repo = BackgroundJobRepository(session)
+        assert not await repo.delete_retained(job_id=job.id, before=cutoff)
+        claim = (
+            await repo.claim_publications(limit=1, claim_duration=timedelta(seconds=10))
+        )[0]
+    payload, message_id = publication_message(claim)
+    await harness.js.publish(
+        harness.settings.nats_profile_subject,
+        payload,
+        headers={"Nats-Msg-Id": message_id},
+    )
+    # Confirmation renews retention while old and current notifications coexist.
+    async with harness.sessions() as session, session.begin():
+        repo = BackgroundJobRepository(session)
+        assert await repo.confirm_publication(claim)
+        assert not await repo.delete_retained(job_id=job.id, before=cutoff)
+    row = await harness.row(job)
+    assert row.state == "succeeded"
+    assert row.desired_generation == row.confirmed_generation == 2
+    assert row.updated_at > cutoff
+    consumer = await harness.js.consumer_info(
+        harness.settings.nats_work_stream, harness.settings.nats_profile_consumer
+    )
+    assert consumer.num_pending == 2
+    for _ in range(2):
+        await runtime.process(NatsDelivery(await harness.message()))
+    row = await harness.row(job)
+    assert row.state == "succeeded" and row.attempt_count == 0
+    consumer = await harness.js.consumer_info(
+        harness.settings.nats_work_stream, harness.settings.nats_profile_consumer
+    )
+    assert consumer.num_pending == consumer.num_ack_pending == 0

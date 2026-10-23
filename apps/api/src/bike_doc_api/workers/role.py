@@ -44,6 +44,7 @@ def create_workload_worker(
                 if diagnostic
                 else settings.worker_fetch_timeout_seconds
             ),
+            ack_wait=settings.nats_ack_wait_seconds,
             progress_interval=(
                 settings.diagnostic_worker_progress_seconds
                 if diagnostic

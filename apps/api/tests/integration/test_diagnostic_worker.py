@@ -13,7 +13,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from pydantic import PrivateAttr
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from bike_doc_api.adk.execution import DiagnosticResources
 from bike_doc_api.adk.resources import InactiveObservationExtractor
@@ -21,6 +21,7 @@ from bike_doc_api.adk.sessions import DIAGNOSTIC_ADK_APP_NAME, DIAGNOSTIC_ADK_US
 from bike_doc_api.adk.storage import open_adk_session_service
 from bike_doc_api.api.v1.turns import get_turn_service
 from bike_doc_api.core.config import Settings
+from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
 from bike_doc_api.models.artifact import ArtifactRef
 from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.models.bike import BikeProfile
@@ -83,12 +84,12 @@ async def context(tmp_path) -> AsyncIterator[tuple]:
         nats_diagnostic_subject=f"diagnostic.{suffix}.diagnostic",
         nats_profile_consumer=f"profile_{suffix}",
         nats_diagnostic_consumer=f"diagnostic_{suffix}",
-        diagnostic_execution="durable_queue",
-        profile_inference_execution="legacy",
         profile_inference_policy_mode="bootstrap-v1",
         image_analysis_mode="off",
         artifact_local_storage_root=tmp_path,
     )
+    async with nats_connection(settings) as provisioner:
+        await ensure_work_topology(jetstream(provisioner), settings)
     engine = create_async_engine(DB_URL)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     adk = await open_adk_session_service(settings, pool_size=4)
@@ -816,6 +817,46 @@ async def _assert_error_pair(context, state, attempts):
     assert events[-1].data["turn_id"] == context[2].input["turn_id"]
 
 
+async def _assert_recovery_delivery_settles_without_replay(
+    context: tuple[
+        Settings,
+        async_sessionmaker[AsyncSession],
+        JobSnapshot,
+        str,
+        FakeModel,
+        DiagnosticResources,
+        str,
+    ],
+) -> None:
+    """Couple recovery truth to a real retained-generation terminal/stale ACK."""
+    settings, _, job, _, model, resources, _ = context
+    before, repair, events = await _terminal_events(context)
+    expected = (before.state, before.attempt_count, repair.status, len(events))
+    calls = len(model._requests)
+    async with diagnostic_worker(settings, resources=resources) as runtime:
+        await runtime.transport.client.jetstream().publish(
+            runtime.options.subject,
+            json.dumps(
+                {
+                    "version": 1,
+                    "job_id": job.id,
+                    "publication_generation": 1,
+                }
+            ).encode(),
+        )
+        message = (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+        assert message.metadata.num_delivered == 1
+        assert (
+            await runtime.transport.subscription.consumer_info()
+        ).num_ack_pending == 1
+        await runtime.process(NatsDelivery(message))
+        consumer = await runtime.transport.subscription.consumer_info()
+        assert consumer.num_pending == consumer.num_ack_pending == 0
+    after, repair, events = await _terminal_events(context)
+    assert (after.state, after.attempt_count, repair.status, len(events)) == expected
+    assert len(model._requests) == calls
+
+
 @pytest.mark.parametrize("error", ["version", "extra", "malformed", "missing"])
 async def test_trusted_definition_failure_repairs_only_valid_product_identity(
     context, error
@@ -980,6 +1021,8 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
             no_progress_before=datetime.now(UTC),
         )
 
+    await _assert_recovery_delivery_settles_without_replay(context)
+
 
 async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emits_once(
     context, monkeypatch
@@ -1018,6 +1061,8 @@ async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emit
     assert not await recover()
     await _assert_error_pair(context, "dead", 1)
 
+    await _assert_recovery_delivery_settles_without_replay(context)
+
 
 @pytest.mark.parametrize("handled_error", [False, True])
 async def test_crash_after_product_commit_before_job_settlement_is_success(
@@ -1035,7 +1080,9 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
 
     settings, sessions, job, repair_id, model, resources, _ = context
     model._fail = handled_error
-    execution, _ = await _fencing_execution(context, duration=2)
+    # Allow cold ADK setup on contended integration hosts before deliberately
+    # waiting for expiry below. Product completion must commit before the loss.
+    execution, _ = await _fencing_execution(context, duration=10)
     await DiagnosticExecutionApplication(sessions, settings, resources).execute(
         ClaimedJob(
             job.id,
@@ -1061,11 +1108,12 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
     )
     async with sessions() as session, session.begin():
         repo = DiagnosticJobRepository(session)
-        assert await repo.recover_expired(
+        recovered = await repo.recover_expired_and_load(
             job_id=job.id,
             execution_token=execution.token,
             outcome=DiagnosticRecoveryPolicy().expired_outcome(row),
         )
+        assert recovered is not None and recovered.state == "succeeded"
     after, _, _ = await _terminal_events(context)
     assert after.state == "succeeded" and after.latest_error_category is None
     assert await _product_snapshot(sessions, repair_id) == before
@@ -1172,6 +1220,8 @@ async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
     assert row.desired_generation == 3
     assert not context[4]._requests
 
+    await _assert_recovery_delivery_settles_without_replay(context)
+
 
 async def test_classified_retry_is_durable_before_real_delayed_nak(
     context, monkeypatch
@@ -1240,6 +1290,8 @@ async def test_arbitrary_postboundary_failure_is_interrupted_without_retry(conte
         )
     assert result.state == "interrupted" and result.desired_generation == 1
     await _assert_error_pair(context, "interrupted", 1)
+
+    await _assert_recovery_delivery_settles_without_replay(context)
 
 
 @pytest.mark.parametrize("first", ["profile", "diagnostic", "profile_failure"])
@@ -1366,13 +1418,11 @@ async def test_live_http_sse_with_external_diagnostic_process_and_rollback(
     from collections import deque
     from contextlib import asynccontextmanager
     from datetime import UTC, datetime
-    from unittest.mock import AsyncMock
 
     import httpx
     import uvicorn
 
     from bike_doc_api.api.deps import get_current_user, get_db_session
-    from bike_doc_api.api.v1 import turns as route
     from bike_doc_api.db.session import get_sessionmaker
     from bike_doc_api.main import create_app
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
@@ -1505,9 +1555,6 @@ asyncio.run(main())
 
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_db_session] = database
-    legacy = AsyncMock()
-    monkeypatch.setattr(route, "execute_diagnostic_turn_background", legacy)
-    monkeypatch.setattr(route, "execute_profile_inference_background", legacy)
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     port = listener.getsockname()[1]
@@ -1565,13 +1612,13 @@ asyncio.run(main())
                         assert (running.effect_boundary_at is not None) is (
                             crash_point == "post_boundary"
                         )
-                    # Roll back the producer while the external owner is running.
-                    settings.diagnostic_execution = "legacy"
+                    # Replay during worker loss preserves the original acceptance.
+
                     replay = await client.post(
                         f"/v1/repair-sessions/{repair_id}/turns", json=payload
                     )
                     assert replay.json() == accepted
-                    legacy.assert_not_awaited()
+
                     process.kill()
                     assert await process.wait() == -signal.SIGKILL
                     await asyncio.sleep(
@@ -1603,13 +1650,13 @@ asyncio.run(main())
                 assert sequences == sorted(set(sequences))
                 encoded = json.dumps(frames)
                 assert job.id not in encoded and "adk_diagnostic_" not in encoded
-            # Producer rollback never schedules a legacy task for this accepted key.
-            settings.diagnostic_execution = "legacy"
+            # Recreated producer dependencies preserve the original acceptance.
+
             replay = await client.post(
                 f"/v1/repair-sessions/{repair_id}/turns", json=payload
             )
             assert replay.json() == accepted
-            legacy.assert_not_awaited()
+
         async with sessions() as session:
             row = await session.get(BackgroundJob, job.id)
             assert row.state == (
@@ -1618,18 +1665,15 @@ asyncio.run(main())
             assert row.attempt_count == (2 if crash_point == "pre_boundary" else 1)
         process.terminate()
         assert await asyncio.wait_for(process.wait(), 10) == 0
-        # A fresh key after drain uses legacy exactly once and creates no queue job.
+        # A fresh key after consumer drain still records durable work.
         async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
             response = await client.post(
                 f"/v1/repair-sessions/{repair_id}/turns",
                 json={**payload, "client_turn_id": "after-drain"},
             )
             assert response.status_code == 202
-            legacy.assert_awaited_once_with(
-                user.id, repair_id, response.json()["turn_id"]
-            )
             async with sessions() as session:
-                assert not list(
+                rows = list(
                     await session.scalars(
                         select(BackgroundJob).where(
                             BackgroundJob.input["turn_id"].astext
@@ -1637,6 +1681,10 @@ asyncio.run(main())
                         )
                     )
                 )
+                assert len(rows) == 1
+                assert rows[0].state == "queued" and rows[0].attempt_count == 0
+                assert rows[0].confirmed_generation == 0
+
     finally:
         for process in children:
             if process.returncode is None:
@@ -1652,3 +1700,181 @@ asyncio.run(main())
         # SSE owns a cached pool distinct from the injected acceptance pool.
         # Dispose it on this loop before another test uses the same database URL.
         await get_sessionmaker(settings.database_url).kw["bind"].dispose()
+
+
+@pytest.mark.parametrize("reserved", [False, True])
+async def test_reconstruction_restores_diagnostic_without_replaying_reserved_effects(
+    context, reserved
+):
+    from contextlib import asynccontextmanager
+
+    from bike_doc_api.core.nats import ensure_work_topology, jetstream, nats_connection
+    from bike_doc_api.maintenance.hosting import recovery_policies
+    from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
+    from bike_doc_api.maintenance.reconstruction import reconstruct
+    from bike_doc_api.maintenance.runtime import JobMaintenance
+    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+
+    settings, sessions, job, _, model, resources, _ = context
+
+    @asynccontextmanager
+    async def transaction():
+        async with sessions() as session, session.begin():
+            yield DiagnosticJobRepository(session)
+
+    policies = recovery_policies(settings)
+    host = JobMaintenance(settings, transaction, NatsJobPublisher(settings), policies)
+
+    async def publish_current():
+        # Earlier failure tests deliberately retain jobs in this disposable DB.
+        # Exercise the real global publisher without assuming our row is first.
+        for _ in range(100):
+            await host.publish_once()
+            async with sessions() as session:
+                current = await session.get(BackgroundJob, job.id)
+                if current.confirmed_generation == current.desired_generation:
+                    return
+        pytest.fail("current job publication did not complete within bounded batches")
+
+    try:
+        await publish_current()
+        if reserved:
+            execution, _ = await _fencing_execution(context, duration=0.1)
+            async with sessions() as session:
+                await DiagnosticExecutionFence(session, execution).cross_boundary()
+            await asyncio.sleep(0.15)
+        async with nats_connection(settings) as client:
+            js = jetstream(client)
+            await js.delete_stream(settings.nats_work_stream)
+
+            async def provision():
+                await ensure_work_topology(js, settings)
+
+            await reconstruct(settings, transaction, provision, policies)
+            assert await reconstruct(settings, transaction, provision, policies) == 0
+            async with sessions() as session:
+                row = await session.get(BackgroundJob, job.id)
+                assert row.desired_generation == (1 if reserved else 2)
+            await publish_current()
+        if reserved:
+            await host.reconcile_once()
+            await _assert_error_pair(context, "interrupted", 1)
+        async with diagnostic_worker(settings, resources=resources) as runtime:
+            if reserved:
+                # An original post-boundary notification cannot invoke the model,
+                # even when manually delivered after topology reconstruction.
+                await runtime.transport.client.jetstream().publish(
+                    settings.nats_diagnostic_subject,
+                    json.dumps(
+                        {"version": 1, "job_id": job.id, "publication_generation": 1}
+                    ).encode(),
+                )
+            for _ in range(1000):
+                message = (await runtime.transport.subscription.fetch(1, timeout=3))[0]
+                if json.loads(message.data)["job_id"] == job.id:
+                    await runtime.process(NatsDelivery(message))
+                    break
+                await message.ack_sync()
+            else:
+                pytest.fail("reconstructed diagnostic notification was missing")
+        assert len(model._requests) == (0 if reserved else 1)
+        async with sessions() as session:
+            row = await session.get(BackgroundJob, job.id)
+            assert row.state == ("interrupted" if reserved else "succeeded")
+            assert row.attempt_count == 1
+    finally:
+        await host.close()
+
+
+async def test_cutover_accounts_for_historical_inflight_without_backfilling_jobs(
+    context,
+):
+    """Exercise the runbook inventory and drain using a seeded pre-cutover turn."""
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import text
+
+    from bike_doc_api.repositories.diagnostic_terminalization import (
+        append_diagnostic_completion,
+    )
+    from bike_doc_api.repositories.events import RepairSessionEventRepository
+
+    settings, sessions, _, repair_id, _, _, _ = context
+    async with sessions() as session, session.begin():
+        repair = await session.get(RepairSession, repair_id)
+        repair.status = "awaiting_user"
+        user = await session.get(User, repair.user_id)
+    request = TurnCreate.model_validate(
+        {
+            "schema_version": "ai_turn.v1",
+            "client_turn_id": "historical-inflight",
+            "message": {"text": "Chain skips", "artifact_ids": []},
+        }
+    )
+    # Seed a pre-cutover product transaction without queue recording. Only this
+    # fixture uses a fake recorder; all subsequent acceptance uses real storage.
+    async with sessions() as session:
+        seed = get_turn_service(session, settings)
+        seed._background_jobs = AsyncMock()
+        historical = await seed.accept_turn(
+            current_user=user, repair_session_id=repair_id, request=request
+        )
+    inventory = text("""
+        SELECT t.id FROM repair_turns AS t
+        WHERE t.phase = 'diagnostic' AND t.repair_session_id = :repair_id
+          AND NOT EXISTS (
+            SELECT 1 FROM background_jobs AS j
+            WHERE j.job_kind = 'diagnostic_turn'
+              AND j.input->>'turn_id' = t.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM repair_session_events AS e
+            WHERE e.turn_id = t.id AND e.type = 'turn.completed'
+          )
+    """)
+    async with sessions() as session:
+        assert list(await session.scalars(inventory, {"repair_id": repair_id})) == [
+            historical.turn_id
+        ]
+        service = get_turn_service(session, settings)
+        replay = await service.accept_turn(
+            current_user=user, repair_session_id=repair_id, request=request
+        )
+        assert replay == historical
+        assert not list(
+            await session.scalars(
+                select(BackgroundJob).where(
+                    BackgroundJob.input["turn_id"].astext == historical.turn_id
+                )
+            )
+        )
+    # Simulate the old owner's normal durable completion while ingress is shut.
+    # No new executor is invoked to manufacture a result for the old acceptance.
+    async with sessions() as session, session.begin():
+        repair = await session.get(RepairSession, repair_id, with_for_update=True)
+        await append_diagnostic_completion(
+            RepairSessionEventRepository(session),
+            repair,
+            turn_id=historical.turn_id,
+            status="awaiting_user",
+            now=datetime.now(UTC),
+            processing_error=False,
+        )
+    async with sessions() as session:
+        assert not list(await session.scalars(inventory, {"repair_id": repair_id}))
+        accepted = await get_turn_service(session, settings).accept_turn(
+            current_user=user,
+            repair_session_id=repair_id,
+            request=request.model_copy(update={"client_turn_id": "after-cutover"}),
+        )
+        jobs = list(
+            await session.scalars(
+                select(BackgroundJob).where(
+                    BackgroundJob.input["turn_id"].astext == accepted.turn_id
+                )
+            )
+        )
+        assert len(jobs) == 1 and jobs[0].job_kind == "diagnostic_turn"
+        assert jobs[0].state == "queued" and jobs[0].confirmed_generation == 0

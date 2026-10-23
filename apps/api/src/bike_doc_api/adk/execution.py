@@ -1,4 +1,4 @@
-"""Reusable diagnostic graph shared by legacy and external executors."""
+"""Diagnostic graph composed by the durable workload role."""
 
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ from bike_doc_api.core.config import (
 )
 from bike_doc_api.providers.storage import StorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
+from bike_doc_api.repositories.background_jobs import BackgroundJobRepository
 from bike_doc_api.repositories.bikes import BikeRepository
 from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
 from bike_doc_api.repositories.events import RepairSessionEventRepository
@@ -52,6 +53,7 @@ from bike_doc_api.repositories.repair_sessions import (
 )
 from bike_doc_api.repositories.reports import PhaseReportRepository
 from bike_doc_api.services.artifacts import ArtifactService
+from bike_doc_api.services.background_jobs import BackgroundJobService
 from bike_doc_api.services.bikes import ResolvedBikeProfileService
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     default_diagnostic_completion_telemetry,
@@ -106,6 +108,7 @@ def build_diagnostic_orchestrator(
         RepairTurnRepository(session),
         events,
         artifacts,
+        background_jobs=BackgroundJobService(BackgroundJobRepository(session)),
         commit=session.commit,
         rollback=session.rollback,
     )
