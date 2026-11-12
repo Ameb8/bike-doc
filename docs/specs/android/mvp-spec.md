@@ -1,18 +1,31 @@
 # Bike Doc Android — MVP Frontend Spec
 
-**Scope:** Auth, home, bike management, and diagnostic chat  
-**Status:** Draft v0.3  
-**Last updated:** 2026-06-28
+**Scope:** Auth, home, bike management, repair diagnostics, and guided inspections
+**Status:** Draft v0.4
+**Last updated:** 2026-11-12
 
 ---
 
 ## 1. Overview
 
-This spec covers the MVP Android screens through the end of the diagnostic
-phase: authentication, home, bike management, and the diagnostic chat flow.
-It does not cover plan review, repair execution, or any post-diagnostic
-phase. It also does not assume backend endpoints that are specified
-canonically but not implemented yet in `apps/api`.
+This spec covers authentication, home, bike management, repair-diagnostic
+chat, guided inspection chat, inspection reports, and the handoff from an
+inspection finding into a new repair session. Plan review, guided repair
+execution, and repair completion remain outside this Android MVP.
+
+`docs/specs/inspection-sessions.md` is canonical for inspection product
+behavior. `docs/specs/openapi.yaml` is canonical for public wire shapes. This
+document makes the Android presentation, navigation, state, and client-side
+architecture decisions for those contracts. Android implementation must not
+begin against an inspection wire shape until the OpenAPI contract and this
+document agree. A disagreement among these documents must be surfaced rather
+than resolved silently in client code.
+
+Repair and inspection are workflows of one durable bike-session product
+record. Shared Android transport and conversation code must therefore use
+workflow-neutral bike-session language. Diagnostic and inspection packages
+may retain workflow-specific presentation names where the behavior genuinely
+differs.
 
 All screens are user-specific and require an authenticated Firebase user.
 Unauthenticated users cannot reach any screen beyond the Auth screen.
@@ -123,13 +136,22 @@ com.bikedoc.android
 │   ├── BikeEditScreen.kt
 │   └── BikeEditViewModel.kt
 ├── sessions/
-│   ├── chat/
+│   ├── conversation/
+│   │   ├── ConversationController.kt    ← load/replay/submit/reconnect reducer
+│   │   ├── ConversationState.kt
+│   │   ├── ConversationContent.kt       ← shared hoisted chat presentation
+│   │   └── SseEventSource.kt            ← generic bike-session SSE wrapper
+│   ├── diagnostic/
 │   │   ├── DiagnosticChatScreen.kt
-│   │   ├── DiagnosticChatViewModel.kt
-│   │   └── SseEventSource.kt            ← SSE client wrapper
+│   │   └── DiagnosticChatViewModel.kt
+│   ├── inspection/
+│   │   ├── InspectionChatScreen.kt
+│   │   ├── InspectionChatViewModel.kt
+│   │   ├── InspectionReportScreen.kt
+│   │   └── InspectionReportViewModel.kt
 │   └── models/
 │       ├── ChatMessage.kt               ← local UI message model
-│       └── SseEvent.kt                  ← parsed SSE event types
+│       └── SseEvent.kt                  ← parsed generic event types
 ├── api/
 │   ├── BikeDocApiClient.kt              ← Retrofit service interfaces
 │   ├── BikeDocApiService.kt             ← Retrofit request declarations
@@ -146,9 +168,14 @@ AuthScreen
     └─(on success)→ HomeScreen
                         ├── BikeListScreen (browse mode)
                         │       └── BikeEditScreen  (new or existing bike)
-                        ├── BikeListScreen (resume selection mode)  ← "Resume Repair"
+                        ├── BikeListScreen (repair resume mode)
                         │       └── DiagnosticChatScreen
-                        └── DiagnosticChatScreen            ← new or resumed session
+                        ├── DiagnosticChatScreen            ← new or resumed repair
+                        └── BikeListScreen (inspection mode)
+                                ├── InspectionChatScreen    ← new or resumed inspection
+                                └── InspectionReportScreen  ← completed inspection
+                                        └── DiagnosticChatScreen
+                                            ← one eligible finding handoff
 ```
 
 `HomeScreen` is the top-level destination after auth. It is never popped off
@@ -158,9 +185,18 @@ exits the app.
 All destinations live in a single `NavHost` in `MainActivity`. There is no
 bottom navigation bar for V1.
 
-`DiagnosticChatScreen` is reachable from new session creation and from
-resuming a previously discovered session for the selected bike. The route
-accepts `sessionId` as a path parameter.
+`DiagnosticChatScreen` and `InspectionChatScreen` are separate workflow
+destinations over one shared conversation module. This keeps workflow copy,
+progress, completion actions, and report navigation explicit without copying
+session loading, SSE, turn submission, input rendering, or photo preparation.
+A `BaseChatViewModel` inheritance hierarchy must not be introduced.
+
+The routes are `sessions/{sessionId}/diagnostic` and
+`sessions/{sessionId}/inspection`. Both accept only `sessionId`; after loading,
+the destination must verify the returned workflow and phase before enabling
+input. `InspectionReportScreen` uses
+`sessions/{sessionId}/inspection-reports/{reportId}`. A mismatched workflow or
+phase is a controlled state error, never a reason to reinterpret the session.
 
 ### 3.4 Local Cache
 
@@ -187,16 +223,21 @@ All requests target the backend base URL configured in `BuildConfig.API_BASE_URL
 | `GET` | `/v1/bikes/{bikeId}` | Bike edit screen |
 | `PATCH` | `/v1/bikes/{bikeId}` | Save bike edits |
 | `DELETE` | `/v1/bikes/{bikeId}` | Remove bike |
-| `GET` | `/v1/repair-sessions?bike_id={bikeId}` | Bike selection / resume flow |
-| `POST` | `/v1/repair-sessions` | Create new diagnostic session |
-| `GET` | `/v1/repair-sessions/{sessionId}` | Chat screen (load session state) |
-| `POST` | `/v1/repair-sessions/{sessionId}/turns` | Submit a user turn |
-| `GET` | `/v1/repair-sessions/{sessionId}/events` | SSE stream (OkHttp direct, not Retrofit) |
+| `GET` | `/v1/sessions?bike_id={bikeId}&workflow={workflow}` | Workflow-specific discovery |
+| `POST` | `/v1/sessions` | Create a repair or inspection session |
+| `GET` | `/v1/sessions/{sessionId}` | Load authoritative session state |
+| `POST` | `/v1/sessions/{sessionId}/turns` | Submit a user turn |
+| `GET` | `/v1/sessions/{sessionId}/events` | SSE replay/live stream |
+| `GET` | `/v1/sessions/{sessionId}/reports` | List session reports |
+| `GET` | `/v1/sessions/{sessionId}/reports/{reportId}` | Open a report |
+| `POST` | `/v1/sessions/{sessionId}/completion` | Finish an inspection early; repair completion remains workflow-specific |
+| `POST` | `/v1/sessions/{sessionId}/cancellation` | Cancel an idle inspection |
 
-> **Note:** This spec depends on the canonical `GET /v1/repair-sessions`
-> endpoint with `bike_id` filtering. The Android MVP expects that route to
-> return only sessions owned by the authenticated user, newest first for the
-> requested bike.
+All session routes and shared schemas use bike-session language. Android must
+not call compatibility aliases, accept `repair_session_id` in a generic
+response, or infer workflow from an ID prefix. Public session IDs use `ses_`.
+Workflow-specific discovery always sends an explicit `workflow` filter; the
+client never mixes repair and inspection sessions in one chooser.
 
 ### 4.2 Retrofit Setup
 
@@ -240,30 +281,50 @@ interface BikeDocApiService {
     @DELETE("v1/bikes/{bikeId}")
     suspend fun deleteBike(@Path("bikeId") bikeId: String): Unit
 
-    @POST("v1/repair-sessions")
-    suspend fun createRepairSession(@Body body: RepairSessionCreate): RepairSession
+    @POST("v1/sessions")
+    suspend fun createSession(@Body body: BikeSessionCreate): BikeSession
 
-    @GET("v1/repair-sessions/{sessionId}")
-    suspend fun getRepairSession(@Path("sessionId") sessionId: String): RepairSession
+    @GET("v1/sessions")
+    suspend fun getSessions(
+        @Query("bike_id") bikeId: String,
+        @Query("workflow") workflow: SessionWorkflow,
+        @Query("limit") limit: Int = 20,
+        @Query("cursor") cursor: String? = null,
+    ): BikeSessionListResponse
 
-    @POST("v1/repair-sessions/{sessionId}/turns")
+    @GET("v1/sessions/{sessionId}")
+    suspend fun getSession(@Path("sessionId") sessionId: String): BikeSession
+
+    @POST("v1/sessions/{sessionId}/turns")
     suspend fun createTurn(
         @Path("sessionId") sessionId: String,
         @Body body: TurnCreate,
     ): TurnAccepted
 
-    @GET("v1/repair-sessions/{sessionId}/reports")
+    @GET("v1/sessions/{sessionId}/reports")
     suspend fun getReports(
         @Path("sessionId") sessionId: String,
         @Query("limit") limit: Int = 50,
         @Query("cursor") cursor: String? = null,
     ): PhaseReportList
 
-    @GET("v1/repair-sessions/{sessionId}/reports/{reportId}")
+    @GET("v1/sessions/{sessionId}/reports/{reportId}")
     suspend fun getReport(
         @Path("sessionId") sessionId: String,
         @Path("reportId") reportId: String,
     ): PhaseReportEnvelope
+
+    @POST("v1/sessions/{sessionId}/completion")
+    suspend fun completeSession(
+        @Path("sessionId") sessionId: String,
+        @Body body: InspectionCompletion,
+    ): InspectionCompletionResponse
+
+    @POST("v1/sessions/{sessionId}/cancellation")
+    suspend fun cancelSession(
+        @Path("sessionId") sessionId: String,
+        @Body body: InspectionCancellation,
+    ): BikeSession
 }
 ```
 
@@ -271,13 +332,13 @@ The `Authorization` header is attached by an OkHttp interceptor injected into
 the shared `OkHttpClient`, so individual service methods do not take a token
 parameter.
 
-The SSE endpoint (`/v1/repair-sessions/{sessionId}/events`) is consumed
+The SSE endpoint (`/v1/sessions/{sessionId}/events`) is consumed
 directly via OkHttp `EventSource` in `SseEventSource.kt` — Retrofit is not
 used for that route.
 
-### 4.2.1 Diagnostic Photo Upload Format Policy
+### 4.2.1 Conversation Photo Upload Policy
 
-For the MVP diagnostic chat flow, backend diagnostic-photo uploads accept:
+Repair-diagnostic and inspection uploads accept:
 
 - `image/jpeg`
 - `image/png`
@@ -288,11 +349,16 @@ upload. In particular, `HEIC` and `HEIF` images must be converted on-device
 to a backend-accepted format, preferably `JPEG`, before calling
 `POST /v1/artifacts`.
 
-Users may attach diagnostic photos to any submitted diagnostic turn, whether
-the turn is freeform or responds to a text, photo, choice, decision, or
-confirmation request. The client must limit one pending turn to three photos.
-Photo uploads use the same `diagnostic_photo` artifact flow in every case;
-the resulting artifact IDs are included in the turn's `message.artifact_ids`.
+Users may attach photos to any turn when permitted by the current request.
+The client must limit one pending turn to the shared maximum of three photos.
+Repair turns upload `purpose = diagnostic_photo`; inspection turns upload
+`purpose = inspection_photo`. Both multipart requests use `session_id`. The
+resulting artifact IDs are included in the turn's `message.artifact_ids`.
+
+Inspection photos are always optional in V1. A photo request with
+`required = false` must render its stable `continue_without_photo` choice next
+to the picker. Selecting it submits an ordinary choice/text turn with no
+artifact and continues into the guided manual path; it is not an upload error.
 
 This is an explicit MVP contract decision. The backend does not need native
 `HEIC` / `HEIF` upload support for this version.
@@ -305,7 +371,7 @@ data class Bike(
     val id: String,
     val userId: String,
     val displayName: String,
-    val hasRepairSessions: Boolean,
+    val hasSessions: Boolean,
     val make: String?,
     val model: String?,
     val modelYear: Int?,
@@ -321,9 +387,10 @@ data class Bike(
 )
 ```
 
-`hasRepairSessions` indicates whether the authenticated user owns any repair
-sessions for this bike. The Android app uses it to decide whether delete
-actions should be shown or blocked without needing a second round trip.
+`hasSessions` indicates whether the authenticated user owns any bike session
+for this bike. The Android app uses it only as a history/deletion hint. It
+must not infer repair or inspection history from this value; workflow-specific
+discovery always queries `/v1/sessions`.
 This field is part of the canonical `Bike` object for both `GET /v1/bikes`
 and `GET /v1/bikes/{bikeId}`.
 
@@ -335,47 +402,104 @@ data class BikeListResponse(
 )
 ```
 
-### 4.4 Repair Session Discovery
+### 4.4 Bike Session Model and Discovery
 
-The Android MVP depends on `GET /v1/repair-sessions?bike_id={bikeId}` for
-bike-scoped session discovery.
+The shared wire model is `BikeSession`, not `RepairSession`. It includes
+`workflow`, `phase`, `status`, `safety_state`, `current_input_request`,
+`inspection_progress`, `checklist_version`, `execution_progress`, `origin`,
+`latest_reports`, `latest_event_id`, and timestamps. Inspection-only fields
+are null for repair; repair-only progress is null for inspection. Android
+replaces these projections from server responses and never increments
+inspection progress locally.
+
+`inspection_progress` contains `completed_checks`,
+`total_applicable_checks`, and nullable `current_section`. Counts must be
+non-negative and completed must not exceed total. `checklist_version` is
+`general_inspection.v1` for the initial release and remains pinned for a
+resumed session.
+
+The only valid inspection phase/status combinations and Android presentation
+are:
+
+| Phase | Status | Android behavior |
+|---|---|---|
+| `inspection` | `created` | Show the preflight explanation and Begin action. |
+| `inspection` | `running` | Show chat/replay with all conflicting input and terminal actions disabled. |
+| `inspection` | `awaiting_user` | Show the current request or freeform retry input. |
+| `inspection` | `blocked_safety` | Show blocking safety presentation and only server-permitted input. |
+| `inspection` | `failed` | Show terminal failure; no report link. |
+| `inspection` | `cancelled` | Show terminal cancellation; no report link. |
+| `completed` | `completed` | Open the durable inspection report read-only. |
+
+Inspection never uses `awaiting_decision`. A failed or cancelled inspection
+remains in phase `inspection`; the client must not infer completion from a
+terminal status alone.
+
+Creation uses a workflow discriminator and a client idempotency key:
+
+```kotlin
+@Serializable
+data class BikeSessionCreate(
+    val bikeId: String,
+    val workflow: SessionWorkflow,
+    val clientSessionId: String,
+    val origin: SessionOrigin? = null,
+)
+
+enum class SessionWorkflow { Repair, Inspection }
+```
+
+`origin` must be null except for a repair created from exactly one eligible
+inspection finding. The client generates `clientSessionId` once per user
+action and retains it for retries of that action.
+
+Bike-scoped discovery uses
+`GET /v1/sessions?bike_id={bikeId}&workflow={workflow}`.
 
 - The endpoint must return only sessions owned by the authenticated user.
 - Results must be sorted newest first.
 - The backend default page size should be 20 when `limit` is omitted.
 - The Android client calls this endpoint without a status filter and decides
   resumability client-side.
-- The response must include enough `RepairSession` state for the client to
+- The response must include enough `BikeSession` state for the client to
   decide which sessions are resumable.
 - The Android chooser reads only the first page for MVP.
-- A broad cross-bike repair-history screen remains out of scope for this MVP.
+- A broad cross-bike session-history screen remains out of scope for this MVP.
+
+Repair diagnostic sessions are resumable when `phase == diagnostic` and
+status is `created`, `running`, `awaiting_user`, or `awaiting_decision`.
+Inspection sessions are resumable when `phase == inspection` and status is
+`created`, `running`, `awaiting_user`, or `blocked_safety`. A completed
+inspection opens its report. Failed and cancelled inspections are read-only
+terminal rows and offer creation of a new inspection.
 
 ### 4.5 SSE Event Schema
 
-The events stream at `/v1/repair-sessions/{sessionId}/events` is the primary
-real-time channel during a diagnostic turn. Events are `text/event-stream`
+The events stream at `/v1/sessions/{sessionId}/events` is the primary
+real-time channel during a conversation turn. Events are `text/event-stream`
 lines with `id:`, `event:`, and `data:` fields. The `data:` line is the full
-JSON-encoded `RepairSessionEvent` envelope, not just the event-specific inner
+JSON-encoded `BikeSessionEvent` envelope, not just the event-specific inner
 payload.
 
 The following event types are consumed by the chat screen:
 
 | Event type | Payload | UI effect |
 |---|---|---|
-| `turn.started` | `{ "turn_id": "...", "phase": "diagnostic" }` | Optional UI hook; keep input disabled |
+| `turn.started` | `{ "turn_id": "...", "phase": "..." }` | Keep conflicting input/actions disabled |
 | `assistant.delta` | `{ "text": "..." }` | Append to streaming assistant bubble |
 | `assistant.message.completed` | `{ "message_id": "...", "full_text": "...", "artifact_ids": [...] }` | Finalise and persist the assistant bubble |
 | `input.requested` | `{ "input_request": InputRequest }` | Render the appropriate input affordance |
 | `artifact.referenced` | `{ "artifact": ArtifactRef }` | Optional UI hook for artifact provenance |
-| `phase.report.created` | `{ "report_id": "...", ... }` | Capture latest diagnostic report ID if needed |
+| `phase.report.created` | `{ "report_id": "...", "report_type": "...", ... }` | Capture the workflow report ID |
 | `phase.transitioned` | `{ "from_phase": "...", "to_phase": "...", "status": "..." }` | Freeze chat and show completion banner |
 | `safety.escalated` | safety payload | Show safety state prominently |
-| `turn.completed` | `{ "turn_id": "...", "session": RepairSession }` | Mark turn done, update session state, re-enable input as appropriate |
+| `turn.completed` | `{ "turn_id": "...", "session": BikeSession }` | Replace session/input/progress and re-enable permitted actions |
 | `error` | `{ "code": "...", "message": "...", "retryable": false }` | Show recoverable error and clear loading state |
 | `heartbeat` | `{ "ok": true }` | Ignore for UI other than updating last seen cursor |
 
 Unknown event types must be silently ignored; never crash on an unrecognised
-event.
+event, but always advance the cursor. Inspection adds no progress event;
+progress is reconciled from the authoritative `turn.completed` snapshot.
 
 The `id` field on each SSE event is the public replay cursor. The client sends
 this as `Last-Event-ID` on reconnect and may also send it as the `after`
@@ -407,18 +531,27 @@ Wrap all API calls in `ApiResult`. Retrofit calls should be wrapped in a
 ```kotlin
 sealed class ApiResult<out T> {
     data class Success<T>(val data: T) : ApiResult<T>()
-    data class Error(val code: Int?, val message: String) : ApiResult<Nothing>()
+    data class Error(
+        val httpStatus: Int?,
+        val code: String?,
+        val message: String,
+        val details: ErrorDetails? = null,
+    ) : ApiResult<Nothing>()
     object Loading : ApiResult<Nothing>()
 }
 
 suspend fun <T> safeApiCall(call: suspend () -> T): ApiResult<T> = try {
     ApiResult.Success(call())
 } catch (e: HttpException) {
-    ApiResult.Error(e.code(), mapHttpError(e))
+    decodeApiError(e)
 } catch (e: IOException) {
-    ApiResult.Error(null, "Network error. Check your connection.")
+    ApiResult.Error(null, null, "Network error. Check your connection.")
 }
 ```
+
+`decodeApiError` must retain the stable backend `error.code` and bounded
+details. Reducing a 409 to an HTTP status and message would make required
+inspection recovery behavior impossible.
 
 Surface errors to the user as a Snackbar with a retry action. Map common
 codes to plain messages:
@@ -431,6 +564,17 @@ codes to plain messages:
 | 422 | Display `error.message` from response body |
 | 5xx | "Something went wrong. Try again." |
 
+Stable product codes override the generic HTTP mapping:
+
+| Error code | Android behavior |
+|---|---|
+| `active_inspection_exists` | Validate the owner-safe `details.session_id`, then open that inspection. |
+| `finding_already_handed_off` | Validate `details.session_id`, then open the existing repair session. |
+| `session_busy` | Keep the current screen, reload the session, and explain that the active response must finish first. |
+| `session_state_conflict` | Reload authoritative state and route to chat, report, or terminal presentation as appropriate. |
+| `artifact_not_ready` | Keep the pending turn editable and offer retry when processing finishes. |
+| `idempotency_conflict` | Do not generate a replacement key automatically; show a controlled failure and reload state. |
+
 The backend error envelope is:
 
 ```json
@@ -442,6 +586,74 @@ The backend error envelope is:
   }
 }
 ```
+
+Where details contain a session reference, the only supported shape is
+`{"session_id":"ses_..."}`. The client must not navigate from an arbitrary
+identifier embedded in a human-readable message.
+
+### 4.8 Inspection Completion, Cancellation, and Report Shapes
+
+The client models the two product-owned terminal actions separately:
+
+```kotlin
+@Serializable
+data class InspectionCompletion(
+    val schemaVersion: String = "inspection_completion.v1",
+    val reason: String = "finish_early",
+    val clientCompletionId: String,
+)
+
+@Serializable
+data class InspectionCancellation(
+    val clientCancellationId: String,
+)
+```
+
+An early-completion response contains the authoritative completed
+`BikeSession` and its `inspection_report.v1` report. Cancellation contains the
+authoritative cancelled session and no report. The generic turn acceptance and
+report envelopes use `session_id`; no Android DTO retains a
+`repair_session_id` compatibility property.
+
+Strictly decode an inspection report payload with these fields:
+
+```text
+schema_version
+inspection_session_id
+checklist_version
+scope
+outcome
+summary
+ride_guidance
+coverage[]
+findings[]
+limitations[]
+safety_flags[]
+key_artifact_ids[]
+```
+
+Coverage entries retain `area`, `status`, `evidence_summary`, `check_ids`, and
+`artifact_ids`. Findings retain `finding_id`, `area`, `component`,
+`observation`, `condition`, `urgency`, `confidence`, `supporting_check_ids`,
+`artifact_ids`, and `recommended_next_action`. Limitations retain `code`,
+`area`, `check_ids`, `description`, and `artifact_ids`. Unknown enum values or
+an unsupported schema version produce an unsupported-report state; they must
+not be silently mapped to a reassuring default.
+
+The decoder recognizes exactly these report enums for V1:
+
+| Field | Values |
+|---|---|
+| `outcome` | `no_actionable_findings`, `monitoring_recommended`, `maintenance_recommended`, `diagnostic_follow_up_recommended`, `shop_assessment_recommended`, `unsafe_to_ride`, `incomplete` |
+| `ride_guidance` | `no_known_blocking_issue`, `use_caution`, `do_not_ride`, `professional_assessment_required`, `not_assessed` |
+| coverage `status` | `assessed`, `partially_assessed`, `skipped`, `unable_to_assess`, `not_applicable` |
+| finding `urgency` | `routine`, `soon`, `before_next_ride`, `immediate` |
+| `recommended_next_action` | `monitor`, `routine_maintenance`, `start_diagnostic`, `stop_riding`, `shop_assessment` |
+| limitation `code` | `skipped`, `unable_to_assess`, `poor_visibility`, `contradictory_evidence`, `unsafe_to_continue`, `ended_early`, `other` |
+
+`latest_reports` adds nullable `inspection_report_id`. A completed inspection
+without that ID is a contract error: reload once, then show a controlled error
+rather than reopening chat or inventing a report.
 
 ---
 
@@ -521,6 +733,7 @@ data class HomeUiState(
     val selectedBikeId: String? = null,
     val isLoading: Boolean = false,
     val isStartingRepair: Boolean = false,
+    val isStartingInspection: Boolean = false,
     val error: String? = null,
 )
 ```
@@ -533,19 +746,29 @@ data class HomeUiState(
 - "Start New Repair" creates a diagnostic session for the selected bike. With
   "New bike", it first creates a minimal profile named "New bike".
 - "Resume Repair" → navigates to `BikeListScreen` in resume selection mode
+- "Inspect a bike" → navigates to `BikeListScreen` in inspection selection
+  mode. Inspection requires an owned bike; the selection screen offers
+  "Add bike" rather than creating an implicit "New bike" profile.
 
 **Behavior:**
 - On entry: `GET /v1/me`. On 401, force sign-out.
 - Changing the selector changes only the pending start target; no session is
   created until "Start New Repair" is pressed.
+- "Start New Repair" posts `BikeSessionCreate` with `workflow = repair`, null
+  origin, and one `client_session_id` retained across retries.
 - Session resume remains bike-centric: the user selects a bike after pressing
   "Resume Repair". Home does not expose a cross-bike session list.
+- "Inspect a bike" does not create a session until the user selects a bike
+  and confirms the inspection action. This makes active-session discovery and
+  the one-active-inspection invariant visible before navigation.
 
 ---
 
 ### 5.3 Bike List Screen
 
-**Route:** `bikes?selectionMode={Boolean}&resumeOnly={Boolean}` (both default `false`)
+**Route:** typed `BikeListRoute(mode)` where mode is `browse`,
+`repair_resume`, or `inspection`
+
 **ViewModel:** `BikeListViewModel`
 
 **State:**
@@ -554,42 +777,44 @@ data class BikeListUiState(
     val bikes: List<Bike> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val selectionMode: Boolean = false,
-    val resumeOnly: Boolean = false,
+    val mode: BikeListMode = BikeListMode.Browse,
     val selectedBikeId: String? = null,
-    val bikeSessions: List<RepairSession> = emptyList(),
+    val bikeSessions: List<BikeSession> = emptyList(),
     val isLoadingBikeSessions: Boolean = false,
     val deletingBikeId: String? = null,
-    val isCreatingSession: Boolean = false,     // spinner while POST /repair-sessions is in flight
+    val isCreatingSession: Boolean = false,
 )
 ```
 
 **UI:**
-- Top bar: "My Bikes"; subtitle "Select a bike with a diagnostic session to
-  resume" when `resumeOnly`
+- Top bar: "My Bikes" in browse mode, "Resume repair" in repair-resume mode,
+  or "Inspect a bike" in inspection mode
 - List of `BikeCard` composables showing: bike name, make/model/year, brief
   drivetrain/brake summary
-- FAB: "Add Bike" → `BikeEditScreen` (hidden in selection mode)
+- FAB: "Add Bike" → `BikeEditScreen`; visible in browse and inspection modes
 - Empty state: "No bikes yet. Add your first bike." with "Add Bike" button
 
 **BikeCard interactions:**
-- Browse mode: tap → `BikeEditScreen`; long-press or swipe-to-reveal → delete
-- Resume selection mode: only bikes with at least one diagnostic session are
-  shown. Tap → fetch that bike's diagnostic sessions via
-  `GET /v1/repair-sessions?bike_id={bikeId}` and show a bike-specific session
-  chooser sheet; no edit/delete actions shown
+- Browse mode: tap → `BikeEditScreen`; long-press or swipe-to-reveal → delete.
+- Repair-resume mode: bikes with `has_sessions` are candidates. On tap, query
+  `GET /v1/sessions?bike_id={bikeId}&workflow=repair`; show the chooser only
+  when repair sessions exist. Never infer repair history from `has_sessions`.
+- Inspection mode: show every owned bike. On tap, query
+  `GET /v1/sessions?bike_id={bikeId}&workflow=inspection`, then show its
+  active/completed inspection state and a "Start inspection" action when no
+  active inspection exists. No edit/delete action is shown in either
+  workflow-selection mode.
 
-Session discovery and resume entry are available only through resume selection
-mode (`Resume Repair`). Browse mode remains focused on bike management and
-does not expose repair-session chooser affordances.
+Browse mode remains focused on bike management and does not expose session
+chooser affordances.
 
 **Session chooser sheet (resume selection mode):**
 1. User taps a bike card.
 2. Set `selectedBikeId` and `isLoadingBikeSessions = true`.
-3. `GET /v1/repair-sessions?bike_id={bikeId}`.
+3. Call `/v1/sessions` with that bike ID and the mode's explicit workflow.
 4. On success: show a bottom sheet for that bike containing:
-   - Primary action: "Resume Latest Active Session" when an active
-     resumable session exists
+   - Primary action: "Resume latest repair" or "Resume inspection" when a
+     resumable workflow session exists
    - The primary action also shows identifying metadata for the target
      session using the same timestamp and status model as a session row
    - List of older sessions below, newest first, excluding the session
@@ -602,33 +827,41 @@ Each session row in the chooser shows:
 - Primary text: formatted `created_at` timestamp
 - Status label: derived from session phase and status
 - Secondary text: compact phase/activity description, for example
-  "Diagnostic session"
+  "Diagnostic session" or "Guided inspection"
 - Tappable older resumable rows also show a `Resumable` badge
 
 The older-session list remains one flat newest-first list for MVP. Sessions
 are not visually grouped by phase or status.
 
-Status labels are mapped as follows:
+Status labels are mapped in workflow order as follows:
 - `diagnostic + created` or `diagnostic + running` → `In progress`
 - `diagnostic + awaiting_user` → `Awaiting your reply`
 - `diagnostic + awaiting_decision` → `Awaiting your decision`
 - `diagnostic + completed` → `Completed`
-- non-diagnostic phases → `Moved beyond diagnosis`
-- cancelled or stopped states → `Closed`
+- later repair phases → `Moved beyond diagnosis`
+- terminal repair states → `Closed`
+- `inspection + created` or `inspection + running` → `In progress`
+- `inspection + awaiting_user` → `Awaiting your reply`
+- `inspection + blocked_safety` → `Safety concern — action needed`
+- `completed + completed` for an inspection → `Report ready`
+- `inspection + failed` → `Failed`
+- `inspection + cancelled` → `Cancelled`
 
-For MVP, a session is considered **active** and **resumable** when:
-- `phase == diagnostic`
-- `status` is one of `created`, `running`, `awaiting_user`, or
-  `awaiting_decision`
+Resumability is workflow-specific:
+
+- Repair diagnostic: `phase == diagnostic` and status is `created`, `running`,
+  `awaiting_user`, or `awaiting_decision`.
+- Inspection: `phase == inspection` and status is `created`, `running`,
+  `awaiting_user`, or `blocked_safety`.
 
 When multiple resumable sessions exist for the same bike, the primary
 "Resume Latest Active Session" action must target the newest resumable session
-using the same newest-first ordering returned by
-`GET /v1/repair-sessions?bike_id={bikeId}`.
+using the ordering returned by the newest-first `/v1/sessions` response.
 
-Sessions outside the diagnostic phase, or diagnostic sessions with terminal
-statuses, must not drive the primary resume CTA. They may appear only in the
-older-session list.
+Sessions outside the selected workflow's resumable state must not drive the
+primary resume CTA. Completed inspections are tappable report rows. Failed and
+cancelled inspections are read-only rows with a "Start a new inspection"
+action. Other non-resumable rows remain read-only.
 
 Rows in the older-session list are tappable only when that session is
 resumable. When multiple resumable sessions exist, the newest one is promoted
@@ -640,19 +873,20 @@ MVP.
 
 **Resume session from chooser:**
 - Tapping the primary action or a resumable session row navigates to
-  `DiagnosticChatScreen(sessionId)`.
+  `DiagnosticChatScreen(sessionId)` for repair or
+  `InspectionChatScreen(sessionId)` for inspection.
 - The bike selection screen is cleared from the back stack so back returns to
   Home.
 - Resuming a session does not require an additional confirmation dialog.
 
 **Delete flow (browse mode):**
-- Bikes with any owned repair session history, including resumable sessions,
+- Bikes with any owned bike-session history, including inspection-only history,
   are not deletable in this MVP.
 - When deletion is blocked, show a plain explanation such as
-  "This bike can't be removed because it has repair session history."
-- Only bikes with no owned repair sessions may show the destructive delete
+  "This bike can't be removed because it has session history."
+- Only bikes with no owned sessions may show the destructive delete
   action.
-- `hasRepairSessions` is a UI hint, not a lock. If `DELETE /v1/bikes/{bikeId}`
+- `hasSessions` is a UI hint, not a lock. If `DELETE /v1/bikes/{bikeId}`
   still fails because session history now exists, treat that as a normal
   conflict, show the same explanation, and refresh the affected bike row or
   whole list so the delete affordance disappears.
@@ -661,9 +895,15 @@ MVP.
 - On success: remove card from list without a full refresh.
 - On error: show Snackbar.
 
-**Data loading:** `GET /v1/bikes` on entry. Resume selection additionally
-queries sessions for bikes with repair history and renders only bikes with a
-diagnostic-phase session. Ignore `nextCursor` for V1 and render the first page only.
+**Inspection creation:** "Start inspection" posts `BikeSessionCreate` with
+`workflow = inspection` and a retained client UUID. On success, navigate to
+`InspectionChatScreen`. If the server returns `active_inspection_exists`, use
+the bounded `details.session_id` to open that owned session instead of showing
+a generic failure. This server response also closes the race between discovery
+and creation.
+
+**Data loading:** `GET /v1/bikes` on entry. Selection modes query only after a
+bike is selected. Ignore `nextCursor` for V1 and render the first session page.
 
 ---
 
@@ -711,39 +951,72 @@ data class BikeEditUiState(
 
 ---
 
-### 5.5 Deferred: Session History / Previous Sessions
+### 5.5 Bike-Scoped Session Discovery
 
 The app may discover prior sessions for a selected bike via
-`GET /v1/repair-sessions?bike_id={bikeId}` and resume a selected session by
-navigating to `DiagnosticChatScreen(sessionId)`. On resume, the chat must
-rebuild the full retained transcript from
-`GET /v1/repair-sessions/{sessionId}/events?after=0`.
+`GET /v1/sessions?bike_id={bikeId}&workflow={workflow}`. Resuming a repair
+navigates to `DiagnosticChatScreen`; resuming an inspection navigates to
+`InspectionChatScreen`; opening a completed inspection navigates directly to
+its latest inspection report. Both chat destinations rebuild the retained
+conversation from `/v1/sessions/{sessionId}/events?after=0`.
 
-A broad "Repair History" screen spanning all bikes remains out of scope for
-this MVP.
+A broad cross-bike history screen remains out of scope. Bike-scoped discovery,
+active inspection resumption, and completed inspection report opening are in
+scope and must not be described as deferred.
 
 ---
 
-### 5.6 Diagnostic Chat Screen
+### 5.6 Shared Conversation and Diagnostic Chat
 
-**Route:** `sessions/{sessionId}/chat`  
+**Route:** typed `DiagnosticChatRoute(sessionId)`
+
 **ViewModel:** `DiagnosticChatViewModel`
 
-This is the primary interactive screen for the diagnostic phase. The user
-exchanges turns with the agent until the diagnostic phase is complete, at
-which point the backend transitions the session and the chat is frozen.
+`DiagnosticChatScreen` is the repair workflow's presentation over the shared
+conversation module. The module's interface accepts a session ID and exposes
+authoritative session state, reduced messages, input state, attachment state,
+and actions to submit/retry a turn. It hides session loading, cursor replay,
+SSE reconnect/backoff, event parsing/reduction, optimistic delivery state,
+and photo preparation/upload. The same interface is used by inspection.
+
+`DiagnosticChatViewModel` owns diagnostic presentation and navigation policy
+and composes a `ConversationController`; it must not reimplement the shared
+transport state machine. `InspectionChatViewModel` is the second adapter at
+this seam. The shared module must have no inspection checklist rules or repair
+diagnosis rules.
+
+Keep the shared interface small:
+
+```kotlin
+interface ConversationController {
+    val state: StateFlow<ConversationUiState>
+    fun dispatch(action: ConversationAction)
+}
+
+interface ConversationControllerFactory {
+    fun create(sessionId: String, expectedWorkflow: SessionWorkflow): ConversationController
+}
+```
+
+`ConversationAction` covers start/close, draft changes, photo selection and
+retry, stable choice/confirmation selection, turn submission, and failed-turn
+retry. The controller owns ordering constraints and rejects actions that are
+invalid for its current authoritative state. Workflow ViewModels translate
+screen intents into these actions and own only workflow-specific terminal
+operations and navigation. Tests use the same interface through a fake
+controller or fake repositories/event source beneath the real controller.
 
 #### 5.6.1 State
 
 ```kotlin
-data class DiagnosticChatUiState(
-    val session: RepairSession? = null,
+data class ConversationUiState(
+    val session: BikeSession? = null,
     val messages: List<ChatMessage> = emptyList(),
     val inputRequest: InputRequest? = null,       // mirrors session.currentInputRequest
     val draftText: String = "",
     val selectedArtifactIds: List<String> = emptyList(),
     val isLoadingSession: Boolean = true,
-    val isTurnInFlight: Boolean = false,          // true from POST turns → turn.completed
+    val isTurnInFlight: Boolean = false,          // session running or accepted local turn
     val isStreaming: Boolean = false,             // true while SSE is delivering deltas
     val streamingBubbleText: String = "",         // accumulates assistant.delta text
     val phaseTransitioned: Boolean = false,       // true when phase.transitioned received
@@ -767,22 +1040,25 @@ enum class Role { User, Assistant }
 
 On screen entry:
 
-1. `GET /v1/repair-sessions/{sessionId}` to load initial `RepairSession` state.
-2. Open SSE connection to `/v1/repair-sessions/{sessionId}/events` with
+1. `GET /v1/sessions/{sessionId}` to load initial `BikeSession` state.
+2. Verify the destination's expected workflow and phase.
+   Initialize `isTurnInFlight` from `session.status == running`; it is not only
+   a memory of turns submitted in this process.
+3. Open SSE connection to `/v1/sessions/{sessionId}/events` with
    `after = 0` to replay all retained events for the session and reconstruct
    chat history.
-3. Render existing `messages` from replayed events.
-4. If `session.status == awaiting_user`, render the `currentInputRequest`
+4. Render existing `messages` from replayed events.
+5. If the session accepts user input, render the `currentInputRequest`
    affordance immediately without waiting for the SSE stream to deliver it.
    The transcript may continue replaying in the background while the current
    input affordance is already visible.
-5. If replayed events later reveal a newer persisted `input.requested`, the
+6. If replayed events later reveal a newer persisted `input.requested`, the
    replayed event stream wins and the visible input affordance must reconcile
    to that newer request.
-6. If replayed events show `phase.transitioned`, the app must immediately
+7. If replayed events show `phase.transitioned`, the app must immediately
    reconcile to the transitioned state: freeze chat input, append the system
    annotation, and show the completion banner even if the initial
-   `GET /v1/repair-sessions/{sessionId}` response appeared resumable.
+   `GET /v1/sessions/{sessionId}` response appeared resumable.
 
 For MVP, replayed or resumed artifact references do not require thumbnail
 rendering. The app may show thumbnails only for artifacts selected and
@@ -824,8 +1100,10 @@ The input area at the bottom of the screen adapts to `inputRequest.type`:
 The input area is disabled (greyed out, non-interactive) while
 `isTurnInFlight` or `isStreaming` is true.
 
-When `inputRequest` is null and `session.status == awaiting_user`, fall back
-to a plain text field — the agent is waiting for freeform input.
+When `inputRequest` is null and the workflow accepts freeform input in the
+current state, fall back to a plain text field. This includes inspection
+`awaiting_user` or `blocked_safety` after a recoverable turn error; the backend
+still rejects input prohibited by active safety policy.
 
 **Send button behaviour:**
 - Enabled when: `draftText` is non-blank OR `selectedArtifactIds` is
@@ -839,7 +1117,7 @@ to a plain text field — the agent is waiting for freeform input.
    artifactIds = selectedArtifactIds)` to `messages`.
 3. Clear `draftText` and `selectedArtifactIds`.
 4. Set `isTurnInFlight = true`.
-5. `POST /v1/repair-sessions/{sessionId}/turns` with `TurnCreate`.
+5. `POST /v1/sessions/{sessionId}/turns` with `TurnCreate`.
 6. On 202 response: open (or ensure open) the SSE stream using
    `start_event_id` from `TurnAccepted` as the `after` parameter if the
    stream was not already connected.
@@ -848,9 +1126,9 @@ to a plain text field — the agent is waiting for freeform input.
 
 #### 5.6.6 SSE Stream Lifecycle
 
-The SSE connection is managed by `DiagnosticChatViewModel`, not by the
-composable. It is opened on screen entry and kept alive until the phase
-transitions or the user navigates away.
+The SSE connection is managed by `ConversationController`, not by a composable
+or duplicated workflow ViewModel. It is scoped to the owning ViewModel and is
+kept alive until the workflow conversation ends or the user navigates away.
 
 **Implementation:** Use OkHttp `EventSource` with a custom `EventSourceListener`.
 Wrap it in a `callbackFlow` and collect in the ViewModel's `viewModelScope`.
@@ -861,8 +1139,10 @@ Wrap it in a `callbackFlow` and collect in the ViewModel's `viewModelScope`.
   last received event ID.
 - If no event has been received yet in the current screen instance, use
   `after = 0` to rebuild the transcript again.
-- Stop reconnecting after the phase has transitioned
-  (`phaseTransitioned == true`).
+- A `phase.transitioned` event freezes input but does not by itself close the
+  stream because the durable `turn.completed` snapshot may follow it. Stop
+  reconnecting after that terminal turn event, or after an authoritative
+  reload confirms the workflow conversation is no longer active.
 
 **Event handling:**
 
@@ -874,12 +1154,13 @@ assistant.message.completed
 input.requested   →  set inputRequest; update session.currentInputRequest
 phase.report.created
                   →  capture report_id as latestReportId
+safety.escalated  →  update prominent workflow safety presentation
 turn.completed    →  set isTurnInFlight = false; replace local session from
-                     payload.session; sync inputRequest from payload.session
+                     payload.session; sync inputRequest, safety, and progress
 error             →  set isTurnInFlight = false; set isStreaming = false;
                      set error from payload.message
 phase.transitioned →  set phaseTransitioned = true; append system annotation
-                      message; close SSE connection; freeze input area
+                      message; let workflow policy close/freeze/route
 heartbeat         →  ignore except for cursor bookkeeping
 ```
 
@@ -892,8 +1173,9 @@ When `inputRequest.type == "photo"`:
 1. User selects one or more images from camera or gallery.
 2. If a selected image uses a backend-unsupported format such as `HEIC` or
    `HEIF`, transcode it on-device to `JPEG` before upload.
-3. For each image: `POST /v1/artifacts` with `purpose = diagnostic_photo`,
-   `repair_session_id = sessionId`. Show per-image upload progress.
+3. For each image: `POST /v1/artifacts` with `session_id = sessionId` and the
+   purpose selected from loaded workflow (`diagnostic_photo` for repair,
+   `inspection_photo` for inspection). Show per-image upload progress.
 4. On each 201 response: add the returned `artifact.id` to
    `selectedArtifactIds` and show a thumbnail.
 5. After all uploads complete, the send button becomes active.
@@ -916,7 +1198,8 @@ When `phase.transitioned` is received:
    your results are ready."
 2. Set `phaseTransitioned = true`.
 3. The input area disappears (replaced by the banner).
-4. Show a prominent banner or bottom sheet with:
+4. Continue consuming through `turn.completed`, then close the stream.
+5. Show a prominent banner or bottom sheet with:
    - Primary action: "Back to Home"
 
 Read-only diagnostic report rendering is not part of the Android MVP. The
@@ -938,6 +1221,169 @@ banner.
   chooser.
 - If the session has already transitioned (`phaseTransitioned == true`), back
   navigates directly without a dialog.
+
+---
+
+### 5.7 Inspection Chat Screen
+
+**Route:** typed `InspectionChatRoute(sessionId)`
+
+**ViewModel:** `InspectionChatViewModel`
+
+The inspection screen composes the shared conversation module and adds
+inspection progress, safety presentation, completion actions, and inspection
+report navigation. It must not copy the diagnostic reducer, SSE loop, turn
+submission, input renderer, or photo pipeline.
+
+#### 5.7.1 Entry and Start
+
+After loading, require `workflow == inspection` and either
+`phase == inspection` or the completed inspection state. Route by durable
+state:
+
+- `inspection + created`: show the stationary-inspection explanation and a
+  primary "Begin inspection" action.
+- resumable `inspection` state: replay events and resume the conversation.
+- `completed + completed`: open the latest inspection report.
+- `inspection + failed` or `inspection + cancelled`: show a terminal state
+  with an action to return to the bike and start a new inspection.
+
+"Begin inspection" submits an ordinary `ai_turn.v1` turn with a fresh retained
+`client_turn_id`, no artifacts, no input-request response ID, and a non-empty
+intent such as "Begin inspection." The wording is not a protocol selector;
+the persisted workflow selects inspection behavior. Disable the action after
+submission and use the ordinary optimistic/retry path.
+
+Before the first turn, explain that the inspection is guided, visual, and
+stationary; is not a professional safety certification; may be skipped when a
+check is uncomfortable or unsafe; and never requires riding the bike.
+
+#### 5.7.2 Progress and Input
+
+The top of the chat shows `completed_checks / total_applicable_checks` and the
+current section. Progress is replaced only from the loaded session or a
+`turn.completed` session snapshot. The denominator may decrease when
+conditional applicability resolves, so the client must not animate or label
+that as lost progress.
+
+For `general_inspection.v1`, an `InspectionSectionCatalog` maps stable section
+IDs to localized display resources. An unknown checklist version or section
+must render the generic localized label "Inspection progress," never a raw
+identifier or guessed checklist wording. The conversation prompt remains the
+source for the detailed requested action.
+
+Inspection supports `text`, `photo`, `multiple_choice`, `confirmation`, and
+`none`. It does not use the repair-only `decision` input type. A photo request
+renders camera/gallery controls and, when supplied, the
+`continue_without_photo` choice beside them. Choice and confirmation turns
+must include `responds_to_input_request_id` and submit the stable choice value,
+not its localized label.
+
+If status is `running`, disable input, attachments, Finish, and Cancel even
+after process recreation. If status is `blocked_safety`, show the latest
+safety message above the input and allow only the current server-requested or
+freeform safety-permitted response. The client never decides that a prohibited
+check has become safe.
+
+#### 5.7.3 Safety and Leaving
+
+Render `safety.escalated` prominently and reconcile it with the next
+authoritative session snapshot. Blocking copy must tell the user not to ride
+or perform the unsafe check without claiming a root cause. The inspection may
+continue with server-requested safe visual or stationary checks.
+
+Use the same leave-while-streaming confirmation as diagnostic chat. Leaving an
+idle inspection needs no confirmation because it is discoverable and
+resumable. Leaving does not cancel or finish the inspection.
+
+#### 5.7.4 Finish Early and Cancel
+
+The overflow menu exposes two distinct actions whenever phase is `inspection`
+and status is `created`, `awaiting_user`, or `blocked_safety`:
+
+- **Finish inspection now** — confirmation explains that remaining checks are
+  recorded as skipped and a partial report is created.
+- **Cancel inspection** — confirmation explains that the inspection ends
+  permanently and no report is created.
+
+Never infer either action from conversational text such as "stop." While
+status is `running`, show both actions disabled with an explanation that the
+current response must finish.
+
+Finish sends `inspection_completion.v1`, `reason = finish_early`, and one
+`client_completion_id` retained for all retries of that confirmation. On
+success, use the returned report and completed session to replace local state
+and open `InspectionReportScreen` without waiting for SSE.
+
+Cancel sends one retained `client_cancellation_id`. On success, replace local
+state with the cancelled session and show the terminal presentation. A
+`session_busy` or `session_state_conflict` response triggers a session reload;
+the client does not silently retry with a new idempotency key.
+
+#### 5.7.5 Normal Completion
+
+On `phase.report.created`, retain the inspection report ID. On
+`phase.transitioned`, make chat read-only but continue consuming the stream.
+On the following `turn.completed`, replace the session and navigate to the
+retained report when the snapshot is `completed + completed`. If the report
+event was missed but `latest_reports.inspection_report_id` is present, use that
+ID. If neither source contains an ID, apply the completed-session contract
+error behavior from §4.8.
+
+---
+
+### 5.8 Inspection Report Screen
+
+**Route:** typed `InspectionReportRoute(sessionId, reportId)`
+
+**ViewModel:** `InspectionReportViewModel`
+
+Load the report through the generic report endpoint and require envelope
+`type == inspection`, `phase == inspection`, and
+`schema_version == inspection_report.v1`. Unsupported or malformed reports
+produce a controlled error rather than partial decoding.
+
+Render:
+
+- deterministic summary and outcome
+- ride guidance with non-certifying copy
+- coverage for every area, including partial, skipped, unable-to-assess, and
+  not-applicable areas
+- findings grouped by urgency, then bike area
+- limitations
+- safety flags
+- shop-assessment guidance where recommended
+- a "Start diagnosis" action only on findings whose
+  `recommended_next_action == start_diagnostic`
+
+`no_issue_observed`, `no_actionable_findings`, and
+`no_known_blocking_issue` must never be rendered as "safe," "certified," or
+"passed." Use wording such as "No blocking issue was identified in the checks
+that were completed" and keep material coverage limitations adjacent.
+
+#### 5.8.1 Finding Handoff
+
+Tapping "Start diagnosis" creates a repair session with a retained
+`client_session_id` and exactly this origin:
+
+```text
+type: inspection_finding
+inspection_session_id: <source session>
+finding_id: <selected finding>
+```
+
+Disable only that finding's action while creation is in flight. On success,
+navigate to `DiagnosticChatScreen` for the returned repair session. When that
+created session with an inspection-finding origin first opens, diagnostic chat
+automatically submits one ordinary initial turn if no turn has been accepted;
+the turn uses a `SavedStateHandle`-retained `client_turn_id` and a non-empty
+intent such as "Begin diagnosis from the inspection finding." If the session
+is already `running` or later, it must not submit another start turn.
+
+If creation returns `finding_already_handed_off`, validate the bounded
+`details.session_id` and open that existing repair session. The client never
+copies the inspection transcript, image bytes, or finding text into the turn;
+the server-provided structured origin and approved evidence are authoritative.
 
 ---
 
@@ -1016,7 +1462,7 @@ fun connect(sessionId: String, after: String?): Flow<SseEvent> = callbackFlow {
     awaitClose { source.cancel() }
 }
 
-// In DiagnosticChatViewModel
+// Inside ConversationController, owned by the workflow ViewModel
 private fun observeStream() {
     streamJob = viewModelScope.launch {
         sseEventSource.connect(sessionId, lastEventId)
@@ -1038,37 +1484,71 @@ private fun observeStream() {
 ├── BikeDocApiService         (created from BikeDocApiClient.retrofit.create())
 ├── SseEventSource            (injects OkHttpClient)
 ├── BikeRepository            (injects BikeDocApiService)
-└── SessionRepository         (injects BikeDocApiService)
+├── SessionRepository         (generic BikeSession reads/writes)
+├── ArtifactRepository        (workflow-neutral upload transport)
+└── ReportRepository          (strict report-envelope decoding)
 
 @HiltViewModel
 ├── AuthViewModel             (injects FirebaseAuthProvider)
-├── HomeViewModel             (injects BikeDocApiService, AuthProvider)
+├── HomeViewModel             (injects HomeRepository, AuthProvider)
 ├── BikeListViewModel         (injects BikeRepository, AuthProvider)
 ├── BikeEditViewModel         (injects BikeRepository, AuthProvider)
-└── DiagnosticChatViewModel   (injects SessionRepository, SseEventSource, AuthProvider)
+├── DiagnosticChatViewModel   (composes ConversationController)
+├── InspectionChatViewModel   (composes ConversationController plus inspection actions)
+└── InspectionReportViewModel (injects ReportRepository, SessionRepository)
 ```
+
+`ConversationController` is created per destination/ViewModel, not as an
+application singleton. Its dependencies are repository and event-source
+interfaces, so diagnostic and inspection tests exercise the same conversation
+seam with fakes.
 
 ---
 
-## 8. Open Items / Deferred Decisions
+## 8. Contract Synchronization and Verification
 
-| Item | Decision needed |
-|---|---|
-| Session-discovery endpoint | Backend must add an owned route that returns previous repair-session IDs before a real history screen can exist |
-| Sign-up flow | Self-service account creation is now in-app (§5.1). Defer email verification to a future iteration. |
-| Offline behavior | Not in scope for V1 |
+The Android implementation begins only after `docs/specs/openapi.yaml` records
+the generic session routes and schemas used here. The contract change and
+Android migration are one coordinated cutover: no dual route support, repair
+aliases, or legacy `rs_` assumptions are required.
+
+Deterministic Android tests must cover:
+
+- generic session and event decoding for both workflows
+- explicit repair/inspection discovery filters and workflow route validation
+- unchanged repair diagnostic replay, reconnect, input, photo, and retry
+  behavior through `/v1/sessions`
+- inspection resumability for `created`, `running`, `awaiting_user`, and
+  `blocked_safety`
+- authoritative progress replacement, including a decreasing conditional
+  denominator and an unknown section fallback
+- optional-photo `continue_without_photo` submission
+- safety escalation and disabled input/actions while running
+- finish-early and cancellation confirmations, retained idempotency IDs,
+  `session_busy`, and terminal navigation
+- strict `inspection_report.v1` decoding and non-certifying copy
+- finding handoff, exact retry, and `finding_already_handed_off` navigation
+- `active_inspection_exists` navigation
+- inspection-only history blocking bike deletion
+- unknown SSE types advancing the cursor without changing UI state
+
+The shared conversation module is tested through its interface. Diagnostic and
+inspection ViewModel tests focus on workflow policy rather than repeating the
+SSE state-machine suite. Compose UI tests cover the optional-photo choice,
+Finish/Cancel distinction, safety presentation, and finding action gating.
 
 ---
 
 ## 9. Out of Scope for This Spec
 
 - Plan review and decision gate
-- Diagnostic report screen / read-only report viewer
-- Resuming an in-progress diagnostic session after leaving chat
+- Broad cross-bike session history
 - Guided repair execution
-- Previous-session browsing UI
 - Repair completion / summary screen
 - Push notifications
 - Bike profile photo upload
 - Email verification after sign-up
 - Any admin or settings screens
+- Offline-authoritative inspection state
+- Grouping multiple inspection findings into one repair handoff
+- Cancelling an inspection while a turn is running

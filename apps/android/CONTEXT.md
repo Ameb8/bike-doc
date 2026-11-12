@@ -21,11 +21,14 @@ This context covers the Android client experience for BikeDoc.
   using structured provenance rather than replaying the inspection transcript.
 - **Diagnostic chat** is the Android UI for interacting with the diagnostic
   phase of a repair session.
-- A session is **resumable** in the Android MVP when its `phase` is
+- A **repair session is resumable** in the Android MVP when its `phase` is
   `diagnostic` and its `status` is one of `created`, `running`,
   `awaiting_user`, or `awaiting_decision`.
+- An **inspection session is resumable** in the Android MVP when its `phase`
+  is `inspection` and its `status` is one of `created`, `running`,
+  `awaiting_user`, or `blocked_safety`.
 - **Bike-scoped session discovery** means listing only the signed-in user's
-  repair sessions for one selected bike, newest first.
+  sessions for one selected bike and one explicit workflow, newest first.
 
 ## Sources of truth
 
