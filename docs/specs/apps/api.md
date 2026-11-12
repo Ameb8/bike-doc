@@ -17,6 +17,9 @@ the Android app. The public contract remains the product-level API in
 `docs/specs/apps/api-errors.md`. Backend testing conventions are defined in
 `docs/specs/apps/api-testing.md`.
 
+Planned conversation history and cross-device continuation are specified in
+[Conversation History And Cross-Device Resume](conversation-history-and-resume.md).
+
 ## 1. Goals
 
 - Keep all backend code inside the monorepo subdirectory `apps/api`.
