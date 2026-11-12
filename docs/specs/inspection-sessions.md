@@ -1,6 +1,6 @@
 # BikeDoc Guided Inspection Sessions Spec
 
-Status: Canonical v1.1
+Status: Canonical v1.2
 Last updated: 2026-11-12
 
 This document is the canonical product, backend, agent, and Android behavior
@@ -13,6 +13,20 @@ hands actionable findings into the existing repair workflow.
 session, artifact, report, and enum changes required by this feature must be
 added to that contract before they are exposed publicly. Within the inspection
 scope, this document is authoritative for intended behavior.
+
+### Contract Precedence and Synchronization
+
+For inspection behavior, this document is the canonical product design. The
+public wire shapes become canonical only when recorded in
+`docs/specs/openapi.yaml`. Android implementation work must not begin until the
+inspection flow and workflow-neutral `/v1/sessions` paths are also reflected in
+`docs/specs/android/mvp-spec.md`; until then, that document continues to govern
+the existing diagnostic-only Android flow.
+
+The first implementation tranche must update those two contracts together and
+remove any contradictions with this document. Agents must not resolve a
+contract disagreement by choosing one document silently. Existing repair
+behavior remains unchanged unless this document explicitly says otherwise.
 
 ## References
 
@@ -265,7 +279,9 @@ Android client must cut over together, and tests must prove that the existing
 diagnostic workflow still behaves correctly through the generic model before
 inspection producers are enabled.
 
-Repair workflow phases remain:
+Repair workflow phases and terminal behavior remain as defined by the existing
+repair contract, including its `shop_referred` and `cancelled` phase values.
+The ordinary successful repair path remains:
 
 ```text
 diagnostic -> planning -> execution -> completed
@@ -279,6 +295,44 @@ inspection -> completed
 
 The server must reject invalid workflow/phase combinations.
 
+Inspection uses `phase` for workflow progress and `status` for lifecycle. A
+cancelled or failed inspection therefore remains in `phase: inspection`; only
+successful report persistence changes it to `phase: completed`.
+
+The valid inspection combinations are:
+
+| Phase | Status | Meaning |
+|---|---|---|
+| `inspection` | `created` | Created; no turn has yet been accepted. |
+| `inspection` | `running` | One accepted turn has outstanding durable work. |
+| `inspection` | `awaiting_user` | No turn is outstanding; another safe user turn may be accepted. |
+| `inspection` | `blocked_safety` | No turn is outstanding; only input permitted by active safety policy may be accepted. |
+| `inspection` | `failed` | The inspection cannot be resumed; no report exists. |
+| `inspection` | `cancelled` | The user cancelled between turns; no report exists. |
+| `completed` | `completed` | The inspection report and phase transition committed atomically. |
+
+No other inspection phase/status pair is valid. In particular, inspection does
+not use `awaiting_decision`, and `phase: completed` never appears before its
+report is durable.
+
+The inspection lifecycle is:
+
+```text
+created -> running -> awaiting_user | blocked_safety
+awaiting_user | blocked_safety -> running
+created | awaiting_user | blocked_safety -> completed   # finish early
+created | awaiting_user | blocked_safety -> cancelled
+running -> completed                                    # normal completion
+inspection nonterminal state -> failed                  # unrecoverable session failure
+```
+
+Turn acceptance is allowed only from `created`, `awaiting_user`, or
+`blocked_safety`. From `blocked_safety`, the workflow adapter must reject input
+that attempts a prohibited check. `awaiting_user` and `blocked_safety` may have
+no `current_input_request` after recoverable turn failure; in that case the
+client may submit a free-text retry. When an input request exists, a turn that
+claims to answer it must match its ID and constraints.
+
 ### 6.2 Inspection Statuses
 
 Inspection uses the existing shared status vocabulary:
@@ -286,9 +340,10 @@ Inspection uses the existing shared status vocabulary:
 - `created`: session exists but no inspection turn is running
 - `running`: an accepted turn has outstanding durable work, whether queued,
   retrying before its effect boundary, or executing in a worker
-- `awaiting_user`: a persisted input request is waiting for a response
-- `blocked_safety`: no turn is outstanding and a blocking safety concern is
-  waiting for user action
+- `awaiting_user`: no turn is outstanding and another user turn may be
+  accepted; a persisted input request normally identifies the desired input
+- `blocked_safety`: no turn is outstanding, a blocking safety concern remains
+  active, and only a safety-permitted user turn may be accepted
 - `completed`: an inspection report was persisted successfully
 - `failed`: processing ended in a non-recoverable failure
 - `cancelled`: the user or server cancelled the session
@@ -306,24 +361,30 @@ same derivation and emits a durable safe error and `turn.completed` event.
 submitting another turn.
 
 A blocked inspection may continue with safe visual or stationary checks. It
-must not request riding or another check made unsafe by the active concern. A
-blocked inspection may still complete with an `unsafe_to_ride` or
-`shop_assessment_recommended` report outcome.
+must not request riding or another check made unsafe by the active concern. An
+inspection with an active blocking flag completes with `unsafe_to_ride`; an
+active warning without a blocking flag may produce
+`shop_assessment_recommended`.
 
 ### 6.3 Inspection Progress
 
-The public session projection should include:
+The public session projection must include:
 
 ```text
 inspection_progress:
-  completed_checks
-  total_applicable_checks
-  current_section
+  completed_checks: integer
+  total_applicable_checks: integer
+  current_section: string | null
 ```
 
 Progress must be derived from durable check results, not incremented by the
 agent. `completed_checks` includes assessed, skipped, and unable-to-assess
 terminal results. It excludes checks that remain pending.
+
+`current_section` is the stable section ID containing the recommended next
+check. It is null when no applicable check remains pending, including after
+completion. Both counts are non-negative and `completed_checks` must never
+exceed `total_applicable_checks`.
 
 An unresolved conditional check is provisionally applicable and is included
 in `total_applicable_checks`. The total may decrease when explicit evidence
@@ -359,6 +420,13 @@ requirements, and safety constraints of the manifest entries do not change.
 Checklist IDs and manifest rules are versioned data rather than public enum
 values.
 
+The implementation must encode this manifest once as immutable, typed,
+app-owned data and validate it in deterministic tests. It does not require a
+database-authored checklist, runtime rule language, remote configuration, or
+general-purpose workflow engine. The server must retain every manifest version
+referenced by a resumable session; deploying a later version must not rewrite
+an existing session's plan.
+
 The agent may conversationally paraphrase a manifest entry's manual procedure,
 but it must not add a physical action that the manifest does not authorize.
 When an entry's stop condition is met, the agent must stop that procedure,
@@ -389,29 +457,57 @@ check declared conditional by the checklist manifest. Confirmed absence
 becomes `not_applicable` coverage without creating a limitation. This
 session-local resolution must not mutate the saved bike profile.
 
+The V1 applicability mappings are:
+
+| Checks | Resolved profile rule |
+|---|---|
+| Checks marked `all` | Always `applicable`. |
+| Front or rear brake check | Corresponding `brakes.<position>.presence`: `present` is `applicable`, `absent` is `not_applicable`, and null, `unknown`, or disputed is `unresolved`. |
+| Drivetrain check | `applicable` to every bike type supported by BikeDoc V1. Supporting a non-pedal vehicle requires a later checklist version. |
+| Front suspension check | `suspension.fork.type`: `suspension` is `applicable`, `rigid` is `not_applicable`, and null, `other`, or disputed is `unresolved`. |
+| Rear suspension check | `suspension.rear_shock.presence`: `present` is `applicable`, `absent` is `not_applicable`, and null, `unknown`, or disputed is `unresolved`. |
+| Electric-assist check | `electric_assist.presence`: `present` is `applicable`, `absent` is `not_applicable`, and null, `unknown`, or disputed is `unresolved`. |
+
+If a public profile projection omits resolution metadata, the inspection-plan
+module must use the authoritative resolved-field state rather than guessing
+from absent JSON members. An explicit user answer may resolve only an
+`unresolved` conditional check and must use the same present/absent meaning as
+the corresponding profile rule.
+
 ### 7.1 Manifest Identity and Grouping
 
 `general_inspection.v1` contains these 14 checks in the following recommended
-order and conversational interaction groups. Qualifying evidence in this
-table is the minimum required for `no_issue_observed`; evidence supporting a
-concern may be narrower when it directly establishes that concern.
+order and conversational interaction groups. The stable section IDs are also
+the report `area` values. Qualifying evidence in this table is the minimum
+required for `no_issue_observed`; evidence supporting a concern may be narrower
+when it directly establishes that concern.
 
-| Group | Stable check ID | Assessed condition | Applicability | Safety-critical | Qualifying evidence for `no_issue_observed` |
+| Order | Stable section ID | Display title | Procedure group |
+|---:|---|---|---:|
+| 1 | `overview` | Overview | 1 |
+| 2 | `wheels_tires` | Wheels and tires | 2 |
+| 3 | `brakes` | Brakes | 3 |
+| 4 | `contact_controls` | Contact and control points | 4 |
+| 5 | `drivetrain` | Drivetrain | 5 |
+| 6 | `suspension` | Suspension | 6 |
+| 7 | `electric_assist` | Electric assist | 7 |
+
+| Section ID / interaction group | Stable check ID | Assessed condition | Applicability | Safety-critical | Qualifying evidence for `no_issue_observed` |
 |---|---|---|---|---|---|
-| 1. Overview | `whole_bike_overview` | Overall visible configuration and obvious whole-bike concerns | All bikes | No | Targeted guided `user_report` or clear `photo` coverage |
-| 1. Overview | `frame_fork_visible_condition` | Visible frame, fork, steerer, and structural condition | All bikes | Yes | Targeted guided visual `user_report` or clear `photo` coverage |
-| 2. Wheels and tires | `front_tire_condition` | Visible front-tire damage, inflation concern, and gross wear | All bikes | Yes | Targeted guided visual `user_report`; `photo` and `measurement` may supplement it |
-| 2. Wheels and tires | `rear_tire_condition` | Visible rear-tire damage, inflation concern, and gross wear | All bikes | Yes | Targeted guided visual `user_report`; `photo` and `measurement` may supplement it |
-| 2. Wheels and tires | `front_wheel_security_rotation` | Front-wheel retention, gross side play, rotation, and obvious wobble or rubbing | All bikes | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
-| 2. Wheels and tires | `rear_wheel_security_rotation` | Rear-wheel retention, gross side play, rotation, and obvious wobble or rubbing | All bikes | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
-| 3. Brakes | `front_brake_condition_operation` | Visible front-brake condition and stationary engagement | Conditional only on confirmed absence of a front brake | Yes | Guided stationary `functional_check` plus a targeted visual `user_report`; `photo` may replace only the visual portion |
-| 3. Brakes | `rear_brake_condition_operation` | Visible rear-brake condition and stationary engagement | Conditional only on confirmed absence of a rear brake | Yes | Guided stationary `functional_check` plus a targeted visual `user_report`; `photo` may replace only the visual portion |
-| 4. Contact and control points | `steering_cockpit_security` | Obvious headset, steering, handlebar, stem, lever, and control security concerns | All bikes | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
-| 4. Contact and control points | `saddle_seatpost_security` | Obvious saddle and seatpost damage or movement | All bikes | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
-| 5. Drivetrain | `drivetrain_condition_operation` | Visible drive-medium and component condition, retention or tension concern, and stationary operation | All pedal bikes; procedure adapts to resolved configuration | Yes | Targeted visual `user_report` plus a configuration-appropriate guided `functional_check`; `photo` may replace only the visual portion |
-| 6. Suspension | `front_suspension_condition_operation` | Visible fork damage, leakage, binding, or failure to support and return | Conditional on front suspension presence | Yes | Targeted visual `user_report` plus a safe guided `functional_check`; `photo` may replace only the visual portion |
-| 6. Suspension | `rear_suspension_condition_operation` | Visible rear-shock or linkage damage, leakage, binding, or failure to support and return | Conditional on rear suspension presence | Yes | Targeted visual `user_report` plus a safe guided `functional_check`; `photo` may replace only the visual portion |
-| 7. Electric assist | `electric_assist_condition_operation` | Visible battery, wiring, motor-system damage or hazard and stationary power-on warnings | Conditional on electric-assist presence | Yes | Targeted powered-off visual `user_report` plus a safe stationary power-on `functional_check`; `photo` may replace only the visual portion |
+| `overview` / 1 | `whole_bike_overview` | Overall visible configuration and obvious whole-bike concerns | `all` | No | Targeted guided `user_report` or clear `photo` coverage |
+| `overview` / 1 | `frame_fork_visible_condition` | Visible frame, fork, steerer, and structural condition | `all` | Yes | Targeted guided visual `user_report` or clear `photo` coverage |
+| `wheels_tires` / 2 | `front_tire_condition` | Visible front-tire damage, inflation concern, and gross wear | `all` | Yes | Targeted guided visual `user_report`; `photo` and `measurement` may supplement it |
+| `wheels_tires` / 2 | `rear_tire_condition` | Visible rear-tire damage, inflation concern, and gross wear | `all` | Yes | Targeted guided visual `user_report`; `photo` and `measurement` may supplement it |
+| `wheels_tires` / 2 | `front_wheel_security_rotation` | Front-wheel retention, gross side play, rotation, and obvious wobble or rubbing | `all` | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
+| `wheels_tires` / 2 | `rear_wheel_security_rotation` | Rear-wheel retention, gross side play, rotation, and obvious wobble or rubbing | `all` | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
+| `brakes` / 3 | `front_brake_condition_operation` | Visible front-brake condition and stationary engagement | Unless confirmed absent | Yes | Guided stationary `functional_check` plus a targeted visual `user_report`; `photo` may replace only the visual portion |
+| `brakes` / 3 | `rear_brake_condition_operation` | Visible rear-brake condition and stationary engagement | Unless confirmed absent | Yes | Guided stationary `functional_check` plus a targeted visual `user_report`; `photo` may replace only the visual portion |
+| `contact_controls` / 4 | `steering_cockpit_security` | Obvious headset, steering, handlebar, stem, lever, and control security concerns | `all` | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
+| `contact_controls` / 4 | `saddle_seatpost_security` | Obvious saddle and seatpost damage or movement | `all` | Yes | Guided `functional_check` with a specific `user_report`; `photo` may supplement it |
+| `drivetrain` / 5 | `drivetrain_condition_operation` | Visible drive-medium and component condition, retention or tension concern, and stationary operation | All supported V1 bikes; procedure adapts to resolved configuration | Yes | Targeted visual `user_report` plus a configuration-appropriate guided `functional_check`; `photo` may replace only the visual portion |
+| `suspension` / 6 | `front_suspension_condition_operation` | Visible fork damage, leakage, binding, or failure to support and return | Conditional on front suspension presence | Yes | Targeted visual `user_report` plus a safe guided `functional_check`; `photo` may replace only the visual portion |
+| `suspension` / 6 | `rear_suspension_condition_operation` | Visible rear-shock or linkage damage, leakage, binding, or failure to support and return | Conditional on rear suspension presence | Yes | Targeted visual `user_report` plus a safe guided `functional_check`; `photo` may replace only the visual portion |
+| `electric_assist` / 7 | `electric_assist_condition_operation` | Visible battery, wiring, motor-system damage or hazard and stationary power-on warnings | Conditional on electric-assist presence | Yes | Targeted powered-off visual `user_report` plus a safe stationary power-on `functional_check`; `photo` may replace only the visual portion |
 
 All procedures are designed for a novice who is comfortable performing them.
 Lower skill or discomfort does not make a check not applicable; the user may
@@ -478,7 +574,6 @@ user_report
 photo
 functional_check
 measurement
-repair_history
 other
 ```
 
@@ -509,6 +604,41 @@ normally follow that recommendation. It may deviate only when:
 - one user response supports several pending checks
 - the user cannot or will not perform the recommended check
 - the user reports a material concern that should be recorded promptly
+
+### 7.6 Result and Finding Refinement
+
+V1 keeps one current result per applicable check. Refinement is intentionally
+conservative so that the system does not require a public revision-history
+model:
+
+- a pending check may receive any terminal result
+- `skipped` or `unable_to_assess` may later become an assessed result when new
+  evidence is supplied
+- `no_issue_observed` may escalate to `attention_needed` or
+  `unsafe_condition`
+- `attention_needed` may be refined or escalated to `unsafe_condition`, but
+  may not be replaced by `no_issue_observed`
+- `unsafe_condition` may be refined with more evidence but may not be
+  downgraded
+
+A durable finding may gain supporting checks, artifacts, clearer observation
+text, or a more urgent next action. It may not be deleted, lose supporting
+evidence, reduce urgency, or become less safety-conservative during the same
+inspection. If later evidence contradicts a durable concern, the backend
+retains the concern and records a `contradictory_evidence` limitation. The user
+may start a later inspection to establish a new current assessment.
+
+For refinement comparison, urgency increases in the order `routine`, `soon`,
+`before_next_ride`, `immediate`; next-action safety effect increases in the
+order `monitor`, `routine_maintenance`, `start_diagnostic`, `shop_assessment`,
+`stop_riding`. A refinement may keep or increase each rank but may not decrease
+one to increase the other.
+
+Safety flags raised during an inspection are monotonic in V1: they may be
+deduplicated or strengthened but are not cleared before the report is created.
+This makes “active safety flags” mean all unresolved flags raised in the
+current inspection and matches the conservative result rules above. A future
+flag-resolution workflow requires a separately versioned design.
 
 ## 8. Agent Invocation Context
 
@@ -558,6 +688,11 @@ After creating an inspection session, the Android client presents a “Begin
 inspection” action. Activating it submits an ordinary idempotent user turn.
 No separate server-initiated conversation protocol is required.
 
+The initial request uses `ai_turn.v1`, a fresh `client_turn_id`, no artifacts,
+no input-request response ID, and a non-empty intent such as “Begin
+inspection.” The server must not depend on that localized wording; the
+persisted `workflow: inspection` and `status: created` select start behavior.
+
 The agent's first response must briefly explain:
 
 - the inspection is guided, visual, and stationary
@@ -568,6 +703,13 @@ The agent's first response must briefly explain:
 The first input request should normally ask for useful whole-bike overview
 photos, such as drive-side and non-drive-side views, while offering the guided
 manual overview as an equally valid photo-free path.
+
+Because photos are optional, an inspection photo request must use
+`required: false` and `min_artifacts` of zero or null. It must expose a
+photo-free continuation choice, using the stable choice value
+`continue_without_photo`, when the requested check has not already been
+assessed. Selecting it submits an ordinary text/choice turn and causes the
+agent to guide the corresponding manual observation.
 
 ### 9.2 Accepted-Turn Execution
 
@@ -594,6 +736,17 @@ Preparation failures explicitly classified as transient may retry within the
 registered pre-boundary attempt policy. Once the effect boundary is crossed,
 the whole turn must never be replayed automatically. Section 20 defines the
 required product outcome for handled errors and interrupted execution.
+
+Each state-mutating inspection tool call performs one fenced, atomic product
+transaction before returning success. The worker reuses its one executor-owned
+database session across those transactions; tools do not create independent
+sessions. Therefore a later model or runner failure does not roll back a
+previously committed check result, safety flag, or input request. Failure
+terminalization preserves those writes, emits the safe error/completion pair,
+and leaves the session accepting a later turn under the preserved input request
+when one exists, or a free-text retry otherwise. If report completion already
+committed, it is the terminal product outcome and later runner cleanup must not
+reopen the session.
 
 ### 9.3 Normal Turn
 
@@ -720,6 +873,11 @@ the strict server-seeded context; the model must not invent IDs. Every
 or to an already-durable finding being refined. Findings must not be attached
 to unsupported check IDs.
 
+All checks supporting one V1 finding must belong to the same stable manifest
+section. The backend derives the finding `area` from that section; the model
+does not supply it. Related observations across different sections remain
+separate findings in V1.
+
 The backend must validate finding consistency before persistence. A finding
 may be supported only by `attention_needed` or `unsafe_condition` results. If
 any supporting result is `unsafe_condition`, the finding must use
@@ -736,7 +894,8 @@ The tool must:
 
 - reject unknown or non-applicable check IDs
 - reject applicability resolutions for non-conditional checks, already-resolved
-  checks, or resolutions without explicit supporting evidence
+  checks, checks that already have a terminal result, or resolutions without
+  explicit supporting evidence
 - reject unsupported status values
 - validate that cited artifacts are owned, available, inspection-purpose
   images associated with this bike session, and allowed in the current context
@@ -749,7 +908,11 @@ The tool must:
 - atomically create or reconcile a blocking safety flag through the backend
   safety service whenever a result has status `unsafe_condition`, using the
   manifest's default safety code
-- be idempotent for an identical `(turn_id, canonical batch payload)`
+- be idempotent for an identical `(turn_id, canonical batch payload)`; the
+  implementation may persist the canonical payload hash and response at this
+  internal seam
+- allow multiple disjoint batches in one turn while returning the original
+  response for an exact repeated batch
 - reject conflicting repeated writes for the same check in one turn
 - validate the batch atomically
 - derive progress and next-check selection in backend code
@@ -770,6 +933,15 @@ next_check?:
   title
   accepted_inputs[]
 ```
+
+`accepted_inputs` uses the existing values `text`, `photo`,
+`multiple_choice`, and `confirmation`; inspection does not return `decision`
+or `none` there. It describes usable affordances, not sufficient evidence.
+Every V1 check accepts a guided text or choice report, and `photo` is always an
+optional supplement subject to the manifest's qualifying-evidence rule.
+`next_check.section` is the stable section ID and `next_check.title` is that
+section's manifest display title; detailed check wording remains in the input
+request prompt.
 
 Returning `next_check` from this tool eliminates the need for a separate
 progress-read tool.
@@ -805,6 +977,12 @@ The tool must reuse the existing input-request persistence and event semantics.
 It must additionally verify that the referenced checks are applicable and
 pending or legitimately need clarification.
 
+For inspection, the backend must reject a required photo-only request, a
+positive `min_artifacts`, media types outside the accepted inspection-image
+set, or artifact counts above the shared turn limit. `accepted_inputs` in a
+next-check projection is a presentation hint drawn from the manifest; it does
+not weaken the result evidence validator.
+
 The agent should normally request one coherent user action. Common choices may
 include “Looks normal,” “I found something,” “I cannot check this,” and “Skip
 this check.” User-facing wording remains contextual rather than fixed by this
@@ -815,17 +993,18 @@ spec.
 Purpose: reuse server-owned safety validation, persistence, session-state
 derivation, and `safety.escalated` events for inspection concerns.
 
-Model-visible input retains the existing safety-flag shape:
+Model-visible input retains the existing safety-flag fields that require model
+judgment:
 
 ```text
 code
 severity
-phase
 message
 blocks_repair_instructions
 ```
 
-Inspection flags must use `phase: inspection`. The existing safety codes and
+The server injects `phase: inspection` from strict tool context; the model must
+not supply it. The existing safety codes and
 severity rules should be reused where applicable, including frame/fork damage,
 brake failure, carbon damage, e-bike electrical concern, suspension concern,
 safety-critical fastener damage, insufficient evidence, contradictory
@@ -841,11 +1020,8 @@ Purpose: validate readiness, derive canonical report coverage, persist one
 inspection report, reconcile safety, transition the session, and emit report
 and transition events.
 
-Model-visible input:
-
-```text
-summary
-```
+Model-visible input is an empty object. The model does not author report
+fields.
 
 The agent must not resend checklist coverage, check results, findings, or
 limitations. The backend derives those from durable inspection state.
@@ -861,6 +1037,9 @@ The tool must:
   either value
 - derive coverage, findings, limitations, and evidence references from stored
   state
+- derive a bounded summary from the outcome, finding count, highest-priority
+  next action, and incomplete coverage; identical durable state must produce
+  identical summary text
 - reconcile all active safety flags
 - verify the derived outcome and ride guidance reflect all blocking evidence
 - persist at most one report for the inspection phase session
@@ -920,6 +1099,16 @@ InspectionReportV1
 
 `inspection_session_id` is the public bike-session ID for the inspection. It
 is not an ADK session ID or the opaque internal inspection phase-session ID.
+
+`summary` is server-authored from durable state for both normal and early
+completion. It must not contain a positive safety certification. The template
+wording is implementation-owned within `inspection_report.v1`, but its inputs
+and result must be deterministic and at most 1,000 characters.
+`key_artifact_ids` is the first 12 IDs from the ordered unique set
+of artifacts cited by durable findings, followed by artifacts cited by
+`unsafe_condition` or `attention_needed` check results, each group ordered by
+manifest check order and then artifact ID. It is empty when no such artifact
+exists.
 
 ### 12.1 Scope
 
@@ -1010,6 +1199,22 @@ artifact_ids[]
 
 Coverage status must distinguish assessed, partially assessed, skipped,
 unable-to-assess, and not-applicable areas.
+
+At report creation every applicable check is terminal. For each stable section,
+the backend excludes `not_applicable` checks and derives coverage as follows:
+
+1. If no check remains applicable, the area is `not_applicable`.
+2. If every applicable check is `no_issue_observed`, `attention_needed`, or
+   `unsafe_condition`, the area is `assessed`.
+3. If every applicable check is `skipped`, the area is `skipped`.
+4. If every applicable check is `unable_to_assess`, the area is
+   `unable_to_assess`.
+5. Every other terminal mixture is `partially_assessed`.
+
+`check_ids` follow manifest order. `artifact_ids` are the ordered unique IDs
+cited by those checks. `evidence_summary` is a bounded server composition of
+their stored observations and limitations; it must not introduce a diagnosis
+or claim that an area passed.
 
 ### 12.6 Findings
 
@@ -1116,6 +1321,8 @@ The durable model must support:
 - one inspection report associated with the inspection phase session
 - `inspection` report type and `inspection_report.v1` schema version
 - an inspection report reference in the session's latest-report projection
+- immutable structured repair-session origin provenance for finding handoff,
+  with a uniqueness constraint on `(inspection_session_id, finding_id)`
 - owner-scoped indexes for inspection discovery and resumption
 - a database-enforced partial uniqueness invariant allowing at most one
   nonterminal inspection session per bike
@@ -1144,6 +1351,12 @@ turn may refine a result, but the update must retain prior evidence references
 and must not silently replace a more severe safety result with a less severe
 one. Full public revision history is not required in V1.
 
+The generic session cutover also replaces the bike-profile projection
+`has_repair_sessions` with `has_sessions`. It is true when the owner has any
+repair or inspection session for the bike. A bike with any session history may
+not be deleted; the database constraint remains authoritative and the public
+field is only a UI hint.
+
 Database migrations are authoritative. Updating persistence models without a
 migration does not implement this feature.
 
@@ -1159,6 +1372,7 @@ GET  /v1/sessions
 GET  /v1/sessions/{sessionId}
 POST /v1/sessions/{sessionId}/turns
 GET  /v1/sessions/{sessionId}/events
+POST /v1/sessions/{sessionId}/decision
 GET  /v1/sessions/{sessionId}/reports
 GET  /v1/sessions/{sessionId}/reports/{reportId}
 POST /v1/sessions/{sessionId}/completion
@@ -1170,6 +1384,19 @@ and inspection workflows. V1 does not require compatibility aliases or
 preservation of existing development-app data. Backend and Android changes
 must move to `/v1/sessions` together. Public callers must not choose an ADK
 agent, prompt, model, job kind, workload, or worker.
+
+The public schema names and fields also become workflow-neutral: `BikeSession`
+replaces `RepairSession`, and turn acceptances, event envelopes, reports, and
+artifact requests use `session_id` rather than `repair_session_id`. The report
+envelope retains workflow-specific report types, while its parent reference is
+generic. `latest_reports` contains the existing repair report IDs plus nullable
+`inspection_report_id`.
+
+The workflow-neutral decision path preserves the existing repair decision
+request and behavior and rejects inspection sessions with
+`session_state_conflict`. The cancellation request introduced below applies to
+inspection in V1; repair closure continues to use the canonical repair
+completion behavior.
 
 ### 14.2 Session Creation
 
@@ -1183,10 +1410,22 @@ Inspection creation uses:
 }
 ```
 
+`workflow` is required for every generic create request; the server does not
+infer it from an omitted value. `origin` is accepted only with
+`workflow: repair` and only in the strict finding-handoff shape below. Unknown
+fields are rejected. Ordinary repair creation otherwise preserves its existing
+request behavior.
+
 The response must include `workflow: inspection`, `phase: inspection`,
 `status: created`, `inspection_progress`, the checklist version or a stable
 inspection-state reference, `latest_reports.inspection_report_id`, and the
 existing event cursor and timestamps.
+
+The generic session schema includes `workflow` for every session.
+`inspection_progress` and `checklist_version` are present for inspection and
+null for repair. Existing repair progress fields remain workflow-specific.
+`origin` is null for ordinary creation and contains the bounded structured
+finding origin for a repair created by handoff.
 
 Session creation must preserve the existing owner-scoped not-found and
 idempotency-conflict behavior.
@@ -1209,6 +1448,11 @@ report rather than the live conversation. Failed and cancelled sessions show
 their terminal state without inventing a report and allow the user to start a
 new inspection.
 
+Both `bike_id` and `workflow` filters are optional and may be combined. Results
+remain owner-scoped, newest first, and use the existing cursor pagination. If
+`workflow` is omitted, both workflows are returned. Android should request an
+explicit workflow when presenting a workflow-specific resume screen.
+
 ### 14.4 Turns
 
 Inspection turns use the existing `ai_turn.v1` message shape, client-turn
@@ -1226,6 +1470,10 @@ the original acceptance and creates no new job. Acceptance must not call ADK,
 depend on ADK storage or NATS availability, publish directly to JetStream, or
 create an in-process task. Turn dispatch derives the workflow from persisted
 session state; public callers cannot choose a job kind or handler.
+
+The generic acceptance response uses `session_id`, the generic event-stream
+URL, the accepted turn ID, start-event ID, and the authoritative `BikeSession`
+snapshot. It must not retain a `repair_session_id` alias.
 
 Inspection image turns do not create `profile_inference` jobs in V1. Image
 normalization and observation extraction, when enabled, run as part of the
@@ -1256,6 +1504,28 @@ finding handoff and approved evidence references, not the full inspection
 transcript. Multi-finding selection and grouped handoff are not supported in
 V1.
 
+Handoff is allowed only when the source inspection is completed, the finding
+is present in its durable report, and its next action is `start_diagnostic`.
+The eligible evidence set is exactly the ready image artifacts cited directly
+by that finding. Session creation atomically persists the immutable origin,
+creates associations from those artifacts to the new repair session, and
+creates the repair session; it does not invoke a model or copy bytes.
+
+At most one repair session may originate from a given inspection finding. An
+exact `client_session_id` replay returns the original session. A different
+request for an already-handed-off finding returns
+`finding_already_handed_off` with owner-safe details containing the existing
+repair session ID. The first diagnostic turn remains an ordinary client turn;
+the diagnostic context includes the structured finding and eligible evidence
+so the user need not restate the complaint. The inspection transcript is never
+replayed into diagnostic context.
+
+The seeded diagnostic projection contains the finding, its supporting check
+observations, artifact IDs, and already-stored normalized visual observations.
+It does not automatically replay historical image bytes or rerun inspection
+image extraction. Diagnostic may request a new or more targeted current-turn
+image when the carried evidence is insufficient.
+
 ### 14.6 Early Inspection Completion
 
 The confirmed “Finish inspection now” action uses:
@@ -1281,12 +1551,19 @@ limitations, derive and persist the inspection report, and transition the
 session to `completed`. The response includes the authoritative completed
 session and inspection report.
 
+For early completion, an `unresolved` conditional check is treated as
+provisionally applicable and receives `skipped`; the operation does not invent
+an absence resolution. The report therefore retains the resulting coverage
+gap. The server-authored `ended_early` limitation is added once per affected
+area in addition to the required per-check limitations.
+
 `client_completion_id` is required for idempotency. An exact retry returns the
 existing completed session and report; reuse with a different canonical
 payload fails with the stable idempotency-conflict behavior. The operation is
 valid for inspection sessions in `created`, `awaiting_user`, or
 `blocked_safety`. A session with a running turn returns a conflict rather than
-racing that turn, and Android must disable the action while a turn is active.
+racing that turn, using `session_busy`, and Android must disable the action
+while a turn is active.
 Normal completion after all checks are resolved continues to use the
 `complete_inspection` agent tool.
 
@@ -1314,11 +1591,11 @@ Cancellation is an authenticated, owner-scoped, product-owned operation and
 must not invoke a model. `client_cancellation_id` is required for idempotency;
 an exact retry returns the existing cancelled session. Cancelling an already
 cancelled session also returns its authoritative snapshot. Cancelling a
-completed session fails with the existing stable conflict behavior.
+completed session fails with `session_state_conflict`.
 
 V1 cancellation is valid only in `created`, `awaiting_user`, or
 `blocked_safety`. A session in `running` has an outstanding durable turn and
-returns a stable conflict; Android must disable cancellation until the turn
+returns `session_busy`; Android must disable cancellation until the turn
 settles. This deliberately avoids adding business cancellation to the generic
 job lifecycle or assuming task cancellation can stop an external model call.
 Cancellation creates no report. The response includes the authoritative
@@ -1366,6 +1643,10 @@ Inspection-specific event payload rules are:
 - `phase.transitioned` moves from `inspection` to `completed`
 - safety events may carry inspection-phase flags
 
+The shared event envelope uses `session_id`; payloads do not expose a
+repair-named parent field. Existing workflow-specific payload fields remain
+unchanged when their meaning is genuinely repair-specific.
+
 Unknown additive event types must continue to be ignored by older Android
 clients while their cursors advance normally.
 
@@ -1394,6 +1675,14 @@ Inspection photos reuse the diagnostic image policy and implementation:
 - safe normalization and visual-observation extraction rollout modes
 - no public storage paths, bucket names, provider objects, or signed URLs
 
+The workflow-neutral multipart upload replaces `repair_session_id` with
+`session_id`. The server loads that owned session, derives its bike, validates
+that `purpose` is allowed for its workflow, stores the artifact as immutable
+bike-owned evidence, and creates its initial session association. The public
+artifact projection includes `bike_id` but does not expose the complete set of
+session associations. Session-scoped listing and turn validation use the
+association table internally.
+
 ### 16.3 Cross-Session Evidence
 
 An inspection photo may support a later repair session. Artifact bytes must
@@ -1406,6 +1695,13 @@ it may create a new app-owned reference to the same immutable stored object,
 but ownership and provenance must remain explicit and storage bytes must not be
 duplicated.
 
+The canonical V1 model is one immutable artifact record plus a unique
+association row per `(artifact_id, bike_session_id)`. The association records
+provenance (`uploaded` or `finding_handoff`) and creation time. It does not
+change artifact purpose, bike ownership, content hash, or storage identity.
+An intermediate second reference is permitted only during the coordinated
+cutover and must not become the steady-state design.
+
 Turn acceptance must verify that every referenced artifact is owned, associated
 with the active bike session, available, inspection-purpose when used for
 inspection, and an accepted image type.
@@ -1414,6 +1710,30 @@ Automatic bike-profile inference from inspection photos is not required by
 this spec. V1 must not record a profile-inference job for an inspection turn.
 It may be enabled later only under the canonical profile-inference rules and a
 versioned job-acceptance update.
+
+### 16.4 Public Error Codes
+
+The OpenAPI update must record these inspection-specific errors using the
+existing `ErrorResponse` envelope:
+
+| Status | Code | Case and bounded details |
+|---:|---|---|
+| `404` | `not_found` | An owned session, bike, finding, report, or artifact is not visible to the caller. No foreign identifier is disclosed. |
+| `409` | `active_inspection_exists` | Another nonterminal inspection exists for the bike; details contain `session_id`. |
+| `409` | `finding_already_handed_off` | The finding already created a repair session; details contain that owned `session_id`. |
+| `409` | `session_busy` | Completion or cancellation was requested while a turn is outstanding. |
+| `409` | `session_state_conflict` | The workflow, phase, status, or requested operation is incompatible. |
+| `409` | `idempotency_conflict` | A client idempotency key was reused with a different canonical payload. |
+| `409` | `artifact_not_ready` | A referenced owned artifact is still processing. |
+| `422` | `validation_error` | The request shape, filter, artifact purpose, or workflow-specific payload is invalid. |
+
+Where the table permits an existing-session reference, details use exactly
+`{"session_id": "ses_..."}`. Other cases use the existing bounded validation
+detail shapes from the canonical error contract.
+
+Internal tool validation may return bounded missing or invalid check IDs, but
+must not expose prompts, storage data, job state, execution authority, or model
+content.
 
 ## 17. Backend Module Shape
 
@@ -1432,6 +1752,22 @@ creates or loads the appropriate phase state, and identifies the registered
 turn job to record. Routes must not import an inspection or diagnostic agent,
 worker handler, or JetStream adapter directly.
 
+The workflow seam is a static application registry with exactly the shipped
+repair and inspection adapters in V1; it is not a dynamic plugin system. Its
+interface must cover only the variation needed by shared turn acceptance:
+
+```text
+validate_turn(session, accepted_input) -> ValidatedWorkflowTurn
+ensure_phase_state(session) -> PhaseStateReference
+turn_job(validated_turn) -> TypedJobInstruction
+settled_status(session) -> SessionStatus
+```
+
+Ownership, idempotency, event allocation, transaction control, and job
+recording remain in the shared conversation implementation rather than being
+repeated by adapters. Workflow-specific checklist or diagnostic rules remain
+behind the corresponding adapter.
+
 The shared module must hide persistence renaming and queue mechanics from
 callers. It must not become a registry of checklist, diagnostic, report, or
 prompt rules; those remain local to workflow modules.
@@ -1443,10 +1779,16 @@ applicability, current state, result validation, progress calculation, and
 next-check selection. Its interface should remain small:
 
 ```text
+initialize(session_id, resolved_profile) -> InspectionState
 load_state(session_id) -> InspectionState
 record_results(session_id, turn_id, results) -> InspectionState
 validate_completion(session_id) -> CompletionState
 ```
+
+`initialize` snapshots the manifest version and per-check applicability once
+during session creation. Early completion uses the same result-validation and
+report modules with a server-authored skipped batch; it does not require a
+second checklist implementation.
 
 ADK tools adapt this interface; they do not duplicate its rules.
 
@@ -1507,6 +1849,10 @@ atomically restores the session to its derived user-recoverable status,
 appends one safe `error` event, appends the immediately following
 `turn.completed` event, and applies the corresponding terminal job outcome.
 
+If inspection completion already committed, terminalization treats the durable
+completed session as success, idempotently ensures the turn's
+`turn.completed` event, emits no recoverable error, and never reopens it.
+
 Maintenance recovery must call that same module through the job-kind recovery
 policy. It must not reconstruct inspection state heuristically or invoke ADK.
 
@@ -1525,6 +1871,11 @@ Android must provide:
 
 When creation returns `active_inspection_exists`, Android must open the
 returned owned inspection session rather than showing a generic failure.
+
+Bike lists use `has_sessions` only as a history/deletion hint. Inspection
+resume discovery calls `/v1/sessions` with both `bike_id` and
+`workflow=inspection`; it must not infer inspection history from the hint or
+mix repair sessions into the chooser.
 
 ### 18.2 Conversation Reuse
 
@@ -1549,6 +1900,8 @@ The inspection chat must:
 
 - show the current section and completed/total progress
 - support text, choices, confirmations, camera, and gallery input
+- render `continue_without_photo` beside an optional photo request and continue
+  into the guided manual path without treating the absence of a photo as error
 - show per-photo upload progress and retry
 - disable conflicting input while a turn is active
 - reconstruct the conversation from durable events on resume
@@ -1595,8 +1948,8 @@ The backend must ensure:
 - blocking flags set `safety_state: blocked`
 - an `unsafe_condition` result and its blocking safety escalation persist in
   one transaction, so an unsafe result can never leave the session unblocked
-- blocking concerns produce `do_not_ride` or
-  `professional_assessment_required` ride guidance
+- blocking concerns produce `do_not_ride` ride guidance; warning concerns may
+  produce `professional_assessment_required`
 - an unsafe check result cannot be downgraded merely by later model text
 - active safety flags appear in the final report
 - completion remains possible when unsafe checks are stopped and limitations
@@ -1640,7 +1993,9 @@ Job outcomes follow these rules:
   event, restores the session to `blocked_safety` when a blocking flag remains
   active and otherwise `awaiting_user`, appends the immediately following
   `turn.completed`, and then settles the job as succeeded. Here job success
-  means a durable product outcome, not a successful model answer.
+  means a durable product outcome, not a successful model answer. This recovery
+  path does not run when inspection completion already committed; that durable
+  completion remains successful.
 - Exhausted or permanent pre-boundary failure atomically marks the job dead and
   writes that same recoverable public error/completion pair without invoking
   ADK.
@@ -1661,6 +2016,8 @@ in production or production-parity integration tests.
 Backend unit and contract tests must cover:
 
 - workflow/phase/status combinations
+- every allowed and rejected inspection state transition, including phase
+  preservation on cancellation and failure
 - owner-scoped creation, reads, listing, turns, reports, findings, and artifacts
 - concurrent creation and one-active-inspection-per-bike enforcement
 - session, turn, upload, result-write, and completion idempotency
@@ -1676,20 +2033,26 @@ Backend unit and contract tests must cover:
 - deterministic ADK ensure/bind, restart resume, and missing-bound-session
   failure
 - checklist version snapshots and applicability
+- exact resolved-profile applicability mappings and session-local resolution
 - progress calculation and next-check selection
-- batch result validation and atomicity
-- skipped, unable-to-assess, and not-applicable coverage
-- safety escalation and unsafe-result downgrade prevention
+- batch result validation, atomicity, exact replay, and disjoint same-turn calls
+- allowed result refinements, finding monotonicity, and contradictory evidence
+- assessed, mixed, skipped, unable-to-assess, and not-applicable area coverage
+- safety escalation, monotonic flags, and unsafe-result downgrade prevention
 - completion rejection for missing checks or unsupported findings
-- report derivation from durable state
-- cross-session artifact association and finding handoff
+- deterministic summary, outcome, guidance, coverage, and key-artifact derivation
+- early completion with unresolved conditional checks
+- generic artifact upload/association and finding handoff
+- one-repair-per-finding enforcement and exact handoff idempotency
+- `has_sessions` behavior and deletion protection for inspection-only history
 - event sequencing, persistence-before-fan-out, cursor replay, SSE reconnect,
   heartbeat, and timeout behavior
 - public schema/OpenAPI alignment
 - runner event normalization, tool wrappers, orchestration, and setup-failure
   recovery with fakes
 - generic bike-session migration and unchanged diagnostic behavior through the
-  new shared model, routes, event log, artifacts, reports, and worker
+  new shared model, routes, decision path, event log, artifacts, reports, and
+  worker
 
 Tests must not make live model, network, database, storage, or provider calls
 when a deterministic adapter is sufficient.
@@ -1743,35 +2106,40 @@ existing local-only trace-content policy.
 
 Implement the vertical slice in this order:
 
-1. Generalize the shared aggregate and persistence names to `BikeSession`,
+1. Synchronize this design into `docs/specs/openapi.yaml` and
+   `docs/specs/android/mvp-spec.md`, including the state matrix, errors,
+   artifact upload, reports, and finding origin. Record one repository-wide
+   ADR for the generic aggregate, breaking development-only route/ID cutover,
+   and bike-owned artifact associations.
+2. Generalize the shared aggregate and persistence names to `BikeSession`,
    `bike_sessions`, generic phase sessions, turns, events, reports, and
    session-artifact associations. Replace development-only data rather than
    adding compatibility storage.
-2. Move OpenAPI and Android from `/v1/repair-sessions` to `/v1/sessions`, add
+3. Move the backend and Android from `/v1/repair-sessions` to `/v1/sessions`, add
    the workflow discriminator, and prove the existing repair diagnostic flow
    unchanged through the generic contract.
-3. Generalize the interactive agent-turn execution authority, terminalization
+4. Generalize the interactive agent-turn execution authority, terminalization
    interface, and worker composition so diagnostic behavior retains its
    current queue-only guarantees without retaining repair-only shared names.
-4. Add inspection persistence migrations for state, applicability, check
+5. Add inspection persistence migrations for state, applicability, check
    results, findings, report associations, and the one-active-inspection
    invariant.
-5. Implement and test the inspection-plan, safety, report, early-completion,
+6. Implement and test the inspection-plan, safety, report, early-completion,
    cancellation, and finding-handoff modules without an agent.
-6. Generalize shared image preparation and artifact handling for
+7. Generalize shared image preparation and artifact handling for
    `inspection_photo`, with inspection-triggered profile inference disabled.
-7. Implement `inspection_turn.v1`, its handler, effect/retry policy, recovery
+8. Implement `inspection_turn.v1`, its handler, effect/retry policy, recovery
    policy, and terminalization. Deploy the expanded worker registry while the
    API producer remains disabled.
-8. Add strict inspection tool context, the four ADK tool adapters, the single
+9. Add strict inspection tool context, the four ADK tool adapters, the single
    inspection agent, prompt, runner normalization, and fenced orchestration.
-9. Verify restart, duplicate delivery, pre-boundary recovery, post-boundary
+10. Verify restart, duplicate delivery, pre-boundary recovery, post-boundary
    interruption, stale-write rejection, cross-process SSE wake-ups, and
    diagnostic/inspection capacity in production-parity integration tests.
-10. Enable API production of inspection jobs, then add Android inspection
+11. Enable API production of inspection jobs, then add Android inspection
     creation, chat, progress, report, and finding handoff behind a rollout
     gate.
-11. Complete agent evaluations, privacy checks, observability, operational
+12. Complete agent evaluations, privacy checks, observability, operational
     inspection, and rollback evidence before general release.
 
 Each stage must keep the diagnostic workflow passing. Agent prompt behavior
