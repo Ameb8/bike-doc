@@ -885,7 +885,7 @@ async def test_trusted_definition_failure_repairs_only_valid_product_identity(
     context, error
 ):
     from bike_doc_api.repositories.background_jobs import JobError, ResolutionKind
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     _, sessions, job, repair_id, *_ = context
     # The stored definition is immutable: seed a separate poison row rather than
@@ -898,7 +898,7 @@ async def test_trusted_definition_failure_repairs_only_valid_product_identity(
             instruction = {"turn_id": "private malformed"}
         elif error == "missing":
             instruction = {}
-        poison = await DiagnosticJobRepository(session).record(
+        poison = await interactive_job_repository(session).record(
             JobRecord(
                 "diagnostic_turn",
                 "diagnostic",
@@ -908,11 +908,15 @@ async def test_trusted_definition_failure_repairs_only_valid_product_identity(
                 3,
             )
         )
-        result = await DiagnosticJobRepository(session).resolve_delivery(
+        result = await interactive_job_repository(session).resolve_delivery(
             job_id=poison.id,
             generation=1,
             workload_class="diagnostic",
-            validate_definition=lambda _: JobError.INPUT_INVALID,
+            validate_definition=lambda _: (
+                JobError.VERSION_UNSUPPORTED
+                if error == "version"
+                else JobError.INPUT_INVALID
+            ),
         )
         assert result.kind == ResolutionKind.DEFINITION_FAILURE
     row, repair, events = await _terminal_events(context)
@@ -935,13 +939,13 @@ async def test_preboundary_outcomes_commit_before_settlement(context, outcome):
         JobError,
         JobOutcome,
     )
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     _, sessions, job, *_ = context
     current = None
     for attempt in range(3 if outcome == "exhausted" else 1):
         async with sessions() as session, session.begin():
-            repo = DiagnosticJobRepository(session)
+            repo = interactive_job_repository(session)
             current = (
                 await repo.resolve_delivery(
                     job_id=job.id,
@@ -954,7 +958,7 @@ async def test_preboundary_outcomes_commit_before_settlement(context, outcome):
             ).job
         assert current.execution_token
         async with sessions() as session, session.begin():
-            result = await DiagnosticJobRepository(session).apply_outcome_and_load(
+            result = await interactive_job_repository(session).apply_outcome_and_load(
                 job_id=job.id,
                 execution_token=current.execution_token,
                 outcome=JobOutcome("dead", JobError.PERMANENT_FAILURE)
@@ -977,7 +981,7 @@ async def test_preboundary_outcomes_commit_before_settlement(context, outcome):
     # Completion/NAK is lost; an eventual delivery must not execute early or revive.
     async with sessions() as session, session.begin():
         resolved = (
-            await DiagnosticJobRepository(session).resolve_delivery(
+            await interactive_job_repository(session).resolve_delivery(
                 job_id=job.id,
                 generation=1,
                 workload_class="diagnostic",
@@ -1002,10 +1006,10 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
     from unittest.mock import AsyncMock
 
     from bike_doc_api.maintenance.runtime import JobMaintenance
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
     from bike_doc_api.repositories.interactive_turn_execution import (
         InteractiveTurnExecutionFence,
     )
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 
     settings, sessions, job, *_ = context
@@ -1018,7 +1022,7 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
     @asynccontextmanager
     async def transaction():
         async with sessions() as session, session.begin():
-            yield DiagnosticJobRepository(session)
+            yield interactive_job_repository(session)
 
     host = JobMaintenance(
         settings,
@@ -1040,7 +1044,7 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
         assert repair.status == "running"
         assert [e.type for e in events] == ["turn.started"]
     async with sessions() as session, session.begin():
-        assert not await DiagnosticJobRepository(session).advance_publication(
+        assert not await interactive_job_repository(session).advance_publication(
             job_id=job.id,
             observed_generation=row.desired_generation,
             no_progress_before=datetime.now(UTC),
@@ -1053,8 +1057,8 @@ async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emit
     context, monkeypatch
 ):
     from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
     from bike_doc_api.repositories.events import RepairSessionEventRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     _, sessions, job, *_ = context
     execution, _ = await _fencing_execution(context, duration=0.03)
@@ -1069,7 +1073,7 @@ async def test_crash_during_terminalization_rolls_back_then_racing_recovery_emit
 
     async def recover():
         async with sessions() as session, session.begin():
-            return await DiagnosticJobRepository(session).recover_expired(
+            return await interactive_job_repository(session).recover_expired(
                 job_id=job.id,
                 execution_token=execution.token,
                 outcome=JobOutcome("dead", JobError.ATTEMPTS_EXHAUSTED),
@@ -1095,7 +1099,7 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
 ):
     from datetime import UTC, datetime
 
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
     from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
     from bike_doc_api.workers.diagnostic_application import (
@@ -1132,7 +1136,7 @@ async def test_crash_after_product_commit_before_job_settlement_is_success(
         max(0, (execution.deadline - datetime.now(UTC)).total_seconds()) + 0.05
     )
     async with sessions() as session, session.begin():
-        repo = DiagnosticJobRepository(session)
+        repo = interactive_job_repository(session)
         recovered = await repo.recover_expired_and_load(
             job_id=job.id,
             execution_token=execution.token,
@@ -1168,7 +1172,7 @@ async def test_terminal_delivery_after_commit_and_ack_loss_is_attempt_free(
     context, state
 ):
     from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     settings, sessions, job, _, model, resources, _ = context
     execution, _ = await _fencing_execution(context)
@@ -1180,7 +1184,7 @@ async def test_terminal_delivery_after_commit_and_ack_loss_is_attempt_free(
         async with sessions() as session:
             await InteractiveTurnExecutionFence(session, execution).cross_boundary()
     async with sessions() as session, session.begin():
-        assert await DiagnosticJobRepository(session).apply_outcome(
+        assert await interactive_job_repository(session).apply_outcome(
             job_id=job.id,
             execution_token=execution.token,
             outcome=JobOutcome(state, JobError.PERMANENT_FAILURE),
@@ -1213,7 +1217,7 @@ async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
         ExecutionPolicy,
         ResolutionKind,
     )
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 
     _, sessions, job, *_ = context
@@ -1221,7 +1225,7 @@ async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
     policy = DiagnosticRecoveryPolicy(0.01)
     for attempt in range(1, 4):
         async with sessions() as session, session.begin():
-            result = await DiagnosticJobRepository(session).resolve_delivery(
+            result = await interactive_job_repository(session).resolve_delivery(
                 job_id=job.id,
                 generation=generation,
                 workload_class="diagnostic",
@@ -1233,7 +1237,7 @@ async def test_expired_preboundary_attempt_budget_exhausts_atomically(context):
         assert result.job.attempt_count == attempt
         await asyncio.sleep(0.03)
         async with sessions() as session, session.begin():
-            assert await DiagnosticJobRepository(session).recover_expired(
+            assert await interactive_job_repository(session).recover_expired(
                 job_id=job.id,
                 execution_token=result.job.execution_token,
                 outcome=policy.expired_outcome(result.job),
@@ -1300,17 +1304,17 @@ async def test_classified_retry_is_durable_before_real_delayed_nak(
 
 async def test_arbitrary_postboundary_failure_is_interrupted_without_retry(context):
     from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
     from bike_doc_api.repositories.interactive_turn_execution import (
         InteractiveTurnExecutionFence,
     )
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     _, sessions, job, *_ = context
     execution, _ = await _fencing_execution(context)
     async with sessions() as session:
         await InteractiveTurnExecutionFence(session, execution).cross_boundary()
     async with sessions() as session, session.begin():
-        result = await DiagnosticJobRepository(session).apply_outcome_and_load(
+        result = await interactive_job_repository(session).apply_outcome_and_load(
             job_id=job.id,
             execution_token=execution.token,
             outcome=JobOutcome("dead", JobError.PERMANENT_FAILURE),
@@ -1454,7 +1458,7 @@ async def test_live_http_sse_with_external_diagnostic_process_and_rollback(
     from bike_doc_api.main import create_app
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
     from bike_doc_api.maintenance.runtime import JobMaintenance
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 
     settings, sessions, _initial, repair_id, *_ = context
@@ -1560,7 +1564,7 @@ asyncio.run(main())
     @asynccontextmanager
     async def transaction():
         async with sessions() as session, session.begin():
-            yield DiagnosticJobRepository(session)
+            yield interactive_job_repository(session)
 
     host = JobMaintenance(
         settings,
@@ -1740,17 +1744,17 @@ async def test_reconstruction_restores_diagnostic_without_replaying_reserved_eff
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
     from bike_doc_api.maintenance.reconstruction import reconstruct
     from bike_doc_api.maintenance.runtime import JobMaintenance
-    from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
     from bike_doc_api.repositories.interactive_turn_execution import (
         InteractiveTurnExecutionFence,
     )
+    from bike_doc_api.repositories.job_policies import interactive_job_repository
 
     settings, sessions, job, _, model, resources, _ = context
 
     @asynccontextmanager
     async def transaction():
         async with sessions() as session, session.begin():
-            yield DiagnosticJobRepository(session)
+            yield interactive_job_repository(session)
 
     policies = recovery_policies(settings)
     host = JobMaintenance(settings, transaction, NatsJobPublisher(settings), policies)

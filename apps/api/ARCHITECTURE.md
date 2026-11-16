@@ -744,10 +744,12 @@ unsettled; #151 owns the recovery/product-terminalization transaction.
 
 `repositories/diagnostic_terminalization.py:append_diagnostic_completion` owns
 the validated completion/error writes shared by orchestration and
-job recovery. `repositories/diagnostic_jobs.py:DiagnosticJobRepository` composes the generic
-transition hook with diagnostic product terminalization and the existing profile
-lifecycle hook. The diagnostic worker uses it for outcome and permanent-definition
-resolution; API maintenance uses it for both registered workloads. Every terminal
+job recovery. `repositories/job_terminalization.py:JobTerminalizationRepository` dispatches the
+transactional transition hook to registered job-kind product policies and composes
+the existing profile lifecycle hook. The diagnostic policy lives in
+`repositories/diagnostic_jobs.py`; worker and maintenance composition use the same
+policy registration without importing workflow agents. Unsupported versions never
+execute, but the diagnostic policy can repair a validated stored turn reference. Every terminal
 repair holds the job lock before the repair-session lock, validates the stored
 turn reference, and commits the job, `awaiting_user` state, validated error, and
 immediately following completion snapshot together. Terminal job state guards

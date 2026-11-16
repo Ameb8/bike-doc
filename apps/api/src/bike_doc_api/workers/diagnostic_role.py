@@ -25,7 +25,7 @@ from bike_doc_api.db.pool_observation import observe_pool
 from bike_doc_api.models.background_job import BackgroundJob
 from bike_doc_api.operations.health import dependencies, health_server
 from bike_doc_api.operations.monitoring import QueueMonitor
-from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+from bike_doc_api.repositories.job_policies import interactive_job_repository
 from bike_doc_api.workers.adapters import (
     NatsPullTransport,
     PostgresJobStore,
@@ -80,7 +80,9 @@ async def diagnostic_worker(
             runtime = create_workload_worker(
                 settings,
                 registry,
-                PostgresJobStore(sessions, repository_factory=DiagnosticJobRepository),
+                PostgresJobStore(
+                    sessions, repository_factory=interactive_job_repository
+                ),
                 NatsPullTransport(subscription, client=client),
             )
             previous_wakeups = get_event_wakeups()

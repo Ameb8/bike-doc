@@ -11,8 +11,8 @@ from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
 from bike_doc_api.maintenance.runtime import JobMaintenance, ReconciliationPolicy
 from bike_doc_api.operations.monitoring import QueueMonitor
 from bike_doc_api.repositories.background_jobs import BackgroundJobRepository
-from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
 from bike_doc_api.repositories.job_inspection import JobInspectionRepository
+from bike_doc_api.repositories.job_policies import interactive_job_repository
 from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 from bike_doc_api.workers.profile_inference import ProfileRecoveryPolicy
 
@@ -32,7 +32,7 @@ def create_job_maintenance(
     @asynccontextmanager
     async def transaction() -> AsyncIterator[BackgroundJobRepository]:
         async with sessions() as session, session.begin():
-            yield DiagnosticJobRepository(session)
+            yield interactive_job_repository(session)
 
     monitor = QueueMonitor(settings)
     monitoring = False
