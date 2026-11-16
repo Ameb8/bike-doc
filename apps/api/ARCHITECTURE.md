@@ -928,3 +928,10 @@ It owns no runtime behavior; Task 4.4 retains production-like process compositio
 See [QUEUE_CERTIFICATION.md](QUEUE_CERTIFICATION.md) for the two-clean-run release
 gate and bounded content-safe artifacts. New combined-delivery/retention tests
 remain with the existing shared-worker integration owner.
+
+The `services/inspection_plan/manifest.py` module owns immutable, versioned
+inspection checklist data, including evidence alternatives and inherited safe
+procedure boundaries. Deterministic services and seeded agent context resolve
+an exact retained version from this module; checklist definitions are not
+persisted as editable database content or sourced from prompts. Applicability
+and progress derivation are separate plan responsibilities.
