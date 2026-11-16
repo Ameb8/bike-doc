@@ -15,6 +15,15 @@ authoritative product and client behavior documents are
 [`docs/specs/openapi.yaml`](../../docs/specs/openapi.yaml); implementation
 details in this document should not be used to override either contract.
 
+## Agreed bike-session direction
+
+[ADR 0001](../../docs/adr/0001-generic-bike-session-cutover.md) defines the
+shared bike-session contract and coordinated API/client cutover. Repair and
+inspection use generic session, conversation and artifact interfaces while
+workflow-specific presentation stays with each workflow. Finding handoff uses
+structured origin and associated evidence. The diagnostic and repair-named
+interfaces described below reflect the current client implementation.
+
 ## Quick map
 
 ### What the app does

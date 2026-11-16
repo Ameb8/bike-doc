@@ -9,9 +9,11 @@ This repository is a monorepo. Read the context file for the area you are workin
 
 ## Relationships
 
-- Inspection sessions may produce inspection findings that seed new repair
-  sessions through a structured finding handoff.
+- Android and API share the bike-session contract; repair and inspection are
+  workflows on the same aggregate. Inspection findings can seed repair sessions
+  through structured finding handoff and associated evidence.
 
 ## Shared decisions
 
-- `docs/adr/` — Repository-wide architectural decisions.
+- [ADR 0001](docs/adr/0001-generic-bike-session-cutover.md) — Shared aggregate,
+  coordinated cutover, workflow dispatch, and evidence associations.

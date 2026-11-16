@@ -14,6 +14,17 @@ tests instead. The dedicated [ADK architecture](src/bike_doc_api/adk/ARCHITECTUR
 covers the agent package's internal graph, prompts, runner, sessions, and tool
 catalog in more depth.
 
+## Agreed bike-session direction
+
+[ADR 0001](../../docs/adr/0001-generic-bike-session-cutover.md) defines the
+coordinated target: a shared `BikeSession` and conversation module, with
+workflow-owned state selected by a static workflow adapter and worker handlers
+selected by registered job kind. Bike-owned immutable artifacts are associated
+with sessions, including finding-handoff provenance. Routes depend on shared
+services, not workflow agents or worker transport. The repair-named modules,
+routes and records described below document the current diagnostic
+implementation; they are not the canonical shared model after the cutover.
+
 ## Quick map
 
 ### What the service does
@@ -258,8 +269,9 @@ Models represent stored records: users and bikes; repair sessions, phase
 sessions, and turns; artifacts; ordered repair-session events; phase reports;
 and image-observation extraction runs. An extraction run is the one durable
 visual-evidence record for an accepted image-bearing turn; its ordered provider
-attempts are execution history rather than additional evidence. `repair_sessions.py` is the central persistence model for the
-long-lived product workflow. A repair session is app-owned; a phase-session
+attempts are execution history rather than additional evidence.
+`repair_sessions.py` is the current persistence model for the long-lived
+diagnostic workflow. A repair session is app-owned; a phase-session
 row maps a product phase to its opaque internal ADK session ID. Repositories
 encapsulate SQLAlchemy queries, including owner-scoped and `FOR UPDATE` reads;
 they return ORM models and do not decide public HTTP behavior.

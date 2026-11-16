@@ -13,6 +13,11 @@ workflow and persistence rules, see the service-wide
 [`apps/api/ARCHITECTURE.md`](../../../ARCHITECTURE.md) and the canonical
 specifications linked below.
 
+The diagnostic implementation described here predates the shared bike-session
+cutover. [ADR 0001](../../../../../docs/adr/0001-generic-bike-session-cutover.md)
+defines the target aggregate and dispatch boundaries; repair-named phase
+records below describe current implementation, not the shared canonical model.
+
 ## Quick map
 
 | Area | Owns | Key entry points |

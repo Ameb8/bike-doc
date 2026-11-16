@@ -10,7 +10,8 @@ This context covers the Android client experience for BikeDoc.
 ## Key concepts
 
 - A **bike session** is the durable product record for one guided workflow on
-  one bike; it is not the same thing as a chat screen or ADK session.
+  one bike, shared by repair and inspection; it is not a chat screen or ADK
+  session. The client uses the generic session contract for both workflows.
 - A **repair session** is the product record that tracks work for one bike
   through diagnostic, planning, and execution phases.
 - An **inspection session** guides a general-condition survey without requiring

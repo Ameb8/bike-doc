@@ -18,7 +18,9 @@ This context covers the FastAPI backend and its Google ADK-based agent backend.
 ## Language
 
 **Bike session**:
-The durable record for one guided workflow on one owned bike.
+The shared durable aggregate for one guided workflow on one owned bike.
+Shared conversation state belongs to it; workflow-specific state remains in
+workflow-owned records.
 _Avoid_: Chat session, ADK session
 
 **Repair session**:
