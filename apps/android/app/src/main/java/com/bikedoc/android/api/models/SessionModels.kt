@@ -7,22 +7,23 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNames
 
 @Serializable
-data class RepairSession(
+data class BikeSessionDto(
     val id: String,
     @SerialName("user_id")
     val userId: String = "",
     @SerialName("bike_id")
     val bikeId: String,
+    val workflow: String,
     val phase: String,
     val status: String,
     @SerialName("safety_state")
     val safetyState: String = "ok",
     @SerialName("current_input_request")
-    val currentInputRequest: InputRequest? = null,
+    val currentInputRequest: InputRequestDto? = null,
     @SerialName("execution_progress")
-    val executionProgress: ExecutionProgress? = null,
+    val executionProgress: ExecutionProgressDto? = null,
     @SerialName("latest_reports")
-    val latestReports: LatestReports = LatestReports(),
+    val latestReports: LatestReportsDto = LatestReportsDto(),
     @SerialName("latest_event_id")
     val latestEventId: String = "0",
     @SerialName("created_at")
@@ -32,27 +33,28 @@ data class RepairSession(
 )
 
 @Serializable
-data class RepairSessionCreate(
+data class BikeSessionCreateDto(
+    val workflow: String,
     @SerialName("bike_id")
     val bikeId: String,
 )
 
 @Serializable
-data class RepairSessionListResponse(
-    val items: List<RepairSession>,
+data class BikeSessionListResponseDto(
+    val items: List<BikeSessionDto>,
     @SerialName("next_cursor")
     val nextCursor: String? = null,
 )
 
 @Serializable
-data class InputRequest(
+data class InputRequestDto(
     val id: String,
     val type: String,
     val prompt: String = "",
     val required: Boolean = false,
     @SerialName("accepted_media_types")
     val acceptedMediaTypes: List<String> = emptyList(),
-    val choices: List<InputChoice> = emptyList(),
+    val choices: List<InputChoiceDto> = emptyList(),
     @SerialName("min_artifacts")
     val minArtifacts: Int? = null,
     @SerialName("max_artifacts")
@@ -64,50 +66,50 @@ data class InputRequest(
 
 @Serializable
 @OptIn(ExperimentalSerializationApi::class)
-data class InputChoice(
+data class InputChoiceDto(
     @JsonNames("value")
     val id: String,
     val label: String,
 )
 
 @Serializable
-data class TurnCreate(
+data class TurnCreateDto(
     @SerialName("schema_version")
     val schemaVersion: String = "ai_turn.v1",
     @SerialName("client_turn_id")
     val clientTurnId: String,
-    val message: UserTurnMessage,
+    val message: UserTurnMessageDto,
     @SerialName("responds_to_input_request_id")
     val respondsToInputRequestId: String? = null,
 )
 
 @Serializable
-data class UserTurnMessage(
+data class UserTurnMessageDto(
     val text: String? = null,
     @SerialName("artifact_ids")
     val artifactIds: List<String> = emptyList(),
 )
 
 @Serializable
-data class TurnAccepted(
+data class TurnAcceptedDto(
     @SerialName("turn_id")
     val turnId: String,
-    @SerialName("repair_session_id")
-    val repairSessionId: String,
+    @SerialName("session_id")
+    val sessionId: String,
     @SerialName("start_event_id")
     val startEventId: String,
     @SerialName("event_stream_url")
     val eventStreamUrl: String,
-    val session: RepairSession,
+    val session: BikeSessionDto,
 )
 
 @Serializable
-data class ArtifactRef(
+data class ArtifactRefDto(
     val id: String,
     @SerialName("user_id")
     val userId: String = "",
-    @SerialName("repair_session_id")
-    val repairSessionId: String? = null,
+    @SerialName("session_id")
+    val sessionId: String? = null,
     @SerialName("bike_id")
     val bikeId: String? = null,
     val purpose: String = "",
@@ -131,7 +133,7 @@ data class ArtifactRef(
 
 @Serializable
 data class ArtifactUploadResponse(
-    val artifact: ArtifactRef,
+    val artifact: ArtifactRefDto,
 )
 
 data class PreparedDiagnosticPhoto(
@@ -164,7 +166,7 @@ data class PreparedDiagnosticPhoto(
 }
 
 @Serializable
-data class ExecutionProgress(
+data class ExecutionProgressDto(
     @SerialName("current_step_index")
     val currentStepIndex: Int? = null,
     @SerialName("total_steps")
@@ -172,7 +174,7 @@ data class ExecutionProgress(
 )
 
 @Serializable
-data class LatestReports(
+data class LatestReportsDto(
     @SerialName("diagnostic_report_id")
     val diagnosticReportId: String? = null,
     @SerialName("plan_report_id")

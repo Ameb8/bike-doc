@@ -41,9 +41,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.bikedoc.android.R
-import com.bikedoc.android.api.models.InputRequest
 import com.bikedoc.android.sessions.models.ChatMessage
 import com.bikedoc.android.sessions.models.DeliveryState
+import com.bikedoc.android.sessions.models.InputRequest
 import com.bikedoc.android.sessions.models.Role
 import java.io.File
 

@@ -1,8 +1,9 @@
 package com.bikedoc.android.sessions.models
 
-import com.bikedoc.android.api.models.ArtifactRef
-import com.bikedoc.android.api.models.InputRequest
-import com.bikedoc.android.api.models.RepairSession
+import com.bikedoc.android.api.models.ArtifactRefDto
+import com.bikedoc.android.api.models.BikeSessionDto
+import com.bikedoc.android.api.models.InputRequestDto
+import com.bikedoc.android.api.toDomain
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -64,7 +65,7 @@ sealed class SseEvent {
     data class TurnCompleted(
         override val id: String?,
         val turnId: String,
-        val session: RepairSession,
+        val session: BikeSession,
     ) : SseEvent()
 
     data class Error(
@@ -90,7 +91,7 @@ sealed class SseEvent {
             data: String,
             json: Json,
         ): SseEvent {
-            val envelope = data.toRepairSessionEventEnvelope(json)
+            val envelope = data.toBikeSessionEventEnvelope(json)
             val eventType = envelope?.type ?: type
             val eventId = id ?: envelope?.id
             val payload = envelope?.data?.toString() ?: data
@@ -100,12 +101,12 @@ sealed class SseEvent {
                 ?: Unknown(eventId, eventType)
         }
 
-        private fun String.toRepairSessionEventEnvelope(json: Json): RepairSessionEventEnvelope? {
+        private fun String.toBikeSessionEventEnvelope(json: Json): BikeSessionEventEnvelope? {
             val root = runCatching { json.parseToJsonElement(this).jsonObject }.getOrNull()
             val type = root?.get("type")?.jsonPrimitive?.content
             val envelopeData = root?.get("data")
             return if (type != null && envelopeData != null) {
-                RepairSessionEventEnvelope(
+                BikeSessionEventEnvelope(
                     id = root["id"]?.jsonPrimitive?.content,
                     type = type,
                     data = envelopeData,
@@ -159,7 +160,7 @@ sealed class SseEvent {
     }
 }
 
-private data class RepairSessionEventEnvelope(
+private data class BikeSessionEventEnvelope(
     val id: String?,
     val type: String,
     val data: JsonElement,
@@ -202,16 +203,16 @@ private data class AssistantMessageCompletedPayload(
 @Serializable
 private data class InputRequestedPayload(
     @SerialName("input_request")
-    val inputRequest: InputRequest,
+    val inputRequest: InputRequestDto,
 ) {
-    fun toEvent(id: String?) = SseEvent.InputRequested(id, inputRequest)
+    fun toEvent(id: String?) = SseEvent.InputRequested(id, inputRequest.toDomain())
 }
 
 @Serializable
 private data class ArtifactReferencedPayload(
-    val artifact: ArtifactRef,
+    val artifact: ArtifactRefDto,
 ) {
-    fun toEvent(id: String?) = SseEvent.ArtifactReferenced(id, artifact)
+    fun toEvent(id: String?) = SseEvent.ArtifactReferenced(id, artifact.toDomain())
 }
 
 @Serializable
@@ -239,9 +240,9 @@ private data class PhaseTransitionedPayload(
 private data class TurnCompletedPayload(
     @SerialName("turn_id")
     val turnId: String,
-    val session: RepairSession,
+    val session: BikeSessionDto,
 ) {
-    fun toEvent(id: String?) = SseEvent.TurnCompleted(id, turnId, session)
+    fun toEvent(id: String?) = SseEvent.TurnCompleted(id, turnId, session.toDomain())
 }
 
 @Serializable

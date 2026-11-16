@@ -6,17 +6,17 @@ import androidx.lifecycle.viewModelScope
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.ArtifactRepository
 import com.bikedoc.android.api.SessionRepository
-import com.bikedoc.android.api.models.ArtifactRef
-import com.bikedoc.android.api.models.InputRequest
 import com.bikedoc.android.api.models.PreparedDiagnosticPhoto
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.TurnCreate
-import com.bikedoc.android.api.models.UserTurnMessage
 import com.bikedoc.android.core.IoDispatcher
+import com.bikedoc.android.sessions.models.ArtifactRef
+import com.bikedoc.android.sessions.models.BikeSession
 import com.bikedoc.android.sessions.models.ChatMessage
 import com.bikedoc.android.sessions.models.DeliveryState
+import com.bikedoc.android.sessions.models.InputRequest
 import com.bikedoc.android.sessions.models.Role
 import com.bikedoc.android.sessions.models.SseEvent
+import com.bikedoc.android.sessions.models.TurnCreate
+import com.bikedoc.android.sessions.models.UserTurnMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -33,7 +33,7 @@ import javax.inject.Inject
 import kotlin.random.Random
 
 data class DiagnosticChatUiState(
-    val session: RepairSession? = null,
+    val session: BikeSession? = null,
     val messages: List<ChatMessage> = emptyList(),
     val inputRequest: InputRequest? = null,
     val draftText: String = "",
@@ -231,11 +231,19 @@ class DiagnosticChatViewModel
                         error = null,
                     )
 
-                when (val result = sessionRepository.getRepairSession(sessionId)) {
+                when (val result = sessionRepository.getBikeSession(sessionId)) {
                     is ApiResult.Success -> {
-                        applyLoadedSession(result.data)
-                        submitStartingDetailIfPossible()
-                        startEventReplay(after = REPLAY_FROM_BEGINNING)
+                        if (result.data.workflow != "repair" || result.data.phase != "diagnostic") {
+                            _uiState.value =
+                                _uiState.value.copy(
+                                    isLoadingSession = false,
+                                    error = "This session is not an active diagnostic session.",
+                                )
+                        } else {
+                            applyLoadedSession(result.data)
+                            submitStartingDetailIfPossible()
+                            startEventReplay(after = REPLAY_FROM_BEGINNING)
+                        }
                     }
 
                     is ApiResult.Error ->
@@ -251,12 +259,13 @@ class DiagnosticChatViewModel
             }
         }
 
-        private fun applyLoadedSession(session: RepairSession) {
+        private fun applyLoadedSession(session: BikeSession) {
             lastEventId = session.latestEventId
             val latestReportId = session.latestDisplayReportId()
             _uiState.value =
                 _uiState.value.copy(
                     session = session,
+                    isTurnInFlight = session.status == "running",
                     latestReportId = latestReportId,
                     phaseTransitioned = latestReportId != null && session.phase != PLANNING,
                     inputRequest =
@@ -573,7 +582,7 @@ class DiagnosticChatViewModel
 
         private fun handleAcceptedTurn(
             messageId: String,
-            acceptedTurn: com.bikedoc.android.api.models.TurnAccepted,
+            acceptedTurn: com.bikedoc.android.sessions.models.TurnAccepted,
         ) {
             markMessageDeliveryState(messageId, DeliveryState.Sent)
             _uiState.value =
@@ -731,9 +740,9 @@ private fun DiagnosticChatUiState.activeInputRequestId(): String? {
     return inputRequest?.id?.takeIf { it == sessionRequestId }
 }
 
-private fun RepairSession.isAwaitingUserInput(): Boolean = status == "awaiting_user" || status == "awaiting_decision"
+private fun BikeSession.isAwaitingUserInput(): Boolean = status == "awaiting_user" || status == "awaiting_decision"
 
-private fun RepairSession.latestDisplayReportId(): String? {
+private fun BikeSession.latestDisplayReportId(): String? {
     return latestReports.planReportId ?: latestReports.diagnosticReportId
 }
 

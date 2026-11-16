@@ -1,7 +1,7 @@
 package com.bikedoc.android.api
 
-import com.bikedoc.android.api.models.ArtifactRef
 import com.bikedoc.android.api.models.PreparedDiagnosticPhoto
+import com.bikedoc.android.sessions.models.ArtifactRef
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -34,12 +34,12 @@ class DefaultArtifactRepository
                                     body = photo.bytes.toRequestBody(photo.mimeType.toMediaType()),
                                 ),
                             purpose = "diagnostic_photo".toRequestBody(MULTIPART_TEXT.toMediaType()),
-                            repairSessionId = sessionId.toRequestBody(MULTIPART_TEXT.toMediaType()),
+                            sessionId = sessionId.toRequestBody(MULTIPART_TEXT.toMediaType()),
                             clientArtifactId = photo.clientArtifactId?.toRequestBody(MULTIPART_TEXT.toMediaType()),
                         )
                     }
             ) {
-                is ApiResult.Success -> ApiResult.Success(result.data.artifact)
+                is ApiResult.Success -> ApiResult.Success(result.data.artifact.toDomain())
                 is ApiResult.Error -> result
                 ApiResult.Loading -> ApiResult.Loading
             }

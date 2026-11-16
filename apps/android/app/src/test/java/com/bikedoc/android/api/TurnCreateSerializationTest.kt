@@ -1,7 +1,7 @@
 package com.bikedoc.android.api
 
-import com.bikedoc.android.api.models.TurnCreate
-import com.bikedoc.android.api.models.UserTurnMessage
+import com.bikedoc.android.api.models.TurnCreateDto
+import com.bikedoc.android.api.models.UserTurnMessageDto
 import com.bikedoc.android.di.CoreModule
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.jsonArray
@@ -18,9 +18,9 @@ class TurnCreateSerializationTest {
         val payload =
             json.parseToJsonElement(
                 json.encodeToString(
-                    TurnCreate(
+                    TurnCreateDto(
                         clientTurnId = "turn-1",
-                        message = UserTurnMessage(text = "The chain skips under load."),
+                        message = UserTurnMessageDto(text = "The chain skips under load."),
                     ),
                 ),
             ).jsonObject

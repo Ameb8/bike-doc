@@ -3,7 +3,6 @@ package com.bikedoc.android.home
 import app.cash.turbine.test
 import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
-import com.bikedoc.android.api.models.RepairSession
 import com.bikedoc.android.auth.AuthFailureReason
 import com.bikedoc.android.auth.AuthProvider
 import com.bikedoc.android.auth.AuthResult
@@ -11,6 +10,7 @@ import com.bikedoc.android.auth.GoogleSignInHost
 import com.bikedoc.android.auth.PendingAuthCredential
 import com.bikedoc.android.navigation.AppRoute
 import com.bikedoc.android.navigation.UiEvent
+import com.bikedoc.android.sessions.models.BikeSession
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -74,7 +74,7 @@ class HomeViewModelTest {
                 viewModel.startRepair()
 
                 assertEquals(
-                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("session-1")),
+                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("ses_1")),
                     awaitItem(),
                 )
                 cancelAndIgnoreRemainingEvents()
@@ -123,7 +123,7 @@ class HomeViewModelTest {
     private class FakeHomeRepository(
         private val result: ApiResult<BikeDocUser>,
         private val bikesResult: ApiResult<List<HomeBike>> = ApiResult.Success(emptyList()),
-        private val startRepairResult: ApiResult<RepairSession> = ApiResult.Error(500, "Unable to start repair."),
+        private val startRepairResult: ApiResult<BikeSession> = ApiResult.Error(500, "Unable to start repair."),
     ) : HomeRepository {
         var startedBikeId: String? = null
 
@@ -131,15 +131,16 @@ class HomeViewModelTest {
 
         override suspend fun getBikes(): ApiResult<List<HomeBike>> = bikesResult
 
-        override suspend fun startRepair(bikeId: String?): ApiResult<RepairSession> {
+        override suspend fun startRepair(bikeId: String?): ApiResult<BikeSession> {
             startedBikeId = bikeId
             return startRepairResult
         }
     }
 
     private fun repairSession() =
-        RepairSession(
-            id = "session-1",
+        BikeSession(
+            workflow = "repair",
+            id = "ses_1",
             bikeId = "bike-1",
             phase = "diagnostic",
             status = "created",

@@ -21,8 +21,9 @@ details in this document should not be used to override either contract.
 shared bike-session contract and coordinated API/client cutover. Repair and
 inspection use generic session, conversation and artifact interfaces while
 workflow-specific presentation stays with each workflow. Finding handoff uses
-structured origin and associated evidence. The diagnostic and repair-named
-interfaces described below reflect the current client implementation.
+structured origin and associated evidence. The Android repair experience uses
+these generic transport interfaces and explicitly selects the repair workflow
+for creation and discovery.
 
 ## Quick map
 
@@ -131,11 +132,12 @@ repository seam: creates omit unspecified optional fields, while updates diff
 the loaded profile and send explicit JSON null only for a user-requested clear.
 `BikeListRepository` deliberately
 maps API `Bike` DTOs to the list-specific `BikeListItem` display model, and
-normalizes a delete conflict into `BikeDeleteResult.RepairHistoryConflict`.
+normalizes a delete conflict into `BikeDeleteResult.SessionHistoryConflict`.
 The list ViewModel owns resume selection mode and the session chooser: it
-filters the list to bikes with diagnostic sessions, then resumes a session that
-is diagnostic and in a resumable status. That product rule belongs in the
-ViewModel/repository layer, not in the list composable.
+uses `has_sessions` to identify candidate bikes, explicitly discovers repair
+sessions on selection, and resumes a diagnostic session in a resumable status.
+That product rule belongs in the ViewModel/repository layer, not in the list
+composable.
 
 `sessions/` is split by user experience rather than by transport concern.
 `sessions/chat/` owns the ongoing diagnostic conversation; `sessions/models/`
@@ -178,7 +180,7 @@ serialization converter. The URL is a Gradle build-config field, defaulting to
 the Android emulator's `10.0.2.2:8000` host and overridable with
 `BIKEDOC_API_BASE_URL`; feature code must not read build properties or hardcode
 hosts. `BikeDocApiService` is the one declaration point for `/v1` endpoints:
-profile, bikes, repair sessions and turns, artifact upload, and reports.
+profile, bikes, bike sessions and turns, artifact upload, and reports.
 
 The `api/models/` package describes wire request/response shapes with Kotlin
 serialization. `safeApiCall` converts `HttpException`, network I/O failure,
@@ -192,8 +194,10 @@ readable model, as bike-list and report code do.
 
 `BikeRepository`, `SessionRepository`, `ArtifactRepository`, and
 `ReportRepository` are the general API seams. Each has a default implementation
-wrapping `BikeDocApiService`; the corresponding Hilt bindings are grouped in
-the feature-oriented `BikeModule` and `DiagnosticModule`. This supports fake
+wrapping `BikeDocApiService`; session and artifact wire DTOs are mapped to
+separate domain models at these boundaries, including SSE payload decoding.
+The corresponding Hilt bindings are grouped in the feature-oriented
+`BikeModule` and `DiagnosticModule`. This supports fake
 repositories in ViewModel tests and avoids service construction inside a
 feature. `ReportRepository` is intentionally more than a pass-through: it
 decodes the API report envelope, validates schema version/type, maps supported
@@ -206,7 +210,7 @@ Opening a chat follows a deliberate load-before-stream sequence:
 
 ```text
 chat route -> DiagnosticChatViewModel
-  -> SessionRepository.getRepairSession
+  -> SessionRepository.getBikeSession
   -> apply durable session/current input state
   -> SseEventSource.connect(sessionId, cursor)
   -> parse SseEvent -> reduce DiagnosticChatUiState -> Compose rendering

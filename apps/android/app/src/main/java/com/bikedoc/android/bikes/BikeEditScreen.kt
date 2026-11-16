@@ -139,7 +139,17 @@ private fun ProfileForm(
                 EnumDropdown(
                     identity.bikeType,
                     enumOptions(
-                        "road", "gravel", "mountain", "hybrid", "commuter", "cargo", "ebike", "bmx", "folding", "recumbent", "other",
+                        "road",
+                        "gravel",
+                        "mountain",
+                        "hybrid",
+                        "commuter",
+                        "cargo",
+                        "ebike",
+                        "bmx",
+                        "folding",
+                        "recumbent",
+                        "other",
                     ),
                     { onChanged(profile.copy(identity = identity.copy(bikeType = it))) },
                     stringResource(R.string.bike_edit_bike_type),

@@ -1,18 +1,21 @@
 package com.bikedoc.android.api
 
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
-import com.bikedoc.android.api.models.RepairSessionListResponse
-import com.bikedoc.android.api.models.TurnAccepted
-import com.bikedoc.android.api.models.TurnCreate
+import com.bikedoc.android.sessions.models.BikeSession
+import com.bikedoc.android.sessions.models.BikeSessionCreate
+import com.bikedoc.android.sessions.models.BikeSessionListResponse
+import com.bikedoc.android.sessions.models.TurnAccepted
+import com.bikedoc.android.sessions.models.TurnCreate
 import javax.inject.Inject
 
 interface SessionRepository {
-    suspend fun getRepairSessions(bikeId: String): ApiResult<RepairSessionListResponse>
+    suspend fun getBikeSessions(
+        bikeId: String,
+        workflow: String,
+    ): ApiResult<BikeSessionListResponse>
 
-    suspend fun createRepairSession(body: RepairSessionCreate): ApiResult<RepairSession>
+    suspend fun createBikeSession(body: BikeSessionCreate): ApiResult<BikeSession>
 
-    suspend fun getRepairSession(sessionId: String): ApiResult<RepairSession>
+    suspend fun getBikeSession(sessionId: String): ApiResult<BikeSession>
 
     suspend fun createTurn(
         sessionId: String,
@@ -25,17 +28,19 @@ class DefaultSessionRepository
     constructor(
         private val apiService: BikeDocApiService,
     ) : SessionRepository {
-        override suspend fun getRepairSessions(bikeId: String): ApiResult<RepairSessionListResponse> =
-            safeApiCall { apiService.getRepairSessions(bikeId) }
+        override suspend fun getBikeSessions(
+            bikeId: String,
+            workflow: String,
+        ): ApiResult<BikeSessionListResponse> = safeApiCall { apiService.getBikeSessions(bikeId, workflow).toDomain() }
 
-        override suspend fun createRepairSession(body: RepairSessionCreate): ApiResult<RepairSession> =
-            safeApiCall { apiService.createRepairSession(body) }
+        override suspend fun createBikeSession(body: BikeSessionCreate): ApiResult<BikeSession> =
+            safeApiCall { apiService.createBikeSession(body.toDto()).toDomain() }
 
-        override suspend fun getRepairSession(sessionId: String): ApiResult<RepairSession> =
-            safeApiCall { apiService.getRepairSession(sessionId) }
+        override suspend fun getBikeSession(sessionId: String): ApiResult<BikeSession> =
+            safeApiCall { apiService.getBikeSession(sessionId).toDomain() }
 
         override suspend fun createTurn(
             sessionId: String,
             body: TurnCreate,
-        ): ApiResult<TurnAccepted> = safeApiCall { apiService.createTurn(sessionId, body) }
+        ): ApiResult<TurnAccepted> = safeApiCall { apiService.createTurn(sessionId, body.toDto()).toDomain() }
     }

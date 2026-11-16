@@ -5,7 +5,7 @@ data class BikeProfile(
     val id: String,
     val userId: String,
     val displayName: String,
-    val hasRepairSessions: Boolean,
+    val hasSessions: Boolean,
     val schemaVersion: String,
     val profileRevision: Long,
     val identity: BikeIdentity,

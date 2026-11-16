@@ -5,6 +5,9 @@ package com.bikedoc.android.api
 import com.bikedoc.android.api.models.ArtifactUploadResponse
 import com.bikedoc.android.api.models.BikeListResponseDto
 import com.bikedoc.android.api.models.BikeProfileDto
+import com.bikedoc.android.api.models.BikeSessionCreateDto
+import com.bikedoc.android.api.models.BikeSessionDto
+import com.bikedoc.android.api.models.BikeSessionListResponseDto
 import com.bikedoc.android.api.models.DiagnosticConfidencePayload
 import com.bikedoc.android.api.models.DiagnosticOutcomePayload
 import com.bikedoc.android.api.models.DiagnosticRelevancePayload
@@ -12,11 +15,8 @@ import com.bikedoc.android.api.models.DiySuitabilityPayload
 import com.bikedoc.android.api.models.EvidenceSourcePayload
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PhaseReportList
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
-import com.bikedoc.android.api.models.RepairSessionListResponse
-import com.bikedoc.android.api.models.TurnAccepted
-import com.bikedoc.android.api.models.TurnCreate
+import com.bikedoc.android.api.models.TurnAcceptedDto
+import com.bikedoc.android.api.models.TurnCreateDto
 import com.bikedoc.android.api.models.UserProfile
 import com.bikedoc.android.api.models.UserSkillLevelPayload
 import com.bikedoc.android.di.CoreModule
@@ -37,7 +37,7 @@ class ReportRepositoryTest {
         runTest {
             val report =
                 repositoryFor(envelope(v2SupportedPayload()))
-                    .getDiagnosticReport("session-1", "report-1")
+                    .getDiagnosticReport("ses_1", "report-1")
 
             val mapped = assertSuccess<DiagnosticReportV2>(report)
             assertEquals(DiagnosticOutcome.DIAGNOSIS_SUPPORTED, mapped.diagnosticOutcome)
@@ -60,7 +60,7 @@ class ReportRepositoryTest {
         runTest {
             val report =
                 repositoryFor(envelope(v2LimitedPayload()))
-                    .getDiagnosticReport("session-1", "report-1")
+                    .getDiagnosticReport("ses_1", "report-1")
 
             val mapped = assertSuccess<DiagnosticReportV2>(report)
             assertEquals(
@@ -82,7 +82,7 @@ class ReportRepositoryTest {
         runTest {
             val report =
                 repositoryFor(envelope(v1Payload()))
-                    .getDiagnosticReport("session-1", "report-1")
+                    .getDiagnosticReport("ses_1", "report-1")
 
             val mapped = assertSuccess<DiagnosticReport>(report)
             assertEquals("Bent hanger", mapped.primaryDiagnosis.issue)
@@ -96,10 +96,10 @@ class ReportRepositoryTest {
         runTest {
             val unknown =
                 repositoryFor(envelope(v2SupportedPayload().replace("v2", "v3")))
-                    .getDiagnosticReport("session-1", "report-1")
+                    .getDiagnosticReport("ses_1", "report-1")
             val mismatched =
                 repositoryFor(envelope(v2SupportedPayload(), schemaVersion = "diagnostic_report.v1"))
-                    .getDiagnosticReport("session-1", "report-1")
+                    .getDiagnosticReport("ses_1", "report-1")
 
             assertVersionError(unknown)
             assertVersionError(mismatched)
@@ -113,7 +113,7 @@ class ReportRepositoryTest {
                     envelope(
                         """{"schema_version":"diagnostic_report.v2","diagnostic_outcome":"unknown"}""",
                     ),
-                ).getDiagnosticReport("session-1", "report-1")
+                ).getDiagnosticReport("ses_1", "report-1")
 
             assertTrue(malformed is ApiResult.Error)
             assertEquals("Unexpected diagnostic report format.", (malformed as ApiResult.Error).message)
@@ -158,7 +158,7 @@ class ReportRepositoryTest {
     ): PhaseReportEnvelope =
         PhaseReportEnvelope(
             id = "report-1",
-            repairSessionId = "session-1",
+            sessionId = "ses_1",
             type = "diagnostic",
             schemaVersion = schemaVersion,
             phase = "diagnostic",
@@ -208,25 +208,26 @@ private class FakeReportApiService(
 
     override suspend fun deleteBike(bikeId: String) = error("unused")
 
-    override suspend fun getRepairSessions(
+    override suspend fun getBikeSessions(
         bikeId: String,
+        workflow: String,
         limit: Int?,
         cursor: String?,
-    ): RepairSessionListResponse = error("unused")
+    ): BikeSessionListResponseDto = error("unused")
 
-    override suspend fun createRepairSession(body: RepairSessionCreate): RepairSession = error("unused")
+    override suspend fun createBikeSession(body: BikeSessionCreateDto): BikeSessionDto = error("unused")
 
-    override suspend fun getRepairSession(sessionId: String): RepairSession = error("unused")
+    override suspend fun getBikeSession(sessionId: String): BikeSessionDto = error("unused")
 
     override suspend fun createTurn(
         sessionId: String,
-        body: TurnCreate,
-    ): TurnAccepted = error("unused")
+        body: TurnCreateDto,
+    ): TurnAcceptedDto = error("unused")
 
     override suspend fun uploadArtifact(
         file: MultipartBody.Part,
         purpose: RequestBody,
-        repairSessionId: RequestBody,
+        sessionId: RequestBody,
         clientArtifactId: RequestBody?,
     ): ArtifactUploadResponse = error("unused")
 

@@ -9,7 +9,7 @@ data class BikeListItem(
     val name: String,
     val makeModelYear: String,
     val specificationSummary: String,
-    val hasRepairSessions: Boolean,
+    val hasSessions: Boolean,
 )
 
 interface BikeListRepository {
@@ -21,7 +21,7 @@ interface BikeListRepository {
 sealed interface BikeDeleteResult {
     data object Success : BikeDeleteResult
 
-    data object RepairHistoryConflict : BikeDeleteResult
+    data object SessionHistoryConflict : BikeDeleteResult
 
     data class Error(val message: String) : BikeDeleteResult
 }
@@ -47,7 +47,7 @@ class DefaultBikeListRepository
                                     ),
                                 specificationSummary =
                                     buildSpecificationSummary(bike),
-                                hasRepairSessions = bike.hasRepairSessions,
+                                hasSessions = bike.hasSessions,
                             )
                         },
                     )
@@ -63,7 +63,7 @@ class DefaultBikeListRepository
                 is ApiResult.Success -> BikeDeleteResult.Success
                 is ApiResult.Error ->
                     if (result.code == 409) {
-                        BikeDeleteResult.RepairHistoryConflict
+                        BikeDeleteResult.SessionHistoryConflict
                     } else {
                         BikeDeleteResult.Error(result.message)
                     }

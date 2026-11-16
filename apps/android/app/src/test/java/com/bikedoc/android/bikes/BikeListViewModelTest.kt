@@ -4,13 +4,13 @@ import app.cash.turbine.test
 import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.SessionRepository
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
-import com.bikedoc.android.api.models.RepairSessionListResponse
-import com.bikedoc.android.api.models.TurnAccepted
-import com.bikedoc.android.api.models.TurnCreate
 import com.bikedoc.android.navigation.AppRoute
 import com.bikedoc.android.navigation.UiEvent
+import com.bikedoc.android.sessions.models.BikeSession
+import com.bikedoc.android.sessions.models.BikeSessionCreate
+import com.bikedoc.android.sessions.models.BikeSessionListResponse
+import com.bikedoc.android.sessions.models.TurnAccepted
+import com.bikedoc.android.sessions.models.TurnCreate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -23,6 +23,24 @@ import org.junit.Test
 class BikeListViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun `resume discovery queries repair for a bike with session history`() =
+        runTest {
+            val bike = bikeListItem("bike-1", "Commuter", hasSessions = true)
+            val sessions = FakeSessionRepository()
+            val viewModel =
+                BikeListViewModel(
+                    repository = FakeBikeListRepository(getBikesResults = mutableListOf(ApiResult.Success(listOf(bike)))),
+                    sessionRepository = sessions,
+                    selectionMode = true,
+                    resumeOnly = true,
+                )
+            assertEquals(listOf(bike), viewModel.uiState.value.bikes)
+            viewModel.selectBike(bike)
+            assertEquals(listOf("repair"), sessions.requestedWorkflows)
+            assertEquals(null, viewModel.uiState.value.sessionChooser)
+        }
 
     @Test
     fun `loads first page of bikes on init in browse mode`() =
@@ -38,7 +56,7 @@ class BikeListViewModelTest {
                                         name = "Daily Rider",
                                         makeModelYear = "Trek Domane 2022",
                                         specificationSummary = "Shimano 105 2x11 • Hydraulic disc",
-                                        hasRepairSessions = true,
+                                        hasSessions = true,
                                     ),
                                 ),
                             ),
@@ -138,9 +156,9 @@ class BikeListViewModelTest {
                 bikeListItem(
                     id = "bike-1",
                     name = "Commuter",
-                    hasRepairSessions = false,
+                    hasSessions = false,
                 )
-            val refreshedBike = initialBike.copy(hasRepairSessions = true)
+            val refreshedBike = initialBike.copy(hasSessions = true)
             val repository =
                 FakeBikeListRepository(
                     getBikesResults =
@@ -148,7 +166,7 @@ class BikeListViewModelTest {
                             ApiResult.Success(listOf(initialBike)),
                             ApiResult.Success(listOf(refreshedBike)),
                         ),
-                    deleteBikeResult = BikeDeleteResult.RepairHistoryConflict,
+                    deleteBikeResult = BikeDeleteResult.SessionHistoryConflict,
                 )
             val viewModel =
                 BikeListViewModel(
@@ -163,14 +181,14 @@ class BikeListViewModelTest {
                 viewModel.confirmDelete()
 
                 assertEquals(
-                    UiEvent.ShowSnackbar(BikeListViewModel.DELETE_REPAIR_HISTORY_MESSAGE),
+                    UiEvent.ShowSnackbar(BikeListViewModel.DELETE_SESSION_HISTORY_MESSAGE),
                     awaitItem(),
                 )
                 cancelAndIgnoreRemainingEvents()
             }
 
             assertEquals(2, repository.getBikesCalls)
-            assertEquals(true, viewModel.uiState.value.bikes.single().hasRepairSessions)
+            assertEquals(true, viewModel.uiState.value.bikes.single().hasSessions)
             assertEquals(null, viewModel.uiState.value.deletingBikeId)
             assertEquals(null, viewModel.uiState.value.pendingDeleteBike)
         }
@@ -182,7 +200,7 @@ class BikeListViewModelTest {
                 bikeListItem(
                     id = "bike-1",
                     name = "Commuter",
-                    hasRepairSessions = true,
+                    hasSessions = true,
                 )
             val repository =
                 FakeBikeListRepository(
@@ -207,12 +225,13 @@ class BikeListViewModelTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val sessionRepository =
                 FakeSessionRepository(
-                    getRepairSessionsResult =
-                        ApiResult.Success(RepairSessionListResponse(items = emptyList())),
-                    createRepairSessionResult =
+                    getBikeSessionsResult =
+                        ApiResult.Success(BikeSessionListResponse(items = emptyList())),
+                    createBikeSessionResult =
                         ApiResult.Success(
-                            RepairSession(
-                                id = "session-1",
+                            BikeSession(
+                                workflow = "repair",
+                                id = "ses_1",
                                 bikeId = bike.id,
                                 phase = "diagnostic",
                                 status = "created",
@@ -235,14 +254,15 @@ class BikeListViewModelTest {
                 viewModel.selectBike(bike)
 
                 assertEquals(
-                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("session-1")),
+                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("ses_1")),
                     awaitItem(),
                 )
                 cancelAndIgnoreRemainingEvents()
             }
 
-            assertEquals(listOf("bike-1"), sessionRepository.getRepairSessionsBikeIds)
-            assertEquals(listOf(RepairSessionCreate(bikeId = "bike-1")), sessionRepository.createdSessions)
+            assertEquals(listOf("bike-1"), sessionRepository.getBikeSessionsBikeIds)
+            assertEquals(listOf("repair"), sessionRepository.requestedWorkflows)
+            assertEquals(listOf(BikeSessionCreate(workflow = "repair", bikeId = "bike-1")), sessionRepository.createdSessions)
             assertEquals(null, viewModel.uiState.value.selectedBikeId)
             assertFalse(viewModel.uiState.value.isLoadingBikeSessions)
             assertFalse(viewModel.uiState.value.isCreatingSession)
@@ -253,8 +273,9 @@ class BikeListViewModelTest {
         runTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val newestSession =
-                RepairSession(
-                    id = "session-2",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_2",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "completed",
@@ -262,8 +283,9 @@ class BikeListViewModelTest {
                     updatedAt = "2026-07-02T01:30:00Z",
                 )
             val olderSession =
-                RepairSession(
-                    id = "session-1",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_1",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "created",
@@ -272,9 +294,9 @@ class BikeListViewModelTest {
                 )
             val sessionRepository =
                 FakeSessionRepository(
-                    getRepairSessionsResult =
+                    getBikeSessionsResult =
                         ApiResult.Success(
-                            RepairSessionListResponse(items = listOf(newestSession, olderSession)),
+                            BikeSessionListResponse(items = listOf(newestSession, olderSession)),
                         ),
                 )
             val viewModel =
@@ -294,7 +316,8 @@ class BikeListViewModelTest {
                 cancelAndIgnoreRemainingEvents()
             }
 
-            assertEquals(listOf("bike-1"), sessionRepository.getRepairSessionsBikeIds)
+            assertEquals(listOf("bike-1"), sessionRepository.getBikeSessionsBikeIds)
+            assertEquals(listOf("repair"), sessionRepository.requestedWorkflows)
             assertTrue(viewModel.uiState.value.sessionChooser != null)
             assertEquals("bike-1", viewModel.uiState.value.sessionChooser?.bikeId)
             assertTrue(sessionRepository.createdSessions.isEmpty())
@@ -308,8 +331,9 @@ class BikeListViewModelTest {
         runTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val newestNonResumable =
-                RepairSession(
-                    id = "session-3",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_3",
                     bikeId = bike.id,
                     phase = "plan",
                     status = "created",
@@ -317,8 +341,9 @@ class BikeListViewModelTest {
                     updatedAt = "2026-07-03T01:30:00Z",
                 )
             val newestResumable =
-                RepairSession(
-                    id = "session-2",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_2",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "awaiting_user",
@@ -326,8 +351,9 @@ class BikeListViewModelTest {
                     updatedAt = "2026-07-02T01:30:00Z",
                 )
             val olderResumable =
-                RepairSession(
-                    id = "session-1",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_1",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "created",
@@ -336,9 +362,9 @@ class BikeListViewModelTest {
                 )
             val sessionRepository =
                 FakeSessionRepository(
-                    getRepairSessionsResult =
+                    getBikeSessionsResult =
                         ApiResult.Success(
-                            RepairSessionListResponse(
+                            BikeSessionListResponse(
                                 items =
                                     listOf(
                                         newestNonResumable,
@@ -361,9 +387,9 @@ class BikeListViewModelTest {
             viewModel.selectBike(bike)
 
             val chooser = viewModel.uiState.value.sessionChooser
-            assertEquals("session-2", chooser?.primaryResumeSession?.id)
+            assertEquals("ses_2", chooser?.primaryResumeSession?.id)
             assertEquals("Awaiting your reply", chooser?.primaryResumeSession?.statusLabel)
-            assertEquals(listOf("session-3", "session-1"), chooser?.olderSessions?.map { it.id })
+            assertEquals(listOf("ses_3", "ses_1"), chooser?.olderSessions?.map { it.id })
             assertEquals(listOf(false, true), chooser?.olderSessions?.map { it.isResumable })
         }
 
@@ -372,8 +398,9 @@ class BikeListViewModelTest {
         runTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val readOnlySession =
-                RepairSession(
-                    id = "session-2",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_2",
                     bikeId = bike.id,
                     phase = "execution",
                     status = "running",
@@ -381,8 +408,9 @@ class BikeListViewModelTest {
                     updatedAt = "2026-07-02T01:30:00Z",
                 )
             val resumableSession =
-                RepairSession(
-                    id = "session-1",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_1",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "created",
@@ -397,9 +425,9 @@ class BikeListViewModelTest {
                         ),
                     sessionRepository =
                         FakeSessionRepository(
-                            getRepairSessionsResult =
+                            getBikeSessionsResult =
                                 ApiResult.Success(
-                                    RepairSessionListResponse(
+                                    BikeSessionListResponse(
                                         items = listOf(readOnlySession, resumableSession),
                                     ),
                                 ),
@@ -410,12 +438,12 @@ class BikeListViewModelTest {
             viewModel.selectBike(bike)
 
             viewModel.events.test {
-                viewModel.selectSessionFromChooser("session-2")
+                viewModel.selectSessionFromChooser("ses_2")
                 expectNoEvents()
 
-                viewModel.selectSessionFromChooser("session-1")
+                viewModel.selectSessionFromChooser("ses_1")
                 assertEquals(
-                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("session-1")),
+                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("ses_1")),
                     awaitItem(),
                 )
                 cancelAndIgnoreRemainingEvents()
@@ -427,8 +455,9 @@ class BikeListViewModelTest {
         runTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val resumableSession =
-                RepairSession(
-                    id = "session-1",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_1",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "awaiting_user",
@@ -437,14 +466,15 @@ class BikeListViewModelTest {
                 )
             val sessionRepository =
                 FakeSessionRepository(
-                    getRepairSessionsResult =
+                    getBikeSessionsResult =
                         ApiResult.Success(
-                            RepairSessionListResponse(items = listOf(resumableSession)),
+                            BikeSessionListResponse(items = listOf(resumableSession)),
                         ),
-                    createRepairSessionResult =
+                    createBikeSessionResult =
                         ApiResult.Success(
-                            RepairSession(
-                                id = "session-2",
+                            BikeSession(
+                                workflow = "repair",
+                                id = "ses_2",
                                 bikeId = bike.id,
                                 phase = "diagnostic",
                                 status = "created",
@@ -473,13 +503,13 @@ class BikeListViewModelTest {
                 viewModel.confirmStartNewSessionFromChooser()
 
                 assertEquals(
-                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("session-2")),
+                    UiEvent.NavigateTo(AppRoute.DiagnosticChat.create("ses_2")),
                     awaitItem(),
                 )
                 cancelAndIgnoreRemainingEvents()
             }
 
-            assertEquals(listOf(RepairSessionCreate(bikeId = "bike-1")), sessionRepository.createdSessions)
+            assertEquals(listOf(BikeSessionCreate(workflow = "repair", bikeId = "bike-1")), sessionRepository.createdSessions)
             assertFalse(viewModel.uiState.value.showStartNewSessionConfirmation)
             assertEquals(null, viewModel.uiState.value.sessionChooser)
         }
@@ -489,8 +519,9 @@ class BikeListViewModelTest {
         runTest {
             val bike = bikeListItem(id = "bike-1", name = "Commuter")
             val resumableSession =
-                RepairSession(
-                    id = "session-1",
+                BikeSession(
+                    workflow = "repair",
+                    id = "ses_1",
                     bikeId = bike.id,
                     phase = "diagnostic",
                     status = "awaiting_user",
@@ -505,11 +536,11 @@ class BikeListViewModelTest {
                         ),
                     sessionRepository =
                         FakeSessionRepository(
-                            getRepairSessionsResult =
+                            getBikeSessionsResult =
                                 ApiResult.Success(
-                                    RepairSessionListResponse(items = listOf(resumableSession)),
+                                    BikeSessionListResponse(items = listOf(resumableSession)),
                                 ),
-                            createRepairSessionResult =
+                            createBikeSessionResult =
                                 ApiResult.Error(500, "Something went wrong. Try again."),
                         ),
                     selectionMode = true,
@@ -552,25 +583,30 @@ class BikeListViewModelTest {
     }
 
     private class FakeSessionRepository(
-        private val getRepairSessionsResult: ApiResult<RepairSessionListResponse> =
-            ApiResult.Success(RepairSessionListResponse(items = emptyList())),
-        private val createRepairSessionResult: ApiResult<RepairSession> =
+        private val getBikeSessionsResult: ApiResult<BikeSessionListResponse> =
+            ApiResult.Success(BikeSessionListResponse(items = emptyList())),
+        private val createBikeSessionResult: ApiResult<BikeSession> =
             ApiResult.Error(500, "Something went wrong. Try again."),
     ) : SessionRepository {
-        val getRepairSessionsBikeIds = mutableListOf<String>()
-        val createdSessions = mutableListOf<RepairSessionCreate>()
+        val getBikeSessionsBikeIds = mutableListOf<String>()
+        val requestedWorkflows = mutableListOf<String>()
+        val createdSessions = mutableListOf<BikeSessionCreate>()
 
-        override suspend fun getRepairSessions(bikeId: String): ApiResult<RepairSessionListResponse> {
-            getRepairSessionsBikeIds += bikeId
-            return getRepairSessionsResult
+        override suspend fun getBikeSessions(
+            bikeId: String,
+            workflow: String,
+        ): ApiResult<BikeSessionListResponse> {
+            getBikeSessionsBikeIds += bikeId
+            requestedWorkflows += workflow
+            return getBikeSessionsResult
         }
 
-        override suspend fun createRepairSession(body: RepairSessionCreate): ApiResult<RepairSession> {
+        override suspend fun createBikeSession(body: BikeSessionCreate): ApiResult<BikeSession> {
             createdSessions += body
-            return createRepairSessionResult
+            return createBikeSessionResult
         }
 
-        override suspend fun getRepairSession(sessionId: String): ApiResult<RepairSession> {
+        override suspend fun getBikeSession(sessionId: String): ApiResult<BikeSession> {
             error("Not used in this test")
         }
 
@@ -585,12 +621,12 @@ class BikeListViewModelTest {
     private fun bikeListItem(
         id: String,
         name: String,
-        hasRepairSessions: Boolean = false,
+        hasSessions: Boolean = false,
     ) = BikeListItem(
         id = id,
         name = name,
         makeModelYear = "Trek Domane 2022",
         specificationSummary = "Shimano 105 2x11 • Hydraulic disc",
-        hasRepairSessions = hasRepairSessions,
+        hasSessions = hasSessions,
     )
 }

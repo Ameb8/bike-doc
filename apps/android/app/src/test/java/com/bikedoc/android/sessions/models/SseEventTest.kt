@@ -25,7 +25,7 @@ class SseEventTest {
     }
 
     @Test
-    fun parsesAssistantDeltaFromRepairSessionEventEnvelope() {
+    fun parsesAssistantDeltaFromBikeSessionEventEnvelope() {
         val event =
             SseEvent.parse(
                 type = "assistant.delta",
@@ -34,7 +34,7 @@ class SseEventTest {
                     """
                     {
                       "id": "1",
-                      "session_id": "session-1",
+                      "session_id": "ses_1",
                       "turn_id": "turn-1",
                       "type": "assistant.delta",
                       "sequence": 1,
@@ -61,7 +61,7 @@ class SseEventTest {
                     """
                     {
                       "id": "2",
-                      "session_id": "session-1",
+                      "session_id": "ses_1",
                       "turn_id": "turn-1",
                       "type": "input.requested",
                       "sequence": 2,

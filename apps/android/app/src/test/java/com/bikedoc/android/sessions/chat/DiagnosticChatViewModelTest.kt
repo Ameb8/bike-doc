@@ -4,18 +4,18 @@ import com.bikedoc.android.MainDispatcherRule
 import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.ArtifactRepository
 import com.bikedoc.android.api.SessionRepository
-import com.bikedoc.android.api.models.ArtifactRef
-import com.bikedoc.android.api.models.InputRequest
-import com.bikedoc.android.api.models.LatestReports
 import com.bikedoc.android.api.models.PreparedDiagnosticPhoto
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
-import com.bikedoc.android.api.models.RepairSessionListResponse
-import com.bikedoc.android.api.models.TurnAccepted
-import com.bikedoc.android.api.models.TurnCreate
+import com.bikedoc.android.sessions.models.ArtifactRef
+import com.bikedoc.android.sessions.models.BikeSession
+import com.bikedoc.android.sessions.models.BikeSessionCreate
+import com.bikedoc.android.sessions.models.BikeSessionListResponse
 import com.bikedoc.android.sessions.models.DeliveryState
+import com.bikedoc.android.sessions.models.InputRequest
+import com.bikedoc.android.sessions.models.LatestReports
 import com.bikedoc.android.sessions.models.Role
 import com.bikedoc.android.sessions.models.SseEvent
+import com.bikedoc.android.sessions.models.TurnAccepted
+import com.bikedoc.android.sessions.models.TurnCreate
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -40,18 +40,18 @@ class DiagnosticChatViewModelTest {
                     status = "awaiting_user",
                     currentInputRequest = InputRequest(id = "request-1", type = "text", prompt = "What changed?"),
                 )
-            val repository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session))
+            val repository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(session))
             val eventSource = FakeSseEventSource()
             val viewModel =
                 DiagnosticChatViewModel(
                     sessionRepository = repository,
                     eventSource = eventSource,
                     ioDispatcher = mainDispatcherRule.dispatcher,
-                    sessionId = "session-1",
+                    sessionId = "ses_1",
                 )
 
-            assertEquals(listOf("session-1"), repository.loadedSessionIds)
-            assertEquals(listOf(EventConnection("session-1", "0")), eventSource.connections)
+            assertEquals(listOf("ses_1"), repository.loadedSessionIds)
+            assertEquals(listOf(EventConnection("ses_1", "0")), eventSource.connections)
             assertFalse(viewModel.uiState.value.isLoadingSession)
             assertEquals("request-1", viewModel.uiState.value.inputRequest?.id)
 
@@ -92,6 +92,23 @@ class DiagnosticChatViewModelTest {
         }
 
     @Test
+    fun `inspection session is rejected before starting diagnostic stream`() =
+        runTest {
+            val repository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(repairSession().copy(workflow = "inspection")))
+            val eventSource = FakeSseEventSource()
+            val viewModel =
+                DiagnosticChatViewModel(
+                    sessionRepository = repository,
+                    eventSource = eventSource,
+                    ioDispatcher = mainDispatcherRule.dispatcher,
+                    sessionId = "ses_1",
+                )
+            assertFalse(viewModel.uiState.value.isLoadingSession)
+            assertTrue(viewModel.uiState.value.error != null)
+            assertTrue(eventSource.connections.isEmpty())
+        }
+
+    @Test
     fun `entry shows completed diagnostic report action for resumed completed session`() =
         runTest {
             val session =
@@ -99,14 +116,14 @@ class DiagnosticChatViewModelTest {
                     status = "completed",
                     latestReports = LatestReports(diagnosticReportId = "report-1"),
                 )
-            val repository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session))
+            val repository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(session))
             val eventSource = FakeSseEventSource()
             val viewModel =
                 DiagnosticChatViewModel(
                     sessionRepository = repository,
                     eventSource = eventSource,
                     ioDispatcher = mainDispatcherRule.dispatcher,
-                    sessionId = "session-1",
+                    sessionId = "ses_1",
                 )
 
             val state = viewModel.uiState.value
@@ -137,15 +154,15 @@ class DiagnosticChatViewModelTest {
                 )
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult =
                         ApiResult.Success(
                             TurnAccepted(
                                 turnId = "turn-1",
-                                repairSessionId = session.id,
+                                sessionId = session.id,
                                 startEventId = "4",
                                 eventStreamUrl =
-                                    "/v1/repair-sessions/${session.id}/events?after=4",
+                                    "/v1/sessions/${session.id}/events?after=4",
                                 session = acceptedSession,
                             ),
                         ),
@@ -176,7 +193,7 @@ class DiagnosticChatViewModelTest {
                             TurnCreate(
                                 clientTurnId = repository.createdTurns.single().body.clientTurnId,
                                 message =
-                                    com.bikedoc.android.api.models.UserTurnMessage(
+                                    com.bikedoc.android.sessions.models.UserTurnMessage(
                                         text = "The chain skips under load.",
                                     ),
                                 respondsToInputRequestId = "request-1",
@@ -202,7 +219,7 @@ class DiagnosticChatViewModelTest {
             val acceptedSession = repairSession(status = "running", currentInputRequest = null)
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult =
                         ApiResult.Success(
                             turnAccepted(
@@ -239,7 +256,7 @@ class DiagnosticChatViewModelTest {
             val session = repairSession(status = "created", currentInputRequest = null)
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult = ApiResult.Success(turnAccepted("turn-photo", repairSession(status = "running"))),
                 )
             val viewModel =
@@ -268,7 +285,7 @@ class DiagnosticChatViewModelTest {
             val session = repairSession(status = "created", currentInputRequest = null)
             val viewModel =
                 DiagnosticChatViewModel(
-                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    sessionRepository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(session)),
                     artifactRepository =
                         FakeArtifactRepository(
                             ArrayDeque(
@@ -309,7 +326,7 @@ class DiagnosticChatViewModelTest {
             val acceptedSession = repairSession(status = "running", currentInputRequest = null)
             val sessionRepository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult =
                         ApiResult.Success(
                             turnAccepted(
@@ -367,8 +384,8 @@ class DiagnosticChatViewModelTest {
             )
             assertEquals(
                 listOf(
-                    ArtifactUpload("session-1", "first.jpg", "image/jpeg"),
-                    ArtifactUpload("session-1", "second.jpg", "image/jpeg"),
+                    ArtifactUpload("ses_1", "first.jpg", "image/jpeg"),
+                    ArtifactUpload("ses_1", "second.jpg", "image/jpeg"),
                 ),
                 artifactRepository.uploads,
             )
@@ -408,7 +425,7 @@ class DiagnosticChatViewModelTest {
                 )
             val viewModel =
                 DiagnosticChatViewModel(
-                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    sessionRepository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(session)),
                     artifactRepository = artifactRepository,
                     photoPreparer = FakeDiagnosticPhotoPreparer(),
                     eventSource = FakeSseEventSource(),
@@ -457,7 +474,7 @@ class DiagnosticChatViewModelTest {
                 )
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResults =
                         ArrayDeque(
                             listOf(
@@ -465,10 +482,10 @@ class DiagnosticChatViewModelTest {
                                 ApiResult.Success(
                                     TurnAccepted(
                                         turnId = "turn-2",
-                                        repairSessionId = session.id,
+                                        sessionId = session.id,
                                         startEventId = "6",
                                         eventStreamUrl =
-                                            "/v1/repair-sessions/${session.id}/events?after=6",
+                                            "/v1/sessions/${session.id}/events?after=6",
                                         session = acceptedSession,
                                     ),
                                 ),
@@ -523,15 +540,15 @@ class DiagnosticChatViewModelTest {
                 )
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult =
                         ApiResult.Success(
                             TurnAccepted(
                                 turnId = "turn-3",
-                                repairSessionId = session.id,
+                                sessionId = session.id,
                                 startEventId = "8",
                                 eventStreamUrl =
-                                    "/v1/repair-sessions/${session.id}/events?after=8",
+                                    "/v1/sessions/${session.id}/events?after=8",
                                 session =
                                     repairSession(
                                         status = "running",
@@ -566,7 +583,7 @@ class DiagnosticChatViewModelTest {
                 )
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult = ApiResult.Success(session),
+                    getBikeSessionResult = ApiResult.Success(session),
                     createTurnResult =
                         ApiResult.Success(
                             turnAccepted(
@@ -605,7 +622,7 @@ class DiagnosticChatViewModelTest {
             val eventSource = FakeSseEventSource()
             val viewModel =
                 DiagnosticChatViewModel(
-                    sessionRepository = FakeSessionRepository(getRepairSessionResult = ApiResult.Success(session)),
+                    sessionRepository = FakeSessionRepository(getBikeSessionResult = ApiResult.Success(session)),
                     eventSource = eventSource,
                     ioDispatcher = mainDispatcherRule.dispatcher,
                     sessionId = session.id,
@@ -645,7 +662,7 @@ class DiagnosticChatViewModelTest {
         runTest {
             val repository =
                 FakeSessionRepository(
-                    getRepairSessionResult =
+                    getBikeSessionResult =
                         ApiResult.Success(
                             repairSession(
                                 status = "running",
@@ -659,7 +676,7 @@ class DiagnosticChatViewModelTest {
                     sessionRepository = repository,
                     eventSource = eventSource,
                     ioDispatcher = mainDispatcherRule.dispatcher,
-                    sessionId = "session-1",
+                    sessionId = "ses_1",
                 )
 
             eventSource.events.emit(
@@ -698,7 +715,7 @@ private class FakeSseEventSource : SseEventSource {
 }
 
 private class FakeSessionRepository(
-    private val getRepairSessionResult: ApiResult<RepairSession>,
+    private val getBikeSessionResult: ApiResult<BikeSession>,
     createTurnResult: ApiResult<TurnAccepted> = ApiResult.Error(500, "Missing createTurnResult"),
     createTurnResults: ArrayDeque<ApiResult<TurnAccepted>> = ArrayDeque(listOf(createTurnResult)),
 ) : SessionRepository {
@@ -706,17 +723,20 @@ private class FakeSessionRepository(
     val createdTurns = mutableListOf<TurnRequest>()
     private val queuedCreateTurnResults = createTurnResults
 
-    override suspend fun getRepairSessions(bikeId: String): ApiResult<RepairSessionListResponse> {
+    override suspend fun getBikeSessions(
+        bikeId: String,
+        workflow: String,
+    ): ApiResult<BikeSessionListResponse> {
         error("Not used by diagnostic chat")
     }
 
-    override suspend fun createRepairSession(body: RepairSessionCreate): ApiResult<RepairSession> {
+    override suspend fun createBikeSession(body: BikeSessionCreate): ApiResult<BikeSession> {
         error("Not used by diagnostic chat")
     }
 
-    override suspend fun getRepairSession(sessionId: String): ApiResult<RepairSession> {
+    override suspend fun getBikeSession(sessionId: String): ApiResult<BikeSession> {
         loadedSessionIds += sessionId
-        return getRepairSessionResult
+        return getBikeSessionResult
     }
 
     override suspend fun createTurn(
@@ -768,8 +788,9 @@ private fun repairSession(
     currentInputRequest: InputRequest? = null,
     latestEventId: String = "0",
     latestReports: LatestReports = LatestReports(),
-) = RepairSession(
-    id = "session-1",
+) = BikeSession(
+    workflow = "repair",
+    id = "ses_1",
     userId = "user-1",
     bikeId = "bike-1",
     phase = "diagnostic",
@@ -806,13 +827,13 @@ private fun photoSelection(name: String) =
 
 private fun turnAccepted(
     turnId: String,
-    session: RepairSession,
+    session: BikeSession,
     startEventId: String = "3",
 ) = TurnAccepted(
     turnId = turnId,
-    repairSessionId = session.id,
+    sessionId = session.id,
     startEventId = startEventId,
-    eventStreamUrl = "/v1/repair-sessions/${session.id}/events?after=$startEventId",
+    eventStreamUrl = "/v1/sessions/${session.id}/events?after=$startEventId",
     session = session,
 )
 
@@ -836,7 +857,7 @@ private fun artifactRef(id: String) =
     ArtifactRef(
         id = id,
         userId = "user-1",
-        repairSessionId = "session-1",
+        sessionId = "ses_1",
         bikeId = null,
         purpose = "diagnostic_photo",
         mediaType = "image",

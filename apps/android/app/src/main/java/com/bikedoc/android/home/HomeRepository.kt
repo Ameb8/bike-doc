@@ -4,9 +4,9 @@ import com.bikedoc.android.api.ApiResult
 import com.bikedoc.android.api.BikeDocApiService
 import com.bikedoc.android.api.BikeRepository
 import com.bikedoc.android.api.SessionRepository
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
 import com.bikedoc.android.bikes.BikeProfileEdit
+import com.bikedoc.android.sessions.models.BikeSession
+import com.bikedoc.android.sessions.models.BikeSessionCreate
 import javax.inject.Inject
 
 data class BikeDocUser(
@@ -24,7 +24,7 @@ interface HomeRepository {
 
     suspend fun getBikes(): ApiResult<List<HomeBike>>
 
-    suspend fun startRepair(bikeId: String?): ApiResult<RepairSession>
+    suspend fun startRepair(bikeId: String?): ApiResult<BikeSession>
 }
 
 class DefaultHomeRepository
@@ -54,7 +54,7 @@ class DefaultHomeRepository
             }
 
         @Suppress("ReturnCount")
-        override suspend fun startRepair(bikeId: String?): ApiResult<RepairSession> {
+        override suspend fun startRepair(bikeId: String?): ApiResult<BikeSession> {
             val repairBikeId =
                 bikeId
                     ?: when (val result = bikeRepository.createBike(BikeProfileEdit(displayName = NEW_BIKE_NAME))) {
@@ -62,7 +62,7 @@ class DefaultHomeRepository
                         is ApiResult.Error -> return result
                         ApiResult.Loading -> return ApiResult.Loading
                     }
-            return sessionRepository.createRepairSession(RepairSessionCreate(bikeId = repairBikeId))
+            return sessionRepository.createBikeSession(BikeSessionCreate(workflow = "repair", bikeId = repairBikeId))
         }
 
         private companion object {

@@ -14,8 +14,8 @@ data class PhaseReportList(
 @Serializable
 data class PhaseReportEnvelope(
     val id: String,
-    @SerialName("repair_session_id")
-    val repairSessionId: String,
+    @SerialName("session_id")
+    val sessionId: String,
     val type: String = "",
     @SerialName("schema_version")
     val schemaVersion: String = "",

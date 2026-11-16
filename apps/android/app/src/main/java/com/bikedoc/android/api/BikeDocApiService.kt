@@ -3,13 +3,13 @@ package com.bikedoc.android.api
 import com.bikedoc.android.api.models.ArtifactUploadResponse
 import com.bikedoc.android.api.models.BikeListResponseDto
 import com.bikedoc.android.api.models.BikeProfileDto
+import com.bikedoc.android.api.models.BikeSessionCreateDto
+import com.bikedoc.android.api.models.BikeSessionDto
+import com.bikedoc.android.api.models.BikeSessionListResponseDto
 import com.bikedoc.android.api.models.PhaseReportEnvelope
 import com.bikedoc.android.api.models.PhaseReportList
-import com.bikedoc.android.api.models.RepairSession
-import com.bikedoc.android.api.models.RepairSessionCreate
-import com.bikedoc.android.api.models.RepairSessionListResponse
-import com.bikedoc.android.api.models.TurnAccepted
-import com.bikedoc.android.api.models.TurnCreate
+import com.bikedoc.android.api.models.TurnAcceptedDto
+import com.bikedoc.android.api.models.TurnCreateDto
 import com.bikedoc.android.api.models.UserProfile
 import kotlinx.serialization.json.JsonObject
 import okhttp3.MultipartBody
@@ -55,46 +55,47 @@ interface BikeDocApiService {
         @Path("bikeId") bikeId: String,
     )
 
-    @GET("v1/repair-sessions")
-    suspend fun getRepairSessions(
+    @GET("v1/sessions")
+    suspend fun getBikeSessions(
         @Query("bike_id") bikeId: String,
+        @Query("workflow") workflow: String,
         @Query("limit") limit: Int? = null,
         @Query("cursor") cursor: String? = null,
-    ): RepairSessionListResponse
+    ): BikeSessionListResponseDto
 
-    @POST("v1/repair-sessions")
-    suspend fun createRepairSession(
-        @Body body: RepairSessionCreate,
-    ): RepairSession
+    @POST("v1/sessions")
+    suspend fun createBikeSession(
+        @Body body: BikeSessionCreateDto,
+    ): BikeSessionDto
 
-    @GET("v1/repair-sessions/{sessionId}")
-    suspend fun getRepairSession(
+    @GET("v1/sessions/{sessionId}")
+    suspend fun getBikeSession(
         @Path("sessionId") sessionId: String,
-    ): RepairSession
+    ): BikeSessionDto
 
-    @POST("v1/repair-sessions/{sessionId}/turns")
+    @POST("v1/sessions/{sessionId}/turns")
     suspend fun createTurn(
         @Path("sessionId") sessionId: String,
-        @Body body: TurnCreate,
-    ): TurnAccepted
+        @Body body: TurnCreateDto,
+    ): TurnAcceptedDto
 
     @Multipart
     @POST("v1/artifacts")
     suspend fun uploadArtifact(
         @Part file: MultipartBody.Part,
         @Part("purpose") purpose: RequestBody,
-        @Part("repair_session_id") repairSessionId: RequestBody,
+        @Part("session_id") sessionId: RequestBody,
         @Part("client_artifact_id") clientArtifactId: RequestBody? = null,
     ): ArtifactUploadResponse
 
-    @GET("v1/repair-sessions/{sessionId}/reports")
+    @GET("v1/sessions/{sessionId}/reports")
     suspend fun getReports(
         @Path("sessionId") sessionId: String,
         @Query("limit") limit: Int = 50,
         @Query("cursor") cursor: String? = null,
     ): PhaseReportList
 
-    @GET("v1/repair-sessions/{sessionId}/reports/{reportId}")
+    @GET("v1/sessions/{sessionId}/reports/{reportId}")
     suspend fun getReport(
         @Path("sessionId") sessionId: String,
         @Path("reportId") reportId: String,

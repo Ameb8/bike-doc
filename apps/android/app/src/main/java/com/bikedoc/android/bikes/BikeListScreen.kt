@@ -577,7 +577,7 @@ private fun BikeListItems(
             BikeRow(
                 bike = bike,
                 onClick = { onBikeSelected(bike) },
-                showDeleteAction = !selectionMode && !bike.hasRepairSessions,
+                showDeleteAction = !selectionMode && !bike.hasSessions,
                 isDeleting = deletingBikeId == bike.id,
                 showSelectionProgress = selectionMode && isBusy && selectedBikeId == bike.id,
                 onDelete = { onRequestDelete(bike) },

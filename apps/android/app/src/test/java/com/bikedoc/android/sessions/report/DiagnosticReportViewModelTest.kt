@@ -97,7 +97,7 @@ class DiagnosticReportViewModelTest {
     private fun viewModelFor(report: RepairReport): DiagnosticReportViewModel =
         DiagnosticReportViewModel(
             reportRepository = FakeReportRepository(ApiResult.Success(report)),
-            savedStateHandle = SavedStateHandle(mapOf("sessionId" to "session-1", "reportId" to "report-1")),
+            savedStateHandle = SavedStateHandle(mapOf("sessionId" to "ses_1", "reportId" to "report-1")),
         )
 
     private fun supportedV2Report(): DiagnosticReportV2 =

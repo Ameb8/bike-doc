@@ -10,8 +10,8 @@ data class BikeProfileDto(
     val userId: String,
     @SerialName("display_name")
     val displayName: String,
-    @SerialName("has_repair_sessions")
-    val hasRepairSessions: Boolean,
+    @SerialName("has_sessions")
+    val hasSessions: Boolean,
     @SerialName("schema_version")
     val schemaVersion: String,
     @SerialName("profile_revision")

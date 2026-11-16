@@ -79,7 +79,7 @@ class OkHttpSseEventSource
             val urlBuilder =
                 BuildConfig.API_BASE_URL.toHttpUrl()
                     .newBuilder()
-                    .addPathSegments("v1/repair-sessions/$sessionId/events")
+                    .addPathSegments("v1/sessions/$sessionId/events")
             if (after != null) {
                 urlBuilder.addQueryParameter("after", after)
             }

@@ -40,7 +40,7 @@ internal fun BikeProfileDto.toDomain() =
         id = id,
         userId = userId,
         displayName = displayName,
-        hasRepairSessions = hasRepairSessions,
+        hasSessions = hasSessions,
         schemaVersion = schemaVersion,
         profileRevision = profileRevision,
         identity = identity.toDomain(),
@@ -54,7 +54,16 @@ internal fun BikeProfileDto.toDomain() =
         electricAssist = electricAssist.toDomain(),
         legacy =
             LegacyBikePresentation(
-                make, model, modelYear, bikeType, frameMaterial, drivetrain, brakeType, wheelSize, tireSize, notes,
+                make,
+                model,
+                modelYear,
+                bikeType,
+                frameMaterial,
+                drivetrain,
+                brakeType,
+                wheelSize,
+                tireSize,
+                notes,
             ),
         createdAt = createdAt,
         updatedAt = updatedAt,
@@ -331,20 +340,37 @@ private fun BikeBrakes.toDto() = BikeBrakesDto(front.toDto(), rear.toDto())
 
 private fun DrivetrainRole.toDto() =
     DrivetrainRoleDto(
-        presence = component.presence.toDto(), manufacturer = component.manufacturer, model = component.model,
-        actuation = actuation, speedCount = speedCount, mountType = mountType,
-        chainringCount = chainringCount, chainringToothCounts = chainringToothCounts,
-        clusterType = clusterType, smallestSprocketTeeth = smallestSprocketTeeth,
-        largestSprocketTeeth = largestSprocketTeeth, driverInterface = driverInterface,
-        speedCompatibility = speedCompatibility, interfaceName = interfaceName, shellWidthMm = shellWidthMm,
+        presence = component.presence.toDto(),
+        manufacturer = component.manufacturer,
+        model = component.model,
+        actuation = actuation,
+        speedCount = speedCount,
+        mountType = mountType,
+        chainringCount = chainringCount,
+        chainringToothCounts = chainringToothCounts,
+        clusterType = clusterType,
+        smallestSprocketTeeth = smallestSprocketTeeth,
+        largestSprocketTeeth = largestSprocketTeeth,
+        driverInterface = driverInterface,
+        speedCompatibility = speedCompatibility,
+        interfaceName = interfaceName,
+        shellWidthMm = shellWidthMm,
     )
 
 private fun BikeDrivetrain.toDto() =
     BikeDrivetrainDto(
-        architecture = architecture, driveMedium = driveMedium, frontShifter = frontShifter?.toDto(),
-        rearShifter = rearShifter?.toDto(), frontDerailleur = frontDerailleur?.toDto(),
-        rearDerailleur = rearDerailleur?.toDto(), crankset = crankset?.toDto(), rearCluster = rearCluster?.toDto(),
-        chain = chain?.toDto(), belt = belt?.toDto(), gearUnit = gearUnit?.toDto(), bottomBracket = bottomBracket?.toDto(),
+        architecture = architecture,
+        driveMedium = driveMedium,
+        frontShifter = frontShifter?.toDto(),
+        rearShifter = rearShifter?.toDto(),
+        frontDerailleur = frontDerailleur?.toDto(),
+        rearDerailleur = rearDerailleur?.toDto(),
+        crankset = crankset?.toDto(),
+        rearCluster = rearCluster?.toDto(),
+        chain = chain?.toDto(),
+        belt = belt?.toDto(),
+        gearUnit = gearUnit?.toDto(),
+        bottomBracket = bottomBracket?.toDto(),
     )
 
 private fun WheelComponent.toDto() =

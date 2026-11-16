@@ -13,7 +13,7 @@ class BikeProfileSerializationTest {
                 """
                 {
                   "id":"bike-1","user_id":"user-1","display_name":"Commuter",
-                  "has_repair_sessions":false,"schema_version":"bike_profile.v2","profile_revision":0,
+                  "has_sessions":false,"schema_version":"bike_profile.v2","profile_revision":0,
                   "identity":{},"frame":{},"brakes":{"front":{},"rear":{}},"drivetrain_v2":{},
                   "rolling_system":{"front":{},"rear":{}},"suspension":{},"cockpit":{},"seating":{},
                   "electric_assist":{},"bike_type":"unknown","frame_material":"unknown",
@@ -36,7 +36,7 @@ class BikeProfileSerializationTest {
             Json { ignoreUnknownKeys = true }.decodeFromString<BikeProfileDto>(
                 """
                 {
-                  "id":"bike-1","user_id":"user-1","display_name":"Commuter","has_repair_sessions":false,
+                  "id":"bike-1","user_id":"user-1","display_name":"Commuter","has_sessions":false,
                   "schema_version":"bike_profile.v2","profile_revision":2,"identity":{"make":"Trek"},"frame":{},
                   "brakes":{"front":{},"rear":{}},"drivetrain_v2":{},"rolling_system":{"front":{},"rear":{}},
                   "suspension":{},"cockpit":{},"seating":{},"electric_assist":{},"future_optional_group":{"value":"kept server-side"},
