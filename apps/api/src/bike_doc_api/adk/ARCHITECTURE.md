@@ -375,11 +375,11 @@ business state. Execution-token effect protection is described below. Atomic
 acceptance and failure repair are integrated with queue-only execution; deployment
 and rollback follow the [cutover runbook](../../../QUEUE_CUTOVER.md).
 
-## Private diagnostic execution authority
+## Private interactive-turn execution authority
 
 The queue host now persists a hard effect boundary after durable phase-session
 ensure/resume and before orchestration. The shared composition receives a
-`DiagnosticExecutionFence` over its fresh product session. All composed
+`InteractiveTurnExecutionFence` over its fresh product session. All composed
 services/repositories use that session, whose SQL/flush/commit hooks compare the
 frozen job token and hard deadline under the job-row lock in the product
 transaction. The context also travels privately through orchestration, runner
@@ -396,4 +396,4 @@ worker/deadline, but its later product writes cannot commit. Stale authority
 propagates without model-facing tool feedback or public error/completion events;
 the shared runtime leaves the delivery for recovery. Database token validity is
 never extended by transport progress. See the service-wide architecture's
-[#150 evidence](../../../ARCHITECTURE.md#diagnostic-execution-fencing-150).
+[#150 and #195 evidence](../../../ARCHITECTURE.md#interactive-turn-execution-fencing-150-195).

@@ -667,14 +667,14 @@ replay. Every newly accepted diagnostic turn records work for this role.
 | Bounded content-safe outcomes and telemetry | Model error redaction and provider failure tests; real test checks accepted content, provider exception text and artifact paths are absent from logs |
 | Verification | `task format`, `task check`, `task test:diagnostic`; existing ADK orchestration/runner/service suites stay active |
 
-## Diagnostic execution fencing (#150)
+## Interactive-turn execution fencing (#150, #195)
 
-`core/diagnostic_execution.py` defines the frozen, transport-neutral
-`DiagnosticExecution(job_id, token, deadline)` and the bounded
-`StaleDiagnosticExecutionError`. Tokens are excluded from representations. The
+`core/interactive_turn_execution.py` defines the frozen, transport-neutral
+`InteractiveTurnExecution(job_id, token, deadline)` and the bounded
+`StaleInteractiveTurnExecutionError`. Tokens are excluded from representations. The
 claimed worker constructs this context after authoritative preparation and
 ADK ensure/resume. Immediately before composing/invoking orchestration,
-`repositories/diagnostic_execution.py:DiagnosticExecutionFence.cross_boundary`
+`repositories/interactive_turn_execution.py:InteractiveTurnExecutionFence.cross_boundary`
 locks the job, checks the current token and database wall-clock deadline, and
 conditionally persists the irreversible boundary. Migration `0012` retains
 `effect_boundary_token`, so a new current token cannot inherit an earlier
@@ -693,11 +693,11 @@ happen after lock acquisition, use `clock_timestamp()` rather than transaction
 start time, and run again at commit to roll back writes flushed before expiry.
 The lock order is job then product rows. A rejection remains sticky for the
 execution, and service rollback discards its pending mutations and SSE hints.
-Any future diagnostic service must reuse this fenced session; creating an
+Any interactive-turn service must reuse this fenced session; creating an
 independent product session would bypass its authority and is prohibited.
 
 ```text
-claimed handler -> DiagnosticExecutionApplication -> DiagnosticExecutionFence
+claimed handler -> DiagnosticExecutionApplication -> InteractiveTurnExecutionFence
                                                       -> product session hooks
                 -> shared diagnostic graph -> orchestrator / runner / tools
                                            -> services -> repositories

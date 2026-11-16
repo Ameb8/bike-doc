@@ -11,8 +11,10 @@ from typing import Any, Literal, Protocol
 
 import structlog
 
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import NotFoundError, ValidationAppError
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
+)
 from bike_doc_api.models.observation_extraction import (
     ObservationExtractionAttempt,
     ObservationExtractionRun,
@@ -669,7 +671,7 @@ class DiagnosticVisualContextService:
 
             validated = validate_observation_output(result.output, images)
             validate_privacy_safe_observation_output(validated.model_dump(mode="json"))
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             raise
         except asyncio.CancelledError:
             raise

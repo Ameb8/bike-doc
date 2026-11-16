@@ -6,7 +6,9 @@ from datetime import timedelta
 from typing import Protocol
 
 from bike_doc_api.core.config import Settings
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
+)
 from bike_doc_api.repositories.background_jobs import JobError, JobOutcome, JobSnapshot
 from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
 from bike_doc_api.workers.registry import (
@@ -130,7 +132,7 @@ class DiagnosticTurnHandler:
                     "retrying", error.category, timedelta(seconds=self.retry_seconds)
                 )
             return JobOutcome("dead", error.category)
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             raise
         except Exception:
             # Unknown failures never authorize retry. Persistence reads the

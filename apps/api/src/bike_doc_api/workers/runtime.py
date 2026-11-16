@@ -11,7 +11,9 @@ from typing import Protocol
 import structlog
 from pydantic import ValidationError
 
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
+)
 from bike_doc_api.core.queue_telemetry import QueueTelemetry, queue_telemetry
 from bike_doc_api.repositories.background_jobs import (
     DeliveryResolution,
@@ -234,7 +236,7 @@ class PullWorker:
             finally:
                 progress.cancel()
                 await asyncio.gather(progress, return_exceptions=True)
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             # Recovery owns the terminal product transaction. Do not apply an
             # outcome or acknowledge on behalf of the rejected execution.
             self.telemetry.observe(

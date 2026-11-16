@@ -9,12 +9,14 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bike_doc_api.adk.tools.common import DiagnosticToolContext, normalize_tool_errors
-from bike_doc_api.core.diagnostic_execution import (
-    DiagnosticExecution,
-    StaleDiagnosticExecutionError,
+from bike_doc_api.core.interactive_turn_execution import (
+    InteractiveTurnExecution,
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.models.repair_session import RepairSession
-from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+from bike_doc_api.repositories.interactive_turn_execution import (
+    InteractiveTurnExecutionFence,
+)
 from bike_doc_api.schemas.common import RepairSessionStatus
 from bike_doc_api.schemas.repair_session import InputRequestType
 from bike_doc_api.services.events import EventService
@@ -58,7 +60,7 @@ def payload(phase_id: str) -> dict:
 
 
 def test_execution_is_immutable_and_private() -> None:
-    execution = DiagnosticExecution("job", "secret-token", datetime.now(UTC))
+    execution = InteractiveTurnExecution("job", "secret-token", datetime.now(UTC))
     assert execution.token not in repr(execution)
     with pytest.raises(FrozenInstanceError):
         execution.token = "changed"
@@ -68,7 +70,9 @@ def test_execution_is_immutable_and_private() -> None:
     context._execution = execution
     assert "secret-token" not in context.model_dump_json()
     assert "_execution" not in context.model_json_schema()["properties"]
-    assert str(StaleDiagnosticExecutionError()) == "diagnostic_execution_stale"
+    assert (
+        str(StaleInteractiveTurnExecutionError()) == "interactive_turn_execution_stale"
+    )
 
 
 @pytest.mark.parametrize(
@@ -76,7 +80,6 @@ def test_execution_is_immutable_and_private() -> None:
     [
         {"execution_token": "replaced"},
         {"state": "interrupted"},
-        {"job_kind": "profile_inference"},
         {"effect_boundary_at": None},
         {"effect_boundary_token": "other"},
         {"execution_deadline": None},
@@ -85,7 +88,7 @@ def test_execution_is_immutable_and_private() -> None:
 )
 def test_checks_locked_authority_and_rejects_without_sql_mutation(change: dict) -> None:
     now = datetime.now(UTC)
-    execution = DiagnosticExecution("job", "token", now + timedelta(seconds=1))
+    execution = InteractiveTurnExecution("job", "token", now + timedelta(seconds=1))
     row = dict(
         job_kind="diagnostic_turn",
         state="running",
@@ -99,21 +102,40 @@ def test_checks_locked_authority_and_rejects_without_sql_mutation(change: dict) 
     connection.execute.return_value.mappings.return_value.first.return_value = row
     connection.scalar.return_value = now
     session = Mock(connection=Mock(return_value=connection))
-    fence = DiagnosticExecutionFence(Mock(), execution)
-    with pytest.raises(StaleDiagnosticExecutionError):
+    fence = InteractiveTurnExecutionFence(Mock(), execution)
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         fence._require(session)
     assert connection.mock_calls[0][0] == "execute"
     assert "FOR UPDATE" in str(connection.execute.call_args.args[0])
     assert connection.execute.call_count == 1
     # Rejection is sticky, including after a caller attempts rollback/retry.
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         fence._require(session)
     assert connection.execute.call_count == 1
 
 
+@pytest.mark.parametrize("kind", ["diagnostic_turn", "inspection_turn"])
+def test_authority_is_independent_of_job_kind(kind: str) -> None:
+    now = datetime.now(UTC)
+    execution = InteractiveTurnExecution("job", "token", now + timedelta(seconds=1))
+    row = dict(
+        job_kind=kind,
+        state="running",
+        execution_token=execution.token,
+        execution_deadline=execution.deadline,
+        effect_boundary_at=now,
+        effect_boundary_token=execution.token,
+    )
+    connection = Mock()
+    connection.execute.return_value.mappings.return_value.first.return_value = row
+    connection.scalar.return_value = now
+    fence = InteractiveTurnExecutionFence(Mock(), execution)
+    assert fence._require(Mock(connection=Mock(return_value=connection))) == row
+
+
 def test_expiry_without_replacement_and_exact_deadline() -> None:
     now = datetime.now(UTC)
-    execution = DiagnosticExecution("job", "token", now)
+    execution = InteractiveTurnExecution("job", "token", now)
     connection = Mock()
     connection.execute.return_value.mappings.return_value.first.return_value = dict(
         job_kind="diagnostic_turn",
@@ -124,8 +146,8 @@ def test_expiry_without_replacement_and_exact_deadline() -> None:
         effect_boundary_token="token",
     )
     connection.scalar.return_value = now
-    with pytest.raises(StaleDiagnosticExecutionError):
-        DiagnosticExecutionFence(Mock(), execution)._require(
+    with pytest.raises(StaleInteractiveTurnExecutionError):
+        InteractiveTurnExecutionFence(Mock(), execution)._require(
             Mock(connection=Mock(return_value=connection))
         )
 
@@ -133,14 +155,14 @@ def test_expiry_without_replacement_and_exact_deadline() -> None:
 @pytest.mark.parametrize("operation", ["flush", "commit", "sql"])
 async def test_session_hooks_guard_every_mutation_route(operation: str) -> None:
     async with AsyncSession() as session:
-        fence = DiagnosticExecutionFence(
-            session, DiagnosticExecution("job", "secret", datetime.now(UTC))
+        fence = InteractiveTurnExecutionFence(
+            session, InteractiveTurnExecution("job", "secret", datetime.now(UTC))
         )
-        fence._require = Mock(side_effect=StaleDiagnosticExecutionError())
+        fence._require = Mock(side_effect=StaleInteractiveTurnExecutionError())
         fence.bind()
         if operation == "flush":
             session.add(RepairSession(user_id="user", bike_id="bike"))
-        with pytest.raises(StaleDiagnosticExecutionError):
+        with pytest.raises(StaleInteractiveTurnExecutionError):
             if operation == "sql":
                 from sqlalchemy import update
 
@@ -154,14 +176,14 @@ async def test_session_hooks_guard_every_mutation_route(operation: str) -> None:
 
 @pytest.mark.parametrize("family", ["event", "input", "safety", "report", "completion"])
 async def test_service_seams_preserve_stale_authority_failure(family: str) -> None:
-    stale = StaleDiagnosticExecutionError()
+    stale = StaleInteractiveTurnExecutionError()
     repo = AsyncMock()
     repo.get_owned_for_update.side_effect = stale
     repo.append_for_session.side_effect = stale
     rollback = AsyncMock()
     commit = AsyncMock()
     user = SimpleNamespace(id="user")
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         if family == "event":
             await EventService(
                 repo, repo, commit=commit, rollback=rollback
@@ -227,9 +249,9 @@ async def test_service_seams_preserve_stale_authority_failure(family: str) -> No
 
 
 async def test_tool_normalization_does_not_feed_stale_error_back_to_model() -> None:
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         await normalize_tool_errors(
-            AsyncMock(side_effect=StaleDiagnosticExecutionError())
+            AsyncMock(side_effect=StaleInteractiveTurnExecutionError())
         )
 
 
@@ -239,7 +261,7 @@ async def test_visual_service_stale_failure_never_invokes_provider(seam: str) ->
         DiagnosticVisualContextService,
     )
 
-    stale = StaleDiagnosticExecutionError()
+    stale = StaleInteractiveTurnExecutionError()
     repo, runs, extractor = AsyncMock(), AsyncMock(), AsyncMock()
     repo.get.side_effect = stale
     runs.get_by_turn_id.side_effect = stale
@@ -252,7 +274,7 @@ async def test_visual_service_stale_failure_never_invokes_provider(seam: str) ->
         runs=runs,
         extractor=extractor,
     )
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         if seam == "prepare":
             await service.prepare_turn(user_id="user", turn_id="turn")
         elif seam == "agent_start":
@@ -272,16 +294,16 @@ async def test_runner_and_model_reject_before_external_invocation() -> None:
     from bike_doc_api.adk.diagnostic_model import BoundedDiagnosticModel
     from bike_doc_api.adk.runner import DiagnosticRunner
 
-    reserve = AsyncMock(side_effect=StaleDiagnosticExecutionError())
+    reserve = AsyncMock(side_effect=StaleInteractiveTurnExecutionError())
     invoker = Mock()
     runner = DiagnosticRunner(invoker=invoker, reserve_external=reserve)
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         async for _ in runner.stream(Mock()):
             pytest.fail("stale authority must not become a runner event")
     invoker.assert_not_called()
     delegate = Mock(model="fake")
     model = BoundedDiagnosticModel(delegate, 1, reserve_external=reserve)
-    with pytest.raises(StaleDiagnosticExecutionError):
+    with pytest.raises(StaleInteractiveTurnExecutionError):
         async for _ in model.generate_content_async(Mock()):
             pytest.fail("stale authority must not call the model")
     delegate.generate_content_async.assert_not_called()
@@ -294,7 +316,7 @@ def test_runner_content_and_adk_state_omit_execution_authority() -> None:
         _state_delta_from_request,
     )
 
-    execution = DiagnosticExecution("job", "secret-token", datetime.now(UTC))
+    execution = InteractiveTurnExecution("job", "secret-token", datetime.now(UTC))
     request = DiagnosticRunnerRequest(
         user_id="user",
         user_skill_level="unknown",

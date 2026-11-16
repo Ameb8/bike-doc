@@ -8,7 +8,9 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from pydantic import PrivateAttr
 
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
+)
 
 
 class DiagnosticModelUnavailableError(Exception):
@@ -44,7 +46,7 @@ class BoundedDiagnosticModel(BaseLlm):
                     llm_request, stream
                 ):
                     yield response
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             raise
         except Exception:
             # Dependency telemetry runs before the app runner normalizes errors.

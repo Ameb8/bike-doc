@@ -34,11 +34,11 @@ from bike_doc_api.adk.turn_telemetry_state import (
     DiagnosticTurnTelemetrySnapshot,
     DiagnosticTurnTelemetryState,
 )
-from bike_doc_api.core.diagnostic_execution import (
-    DiagnosticExecution,
-    StaleDiagnosticExecutionError,
-)
 from bike_doc_api.core.errors import NotFoundError, ServerError
+from bike_doc_api.core.interactive_turn_execution import (
+    InteractiveTurnExecution,
+    StaleInteractiveTurnExecutionError,
+)
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import (
@@ -174,7 +174,7 @@ class DiagnosticTurnOrchestrator:
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry,
     )
-    execution: DiagnosticExecution | None = field(default=None, repr=False)
+    execution: InteractiveTurnExecution | None = field(default=None, repr=False)
     monotonic_clock: Callable[[], float] | None = None
     commit: Callable[[], Awaitable[None]] | None = None
     rollback: Callable[[], Awaitable[None]] | None = None
@@ -310,7 +310,7 @@ class DiagnosticTurnOrchestrator:
             telemetry_state.note_cancelled()
             telemetry_state.finalize()
             raise
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception:
@@ -538,7 +538,7 @@ class DiagnosticTurnOrchestrator:
                     ),
                 )
             )
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception:
@@ -727,7 +727,7 @@ class DiagnosticTurnOrchestrator:
             )
             if self.commit is not None:
                 await self.commit()
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception as exc:

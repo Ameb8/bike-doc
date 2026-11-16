@@ -19,7 +19,9 @@ from bike_doc_api.adk.diagnostic_model import (
 from bike_doc_api.adk.execution import DiagnosticResources
 from bike_doc_api.adk.sessions import StaleInMemoryADKSessionError
 from bike_doc_api.core.config import Settings
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
+)
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.repositories.background_jobs import JobError, JobOutcome, JobSnapshot
 from bike_doc_api.schemas.background_jobs import DiagnosticTurnInputV1
@@ -140,7 +142,7 @@ async def test_only_classified_preparation_failures_return_bounded_outcomes(
 
 
 @pytest.mark.parametrize(
-    "error", [asyncio.CancelledError(), StaleDiagnosticExecutionError()]
+    "error", [asyncio.CancelledError(), StaleInteractiveTurnExecutionError()]
 )
 async def test_cancellation_and_stale_execution_propagate(error: BaseException) -> None:
     app = SimpleNamespace(execute=AsyncMock(side_effect=error))
@@ -251,8 +253,9 @@ async def test_authoritative_loading_and_ensure_precede_orchestration(
         calls.append("boundary")
 
     fence = SimpleNamespace(cross_boundary=cross)
+    make_fence = Mock(return_value=fence)
     monkeypatch.setattr(
-        diagnostic_application, "DiagnosticExecutionFence", lambda *_: fence
+        diagnostic_application, "InteractiveTurnExecutionFence", make_fence
     )
 
     async def process(**kwargs):
@@ -283,6 +286,13 @@ async def test_authoritative_loading_and_ensure_precede_orchestration(
         }
     else:
         assert calls == ["ensure", "commit", "boundary", "process"]
+        passed_session, execution = make_fence.call_args.args
+        assert passed_session is session
+        assert (execution.job_id, execution.token, execution.deadline) == (
+            job.id,
+            job.execution_token,
+            job.execution_deadline,
+        )
         assert outcome.state == "succeeded"
         assert build.call_args.kwargs["resources"] is resources
         assert build.call_args.kwargs["fence"] is fence

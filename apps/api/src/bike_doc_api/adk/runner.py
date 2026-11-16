@@ -22,9 +22,9 @@ from bike_doc_api.adk.sessions import (
 )
 from bike_doc_api.adk.telemetry import diagnostic_run_config
 from bike_doc_api.core.config import Settings
-from bike_doc_api.core.diagnostic_execution import (
-    DiagnosticExecution,
-    StaleDiagnosticExecutionError,
+from bike_doc_api.core.interactive_turn_execution import (
+    InteractiveTurnExecution,
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.models._ids import generate_prefixed_ulid
 from bike_doc_api.schemas.event import DisplaySafetyLevel
@@ -51,7 +51,7 @@ class DiagnosticRunnerRequest:
     diagnostic_report_schema_version: Literal[
         "diagnostic_report.v1", "diagnostic_report.v2"
     ] = "diagnostic_report.v2"
-    execution: DiagnosticExecution | None = field(default=None, repr=False)
+    execution: InteractiveTurnExecution | None = field(default=None, repr=False)
     repair_history: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     diagnostic_artifacts: tuple[Mapping[str, Any], ...] = field(default_factory=tuple)
     current_images: tuple[NormalizedModelImage, ...] = field(default_factory=tuple)
@@ -284,7 +284,7 @@ class DiagnosticRunner:
                 yield event
         except asyncio.CancelledError:
             raise
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             raise
         except Exception:
             _ = emitted_any

@@ -38,7 +38,7 @@ from bike_doc_api.adk.tools.reports import (
     SaveDiagnosticReportTool,
 )
 from bike_doc_api.adk.tools.safety import RaiseSafetyFlagTool, SafetyServiceProtocol
-from bike_doc_api.core.diagnostic_execution import DiagnosticExecution
+from bike_doc_api.core.interactive_turn_execution import InteractiveTurnExecution
 from bike_doc_api.schemas.common import ArtifactPurpose
 from bike_doc_api.services.diagnostic_completion_telemetry import (
     DiagnosticCompletionTelemetry,
@@ -65,7 +65,7 @@ class DiagnosticAgentToolDependencies:
     input_request_service: DiagnosticInputRequestServiceProtocol
     safety_service: SafetyServiceProtocol
     report_service: DiagnosticReportServiceProtocol
-    execution: DiagnosticExecution | None = field(default=None, repr=False)
+    execution: InteractiveTurnExecution | None = field(default=None, repr=False)
     # Private composition dependency; it is never part of an ADK tool schema.
     telemetry: DiagnosticCompletionTelemetry = field(
         default_factory=default_diagnostic_completion_telemetry

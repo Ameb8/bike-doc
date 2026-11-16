@@ -41,8 +41,10 @@ from bike_doc_api.providers.storage import StorageProvider
 from bike_doc_api.repositories.artifacts import ArtifactRepository
 from bike_doc_api.repositories.background_jobs import BackgroundJobRepository
 from bike_doc_api.repositories.bikes import BikeRepository
-from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
 from bike_doc_api.repositories.events import RepairSessionEventRepository
+from bike_doc_api.repositories.interactive_turn_execution import (
+    InteractiveTurnExecutionFence,
+)
 from bike_doc_api.repositories.observation_extraction import (
     ObservationExtractionRunRepository,
 )
@@ -88,7 +90,7 @@ def build_diagnostic_orchestrator(
     session: AsyncSession,
     settings: Settings,
     resources: DiagnosticResources,
-    fence: DiagnosticExecutionFence | None = None,
+    fence: InteractiveTurnExecutionFence | None = None,
 ) -> DiagnosticTurnOrchestrator:
     """Rebuild the ADK orchestration graph around a fresh DB session."""
 

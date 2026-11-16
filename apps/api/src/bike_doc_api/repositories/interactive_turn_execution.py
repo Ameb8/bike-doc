@@ -1,4 +1,4 @@
-"""Transactional fencing for the complete diagnostic product unit of work.
+"""Transactional fencing for an interactive turn's product unit of work.
 
 Session-local hooks deliberately cover ORM autoflush, direct DML, and commit,
 including writes added later to the composed graph. ADK owns separate storage;
@@ -13,22 +13,24 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import ORMExecuteState, Session
 
-from bike_doc_api.core.diagnostic_execution import (
-    DiagnosticExecution,
-    StaleDiagnosticExecutionError,
+from bike_doc_api.core.interactive_turn_execution import (
+    InteractiveTurnExecution,
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.models.background_job import BackgroundJob
 
 
-class DiagnosticExecutionFence:
-    def __init__(self, session: AsyncSession, execution: DiagnosticExecution) -> None:
+class InteractiveTurnExecutionFence:
+    def __init__(
+        self, session: AsyncSession, execution: InteractiveTurnExecution
+    ) -> None:
         self.session = session
         self.execution = execution
         self._rejected = False
 
     def _require(self, session: Session, *, boundary: bool = True) -> RowMapping:
         if self._rejected:
-            raise StaleDiagnosticExecutionError()
+            raise StaleInteractiveTurnExecutionError()
         # Core connection calls avoid autoflush and recursive ORM hooks. Always
         # lock the job before product rows; read wall time AFTER the lock wait.
         connection = session.connection()
@@ -44,7 +46,6 @@ class DiagnosticExecutionFence:
         now = cast(datetime, connection.scalar(select(func.clock_timestamp())))
         if (
             row is None
-            or row["job_kind"] != "diagnostic_turn"
             or row["state"] != "running"
             or row["execution_token"] != self.execution.token
             or row["execution_deadline"] != self.execution.deadline
@@ -58,7 +59,7 @@ class DiagnosticExecutionFence:
             )
         ):
             self._rejected = True
-            raise StaleDiagnosticExecutionError()
+            raise StaleInteractiveTurnExecutionError()
         return row
 
     async def cross_boundary(self) -> None:
@@ -69,7 +70,7 @@ class DiagnosticExecutionFence:
             if row["effect_boundary_at"] is not None:
                 if row["effect_boundary_token"] != self.execution.token:
                     self._rejected = True
-                    raise StaleDiagnosticExecutionError()
+                    raise StaleInteractiveTurnExecutionError()
                 return
             session.connection().execute(
                 update(BackgroundJob)
@@ -89,7 +90,7 @@ class DiagnosticExecutionFence:
         try:
             await self.session.run_sync(cross)
             await self.session.commit()
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self.session.rollback()
             raise
 
@@ -100,9 +101,9 @@ class DiagnosticExecutionFence:
         and boundary commit. Never install on HTTP, profile, or ADK sessions.
         """
         sync = self.session.sync_session
-        if "diagnostic_execution_fence" in sync.info:
-            raise ValueError("diagnostic session already fenced")
-        sync.info["diagnostic_execution_fence"] = self
+        if "interactive_turn_execution_fence" in sync.info:
+            raise ValueError("interactive turn session already fenced")
+        sync.info["interactive_turn_execution_fence"] = self
         event.listen(sync, "do_orm_execute", self._before_sql)
         event.listen(sync, "before_flush", self._before_flush)
         event.listen(sync, "after_flush_postexec", self._before_commit)

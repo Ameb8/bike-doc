@@ -9,13 +9,15 @@ from typing import Any, Protocol
 
 from pydantic import ValidationError as PydanticValidationError
 
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import (
     NotFoundError,
     SafetyPolicyViolationError,
     ServerError,
     SessionStateConflictError,
     ValidationAppError,
+)
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
 from bike_doc_api.models.repair_session import RepairSession as RepairSessionModel
@@ -354,7 +356,7 @@ class DiagnosticSafetyService:
         ):
             await self._rollback_if_configured()
             raise
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception as exc:

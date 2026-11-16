@@ -8,10 +8,6 @@ from typing import Any, Literal, TypeVar, overload
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, ValidationError
 
-from bike_doc_api.core.diagnostic_execution import (
-    DiagnosticExecution,
-    StaleDiagnosticExecutionError,
-)
 from bike_doc_api.core.errors import (
     AppError,
     NotFoundError,
@@ -20,6 +16,10 @@ from bike_doc_api.core.errors import (
     SessionStateConflictError,
     StaleSessionError,
     ValidationAppError,
+)
+from bike_doc_api.core.interactive_turn_execution import (
+    InteractiveTurnExecution,
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.schemas.common import RepairSessionPhase
 from bike_doc_api.schemas.observation_extraction import (
@@ -45,7 +45,7 @@ class DiagnosticToolContext(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    _execution: DiagnosticExecution | None = PrivateAttr(default=None)
+    _execution: InteractiveTurnExecution | None = PrivateAttr(default=None)
 
     user_id: str
     user_skill_level: str = "unknown"
@@ -281,7 +281,7 @@ async def normalize_tool_errors(
         return tool_error("internal_error", _default_message("internal_error"))
     except AppError:
         return tool_error("internal_error", _default_message("internal_error"))
-    except StaleDiagnosticExecutionError:
+    except StaleInteractiveTurnExecutionError:
         raise
     except Exception:
         return tool_error("internal_error", _default_message("internal_error"))

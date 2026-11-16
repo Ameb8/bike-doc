@@ -302,7 +302,7 @@ async def _fencing_execution(context: tuple, duration: float = 120):
     from datetime import timedelta
 
     from bike_doc_api.adk.sessions import DiagnosticADKSessionClient
-    from bike_doc_api.core.diagnostic_execution import DiagnosticExecution
+    from bike_doc_api.core.interactive_turn_execution import InteractiveTurnExecution
     from bike_doc_api.repositories.background_jobs import ExecutionPolicy
     from bike_doc_api.repositories.repair_sessions import RepairPhaseSessionRepository
 
@@ -329,7 +329,7 @@ async def _fencing_execution(context: tuple, duration: float = 120):
         await session.commit()
         current = resolved.job
         assert current and current.execution_token and current.execution_deadline
-        return DiagnosticExecution(
+        return InteractiveTurnExecution(
             current.id, current.execution_token, current.execution_deadline
         ), phase_id
 
@@ -390,9 +390,13 @@ async def test_every_protected_write_family_rejects_late_execution(
     from sqlalchemy import update
 
     from bike_doc_api.adk.execution import build_diagnostic_orchestrator
-    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
+    from bike_doc_api.core.interactive_turn_execution import (
+        StaleInteractiveTurnExecutionError,
+    )
     from bike_doc_api.models.observation_extraction import ObservationExtractionRun
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
     from bike_doc_api.repositories.observation_extraction import (
         ObservationExtractionRunRepository,
     )
@@ -404,7 +408,7 @@ async def test_every_protected_write_family_rejects_late_execution(
         context, duration=0.6 if loss == "expiry" else 120
     )
     async with sessions() as session:
-        fence = DiagnosticExecutionFence(session, execution)
+        fence = InteractiveTurnExecutionFence(session, execution)
         await fence.cross_boundary()
         run = ObservationExtractionRun(
             turn_id=job.input["turn_id"],
@@ -462,13 +466,14 @@ async def test_every_protected_write_family_rejects_late_execution(
             if attempt_id
             else None
         )
-        fence = DiagnosticExecutionFence(session, execution)
+        fence = InteractiveTurnExecutionFence(session, execution)
         graph = build_diagnostic_orchestrator(
             session=session, settings=settings, resources=resources, fence=fence
         )
         runs = ObservationExtractionRunRepository(session)
         with pytest.raises(
-            StaleDiagnosticExecutionError, match=r"^diagnostic_execution_stale$"
+            StaleInteractiveTurnExecutionError,
+            match=r"^interactive_turn_execution_stale$",
         ):
             if family == "event":
                 await graph.event_service.append_event(
@@ -596,8 +601,12 @@ async def test_boundary_race_idempotence_and_replaced_owner_cannot_inherit(conte
 
     from sqlalchemy import update
 
-    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.core.interactive_turn_execution import (
+        StaleInteractiveTurnExecutionError,
+    )
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     _, sessions, job, _, _, _, _ = context
     execution, _ = await _fencing_execution(context)
@@ -605,9 +614,9 @@ async def test_boundary_race_idempotence_and_replaced_owner_cannot_inherit(conte
     async def cross(identity):
         async with sessions() as session:
             try:
-                await DiagnosticExecutionFence(session, identity).cross_boundary()
+                await InteractiveTurnExecutionFence(session, identity).cross_boundary()
                 return True
-            except StaleDiagnosticExecutionError:
+            except StaleInteractiveTurnExecutionError:
                 return False
 
     assert sorted(
@@ -635,15 +644,19 @@ async def test_boundary_race_idempotence_and_replaced_owner_cannot_inherit(conte
 async def test_flushed_effect_rolls_back_if_deadline_passes_before_commit(context):
     import asyncio
 
-    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.core.interactive_turn_execution import (
+        StaleInteractiveTurnExecutionError,
+    )
     from bike_doc_api.repositories.events import RepairSessionEventRepository
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     _, sessions, _job, repair_id, _, _, _ = context
     execution, _ = await _fencing_execution(context, duration=0.6)
     before = await _product_snapshot(sessions, repair_id)
     async with sessions() as session:
-        fence = DiagnosticExecutionFence(session, execution)
+        fence = InteractiveTurnExecutionFence(session, execution)
         await fence.cross_boundary()
         fence.bind()
         await RepairSessionEventRepository(session).append_for_session(
@@ -652,7 +665,7 @@ async def test_flushed_effect_rolls_back_if_deadline_passes_before_commit(contex
             data={"text": "flushed"},
         )
         await asyncio.sleep(0.7)
-        with pytest.raises(StaleDiagnosticExecutionError):
+        with pytest.raises(StaleInteractiveTurnExecutionError):
             await session.commit()
         await session.rollback()
     assert await _product_snapshot(sessions, repair_id) == before
@@ -661,8 +674,12 @@ async def test_flushed_effect_rolls_back_if_deadline_passes_before_commit(contex
 async def test_lock_wait_checks_wall_clock_after_deadline(context):
     import asyncio
 
-    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.core.interactive_turn_execution import (
+        StaleInteractiveTurnExecutionError,
+    )
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     _, sessions, job, _, _, _, _ = context
     execution, _ = await _fencing_execution(context, duration=0.5)
@@ -673,8 +690,10 @@ async def test_lock_wait_checks_wall_clock_after_deadline(context):
 
         async def late_boundary():
             async with sessions() as session:
-                with pytest.raises(StaleDiagnosticExecutionError):
-                    await DiagnosticExecutionFence(session, execution).cross_boundary()
+                with pytest.raises(StaleInteractiveTurnExecutionError):
+                    await InteractiveTurnExecutionFence(
+                        session, execution
+                    ).cross_boundary()
 
         task = asyncio.create_task(late_boundary())
         await asyncio.sleep(0.6)
@@ -743,8 +762,12 @@ async def test_boundary_and_token_replacement_race_has_one_owner(context):
 
     from sqlalchemy import update
 
-    from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+    from bike_doc_api.core.interactive_turn_execution import (
+        StaleInteractiveTurnExecutionError,
+    )
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     _, sessions, job, _, _, _, _ = context
     execution, _ = await _fencing_execution(context)
@@ -753,9 +776,9 @@ async def test_boundary_and_token_replacement_race_has_one_owner(context):
     async def cross(identity):
         async with sessions() as session:
             try:
-                await DiagnosticExecutionFence(session, identity).cross_boundary()
+                await InteractiveTurnExecutionFence(session, identity).cross_boundary()
                 return True
-            except StaleDiagnosticExecutionError:
+            except StaleInteractiveTurnExecutionError:
                 return False
 
     async def replace_and_cross():
@@ -979,15 +1002,17 @@ async def test_expired_execution_race_repeated_maintenance_and_no_progress(
     from unittest.mock import AsyncMock
 
     from bike_doc_api.maintenance.runtime import JobMaintenance
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
     from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
     from bike_doc_api.workers.diagnostic import DiagnosticRecoveryPolicy
 
     settings, sessions, job, *_ = context
     execution, _ = await _fencing_execution(context, duration=0.15)
     if boundary:
         async with sessions() as session:
-            await DiagnosticExecutionFence(session, execution).cross_boundary()
+            await InteractiveTurnExecutionFence(session, execution).cross_boundary()
     await asyncio.sleep(0.2)
 
     @asynccontextmanager
@@ -1148,12 +1173,12 @@ async def test_terminal_delivery_after_commit_and_ack_loss_is_attempt_free(
     settings, sessions, job, _, model, resources, _ = context
     execution, _ = await _fencing_execution(context)
     if state == "interrupted":
-        from bike_doc_api.repositories.diagnostic_execution import (
-            DiagnosticExecutionFence,
+        from bike_doc_api.repositories.interactive_turn_execution import (
+            InteractiveTurnExecutionFence,
         )
 
         async with sessions() as session:
-            await DiagnosticExecutionFence(session, execution).cross_boundary()
+            await InteractiveTurnExecutionFence(session, execution).cross_boundary()
     async with sessions() as session, session.begin():
         assert await DiagnosticJobRepository(session).apply_outcome(
             job_id=job.id,
@@ -1275,13 +1300,15 @@ async def test_classified_retry_is_durable_before_real_delayed_nak(
 
 async def test_arbitrary_postboundary_failure_is_interrupted_without_retry(context):
     from bike_doc_api.repositories.background_jobs import JobError, JobOutcome
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
     from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     _, sessions, job, *_ = context
     execution, _ = await _fencing_execution(context)
     async with sessions() as session:
-        await DiagnosticExecutionFence(session, execution).cross_boundary()
+        await InteractiveTurnExecutionFence(session, execution).cross_boundary()
     async with sessions() as session, session.begin():
         result = await DiagnosticJobRepository(session).apply_outcome_and_load(
             job_id=job.id,
@@ -1713,8 +1740,10 @@ async def test_reconstruction_restores_diagnostic_without_replaying_reserved_eff
     from bike_doc_api.maintenance.nats_publisher import NatsJobPublisher
     from bike_doc_api.maintenance.reconstruction import reconstruct
     from bike_doc_api.maintenance.runtime import JobMaintenance
-    from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
     from bike_doc_api.repositories.diagnostic_jobs import DiagnosticJobRepository
+    from bike_doc_api.repositories.interactive_turn_execution import (
+        InteractiveTurnExecutionFence,
+    )
 
     settings, sessions, job, _, model, resources, _ = context
 
@@ -1742,7 +1771,7 @@ async def test_reconstruction_restores_diagnostic_without_replaying_reserved_eff
         if reserved:
             execution, _ = await _fencing_execution(context, duration=0.1)
             async with sessions() as session:
-                await DiagnosticExecutionFence(session, execution).cross_boundary()
+                await InteractiveTurnExecutionFence(session, execution).cross_boundary()
             await asyncio.sleep(0.15)
         async with nats_connection(settings) as client:
             js = jetstream(client)

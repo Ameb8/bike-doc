@@ -24,9 +24,11 @@ from bike_doc_api.adk.sessions import (
     StaleInMemoryADKSessionError,
 )
 from bike_doc_api.core.config import Settings
-from bike_doc_api.core.diagnostic_execution import DiagnosticExecution
+from bike_doc_api.core.interactive_turn_execution import InteractiveTurnExecution
 from bike_doc_api.repositories.background_jobs import JobError
-from bike_doc_api.repositories.diagnostic_execution import DiagnosticExecutionFence
+from bike_doc_api.repositories.interactive_turn_execution import (
+    InteractiveTurnExecutionFence,
+)
 from bike_doc_api.repositories.repair_sessions import (
     RepairPhaseSessionRepository,
     RepairSessionRepository,
@@ -196,10 +198,10 @@ class DiagnosticExecutionApplication:
                     }
                 )
                 _safe_log("info", "diagnostic_turn_started", **fields)
-                execution = DiagnosticExecution(
+                execution = InteractiveTurnExecution(
                     job.id, job.execution_token, job.execution_deadline
                 )
-                fence = DiagnosticExecutionFence(session, execution)
+                fence = InteractiveTurnExecutionFence(session, execution)
                 await fence.cross_boundary()
                 orchestrator = build_diagnostic_orchestrator(
                     session=session,

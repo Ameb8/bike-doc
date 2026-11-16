@@ -11,13 +11,15 @@ import structlog
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.exc import IntegrityError
 
-from bike_doc_api.core.diagnostic_execution import StaleDiagnosticExecutionError
 from bike_doc_api.core.errors import (
     AppError,
     NotFoundError,
     ServerError,
     SessionStateConflictError,
     ValidationAppError,
+)
+from bike_doc_api.core.interactive_turn_execution import (
+    StaleInteractiveTurnExecutionError,
 )
 from bike_doc_api.models.artifact import ArtifactRef as ArtifactRefModel
 from bike_doc_api.models.event import RepairSessionEvent as RepairSessionEventModel
@@ -396,7 +398,7 @@ class ReportService:
         except IntegrityError as exc:
             await self._rollback_if_configured()
             raise ServerError() from exc
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception as exc:
@@ -554,7 +556,7 @@ class ReportService:
             estimate = await self._cost_estimate_service.estimate_plan_cost(
                 requirements,
             )
-        except StaleDiagnosticExecutionError:
+        except StaleInteractiveTurnExecutionError:
             await self._rollback_if_configured()
             raise
         except Exception:

@@ -1,18 +1,18 @@
-"""Private transport-neutral authority for one diagnostic execution."""
+"""Private transport-neutral authority for one interactive turn execution."""
 
 from dataclasses import dataclass, field
 from datetime import datetime
 
 
 @dataclass(frozen=True, slots=True)
-class DiagnosticExecution:
+class InteractiveTurnExecution:
     job_id: str
     token: str = field(repr=False)
     deadline: datetime
 
 
-class StaleDiagnosticExecutionError(Exception):
+class StaleInteractiveTurnExecutionError(Exception):
     """Execution has lost authority; never convert this to a product error."""
 
     def __init__(self) -> None:
-        super().__init__("diagnostic_execution_stale")
+        super().__init__("interactive_turn_execution_stale")
