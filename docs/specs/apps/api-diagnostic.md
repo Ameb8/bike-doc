@@ -26,22 +26,21 @@ spec, it was patched narrowly to make diagnostic-slice error responses explicit:
 
 - Add `401 Unauthorized` to secured diagnostic-slice endpoints that previously
   relied only on top-level `security`.
-- Add `409 Conflict` to `POST /v1/repair-sessions` for idempotency-key payload
+- Add `409 Conflict` to `POST /v1/sessions` for idempotency-key payload
   conflicts.
 - Add `404 Not Found` and `409 Conflict` to `POST /v1/artifacts` for missing
   owner-scoped parent resources and artifact idempotency conflicts.
-- Add `422 Validation Error` to `GET /v1/repair-sessions/{sessionId}/events`
+- Add `422 Validation Error` to `GET /v1/sessions/{sessionId}/events`
   for invalid stream parameters.
 
-No schema changes are required for the diagnostic slice. Existing schemas are
-sufficient:
+The generic contract retains diagnostic behavior using these schemas:
 
-- `RepairSessionCreate`
-- `RepairSession`
+- `BikeSessionCreate`
+- `BikeSession`
 - `TurnCreate`
 - `TurnAccepted`
 - `ArtifactRef`
-- `RepairSessionEvent`
+- `BikeSessionEvent`
 - `PhaseReportEnvelope`
 - `DiagnosticReportV1`
 - `DiagnosticReportV2`
@@ -53,13 +52,13 @@ The diagnostic slice includes these existing OpenAPI paths:
 
 | Path | Method | OpenAPI operationId | Diagnostic role |
 |---|---:|---|---|
-| `/v1/repair-sessions` | `POST` | `createRepairSession` | Start a diagnostic phase for a bike. |
-| `/v1/repair-sessions/{sessionId}` | `GET` | `getRepairSession` | Read current session state. |
-| `/v1/repair-sessions/{sessionId}/turns` | `POST` | `createRepairSessionTurn` | Submit user text/photo input. |
-| `/v1/repair-sessions/{sessionId}/events` | `GET` | `streamRepairSessionEvents` | Replay and stream persisted events. |
+| `/v1/sessions` | `POST` | `createBikeSession` | Start a diagnostic phase for a bike. |
+| `/v1/sessions/{sessionId}` | `GET` | `getBikeSession` | Read current session state. |
+| `/v1/sessions/{sessionId}/turns` | `POST` | `createBikeSessionTurn` | Submit user text/photo input. |
+| `/v1/sessions/{sessionId}/events` | `GET` | `streamBikeSessionEvents` | Replay and stream persisted events. |
 | `/v1/artifacts` | `POST` | `uploadArtifact` | Upload diagnostic photos. |
-| `/v1/repair-sessions/{sessionId}/reports` | `GET` | `listRepairSessionReports` | List phase reports for a session. |
-| `/v1/repair-sessions/{sessionId}/reports/{reportId}` | `GET` | `getRepairSessionReport` | Read one diagnostic report envelope. |
+| `/v1/sessions/{sessionId}/reports` | `GET` | `listBikeSessionReports` | List phase reports for a session. |
+| `/v1/sessions/{sessionId}/reports/{reportId}` | `GET` | `getBikeSessionReport` | Read one diagnostic report envelope. |
 
 The public API remains app-owned. Route handlers follow the `api.md` boundary:
 `api -> services -> repositories/models`, with ADK orchestration hidden behind
@@ -75,15 +74,15 @@ models are suitable.
 When route implementation begins, these endpoints can be implemented without an
 agent call:
 
-- `POST /v1/repair-sessions`
-- `GET /v1/repair-sessions/{sessionId}`
+- `POST /v1/sessions`
+- `GET /v1/sessions/{sessionId}`
 - `POST /v1/artifacts`
-- `GET /v1/repair-sessions/{sessionId}/events` for persisted replay and
+- `GET /v1/sessions/{sessionId}/events` for persisted replay and
   heartbeat behavior
-- `GET /v1/repair-sessions/{sessionId}/reports`
-- `GET /v1/repair-sessions/{sessionId}/reports/{reportId}`
+- `GET /v1/sessions/{sessionId}/reports`
+- `GET /v1/sessions/{sessionId}/reports/{reportId}`
 
-`POST /v1/repair-sessions/{sessionId}/turns` may use a deterministic no-agent
+`POST /v1/sessions/{sessionId}/turns` may use a deterministic no-agent
 stub during early API testing only if it still persists a turn, emits persisted
 events, and returns a schema-valid `TurnAccepted`. The stub must not pretend to
 be final diagnostic reasoning.
@@ -94,7 +93,7 @@ All diagnostic-slice errors use the public behavior defined in
 `docs/specs/apps/api-errors.md`. Endpoint tables below list the expected
 diagnostic-specific cases and stable `error.code` values.
 
-## `POST /v1/repair-sessions`
+## `POST /v1/sessions`
 
 Creates a repair session in `phase: diagnostic` for an owned bike profile.
 
@@ -103,6 +102,7 @@ Request:
 ```json
 {
   "bike_id": "bike_123",
+  "workflow": "repair",
   "client_session_id": "mobile-new-repair-001"
 }
 ```
@@ -111,9 +111,13 @@ Response `201 Created`:
 
 ```json
 {
-  "id": "rs_123",
+  "id": "ses_123",
   "user_id": "usr_123",
   "bike_id": "bike_123",
+  "workflow": "repair",
+  "inspection_progress": null,
+  "checklist_version": null,
+  "origin": null,
   "phase": "diagnostic",
   "status": "created",
   "safety_state": "ok",
@@ -123,6 +127,7 @@ Response `201 Created`:
     "diagnostic_report_id": null,
     "plan_report_id": null,
     "execution_report_id": null,
+    "inspection_report_id": null,
     "shop_referral_report_id": null
   },
   "latest_event_id": "0",
@@ -138,12 +143,12 @@ Expected errors:
 | `401` | Missing or invalid bearer token. | `unauthorized` |
 | `404` | `bike_id` does not exist for the authenticated user. | `not_found` |
 | `409` | Same `client_session_id` is reused with a different request payload. | `idempotency_conflict` |
-| `422` | Required `bike_id` is missing or malformed. | `validation_error` |
+| `422` | Required `bike_id` or `workflow` is missing or malformed. | `validation_error` |
 
 Retrying the exact same `client_session_id` request returns the original
 created session with `201 Created`.
 
-## `GET /v1/repair-sessions/{sessionId}`
+## `GET /v1/sessions/{sessionId}`
 
 Returns the current app-owned session state.
 
@@ -151,9 +156,13 @@ Response `200 OK`:
 
 ```json
 {
-  "id": "rs_123",
+  "id": "ses_123",
   "user_id": "usr_123",
   "bike_id": "bike_123",
+  "workflow": "repair",
+  "inspection_progress": null,
+  "checklist_version": null,
+  "origin": null,
   "phase": "diagnostic",
   "status": "awaiting_user",
   "safety_state": "ok",
@@ -173,6 +182,7 @@ Response `200 OK`:
     "diagnostic_report_id": null,
     "plan_report_id": null,
     "execution_report_id": null,
+    "inspection_report_id": null,
     "shop_referral_report_id": null
   },
   "latest_event_id": "4",
@@ -188,7 +198,7 @@ Expected errors:
 | `401` | Missing or invalid bearer token. | `unauthorized` |
 | `404` | Session does not exist or belongs to another user. | `not_found` |
 
-## `POST /v1/repair-sessions/{sessionId}/turns`
+## `POST /v1/sessions/{sessionId}/turns`
 
 Accepts one user turn for the session's current phase. The turn may include
 text, artifact IDs, or both. `client_turn_id` is required for idempotency.
@@ -220,13 +230,17 @@ Response `202 Accepted`:
 ```json
 {
   "turn_id": "turn_123",
-  "repair_session_id": "rs_123",
+  "session_id": "ses_123",
   "start_event_id": "4",
-  "event_stream_url": "/v1/repair-sessions/rs_123/events?after=4",
+  "event_stream_url": "/v1/sessions/ses_123/events?after=4",
   "session": {
-    "id": "rs_123",
+    "id": "ses_123",
     "user_id": "usr_123",
     "bike_id": "bike_123",
+    "workflow": "repair",
+    "inspection_progress": null,
+    "checklist_version": null,
+    "origin": null,
     "phase": "diagnostic",
     "status": "running",
     "safety_state": "ok",
@@ -236,6 +250,7 @@ Response `202 Accepted`:
       "diagnostic_report_id": null,
       "plan_report_id": null,
       "execution_report_id": null,
+      "inspection_report_id": null,
       "shop_referral_report_id": null
     },
     "latest_event_id": "5",
@@ -257,7 +272,7 @@ Expected errors:
 Retrying the exact same `client_turn_id` request returns the original accepted
 turn response with `202 Accepted`.
 
-## `GET /v1/repair-sessions/{sessionId}/events`
+## `GET /v1/sessions/{sessionId}/events`
 
 Streams persisted repair-session events using `text/event-stream`.
 Detailed event identity, cursor, heartbeat, timeout, persistence, and replay
@@ -266,7 +281,7 @@ retention rules are defined in `docs/specs/apps/api-events-diagnostic.md`.
 Request:
 
 ```text
-GET /v1/repair-sessions/rs_123/events?after=0&timeout_seconds=30
+GET /v1/sessions/ses_123/events?after=0&timeout_seconds=30
 Accept: text/event-stream
 Authorization: Bearer <token>
 ```
@@ -276,11 +291,11 @@ Response `200 OK`:
 ```text
 id: 1
 event: turn.started
-data: {"id":"1","session_id":"rs_123","turn_id":"turn_123","type":"turn.started","sequence":1,"created_at":"2026-06-21T17:02:00Z","data":{"turn_id":"turn_123","phase":"diagnostic"}}
+data: {"id":"1","session_id":"ses_123","turn_id":"turn_123","type":"turn.started","sequence":1,"created_at":"2026-06-21T17:02:00Z","data":{"turn_id":"turn_123","phase":"diagnostic"}}
 
 id: 2
 event: assistant.delta
-data: {"id":"2","session_id":"rs_123","turn_id":"turn_123","type":"assistant.delta","sequence":2,"created_at":"2026-06-21T17:02:01Z","data":{"text":"I need one photo of the rear derailleur."}}
+data: {"id":"2","session_id":"ses_123","turn_id":"turn_123","type":"assistant.delta","sequence":2,"created_at":"2026-06-21T17:02:01Z","data":{"text":"I need one photo of the rear derailleur."}}
 ```
 
 `after` and `Last-Event-ID` use public event IDs. If both are present, `after`
@@ -315,7 +330,7 @@ Expected errors:
 ## `POST /v1/artifacts`
 
 Uploads a media artifact. For diagnostic photos, `purpose` must be
-`diagnostic_photo`, `repair_session_id` is required, and `bike_id` must be
+`diagnostic_photo`, `session_id` is required, and `bike_id` must be
 omitted.
 
 Request:
@@ -326,7 +341,7 @@ Content-Type: multipart/form-data
 
 file=@rear-derailleur.jpg
 purpose=diagnostic_photo
-repair_session_id=rs_123
+session_id=ses_123
 client_artifact_id=mobile-artifact-001
 ```
 
@@ -337,8 +352,7 @@ Response `201 Created`:
   "artifact": {
     "id": "art_123",
     "user_id": "usr_123",
-    "repair_session_id": "rs_123",
-    "bike_id": null,
+    "bike_id": "bike_123",
     "purpose": "diagnostic_photo",
     "media_type": "image",
     "mime_type": "image/jpeg",
@@ -367,7 +381,7 @@ Expected errors:
 Retrying the exact same `client_artifact_id` upload returns the original
 artifact response with `201 Created`.
 
-## `GET /v1/repair-sessions/{sessionId}/reports`
+## `GET /v1/sessions/{sessionId}/reports`
 
 Lists persisted phase reports for a session. During the diagnostic slice, the
 only report type expected in normal success responses is `diagnostic`.
@@ -379,7 +393,7 @@ Response `200 OK`:
   "items": [
     {
       "id": "rpt_123",
-      "repair_session_id": "rs_123",
+      "session_id": "ses_123",
       "type": "diagnostic",
       "schema_version": "diagnostic_report.v1",
       "phase": "diagnostic",
@@ -438,7 +452,7 @@ Expected errors:
 | `404` | Session does not exist or belongs to another user. | `not_found` |
 | `422` | Pagination parameters are invalid. | `validation_error` |
 
-## `GET /v1/repair-sessions/{sessionId}/reports/{reportId}`
+## `GET /v1/sessions/{sessionId}/reports/{reportId}`
 
 Returns one persisted phase report envelope.
 
@@ -447,7 +461,7 @@ Response `200 OK`:
 ```json
 {
   "id": "rpt_123",
-  "repair_session_id": "rs_123",
+  "session_id": "ses_123",
   "type": "diagnostic",
   "schema_version": "diagnostic_report.v1",
   "phase": "diagnostic",
@@ -538,7 +552,7 @@ The diagnostic phase is complete when the backend persists a
 
 Completion must also:
 
-- Update `repair_sessions.latest_reports.diagnostic_report_id`.
+- Update `bike_sessions.latest_reports.diagnostic_report_id`.
 - Persist a `phase.report.created` event.
 - Persist a `turn.completed` event for the turn that produced the report.
 - Persist `safety.escalated` before or with the report if the diagnostic output
@@ -560,3 +574,8 @@ Completion must also:
 - Safety flags in report envelopes and event payloads use the OpenAPI
   `SafetyFlag` schema exactly.
 - Error responses use the OpenAPI `ErrorResponse` envelope.
+
+Session creation requires `workflow: repair`; generic listing accepts optional
+`bike_id` and `workflow` filters. Inspection, origin handoff, and generic
+completion behavior are specified in `../inspection-sessions.md`. Conversation
+history work (#169) extends `/v1/sessions` and must not restore repair-only paths.

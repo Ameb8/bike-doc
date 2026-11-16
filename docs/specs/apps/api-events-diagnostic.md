@@ -8,7 +8,7 @@ server-sent event behavior. It is a companion to `docs/specs/apps/api.md`,
 `docs/specs/apps/api-diagnostic.md`, `docs/specs/apps/api-db-diagnostic.md`,
 and the public contract in `docs/specs/openapi.yaml`.
 
-The public event stream remains the OpenAPI `RepairSessionEvent` stream. This
+The public event stream remains the OpenAPI `BikeSessionEvent` stream. This
 spec does not add a second public event taxonomy.
 
 ## References
@@ -40,10 +40,10 @@ is not emitted by the diagnostic slice.
 Every persisted public event has:
 
 - `sequence`: an integer that is monotonically increasing within one
-  `repair_session_id`.
+  `session_id`.
 - `id`: the public event ID serialized in API payloads and SSE frames.
 
-For V1, `RepairSessionEvent.id` is exactly `sequence` encoded as a decimal
+For V1, `BikeSessionEvent.id` is exactly `sequence` encoded as a decimal
 string. The SSE frame `id` field is also `sequence` encoded as a decimal
 string.
 
@@ -58,7 +58,7 @@ Sequence allocation rules:
 - `0` is reserved as a replay cursor meaning "before the first retained event."
 - Sequence is monotonic within a repair session, not globally.
 - A sequence number is never reused within the same repair session.
-- Event insertion and `repair_sessions.latest_event_sequence` updates happen in
+- Event insertion and `bike_sessions.latest_event_sequence` updates happen in
   the same transaction.
 - Concurrent event appends for the same repair session are serialized by
   locking the session row before allocating `latest_event_sequence + 1`.
@@ -68,7 +68,7 @@ Sequence allocation rules:
 The diagnostic event endpoint is:
 
 ```text
-GET /v1/repair-sessions/{sessionId}/events
+GET /v1/sessions/{sessionId}/events
 Accept: text/event-stream
 Authorization: Bearer <token>
 ```
@@ -77,8 +77,8 @@ Each public event frame uses the OpenAPI wire format:
 
 ```text
 id: <event.sequence as decimal string>
-event: <RepairSessionEvent.type>
-data: <JSON-encoded RepairSessionEvent>
+event: <BikeSessionEvent.type>
+data: <JSON-encoded BikeSessionEvent>
 ```
 
 Example:
@@ -86,10 +86,10 @@ Example:
 ```text
 id: 2
 event: assistant.delta
-data: {"id":"2","session_id":"rs_123","turn_id":"turn_123","type":"assistant.delta","sequence":2,"created_at":"2026-06-21T17:02:01Z","data":{"text":"I need one photo of the rear derailleur."}}
+data: {"id":"2","session_id":"ses_123","turn_id":"turn_123","type":"assistant.delta","sequence":2,"created_at":"2026-06-21T17:02:01Z","data":{"text":"I need one photo of the rear derailleur."}}
 ```
 
-`data` is always the full serialized `RepairSessionEvent`, not just the
+`data` is always the full serialized `BikeSessionEvent`, not just the
 event-specific `data` object.
 
 ## Replay Cursor Semantics
@@ -108,7 +108,7 @@ sequence order.
 | known event ID or sequence | Replay retained events strictly newer than that sequence, then wait for live events. |
 
 For V1, "known event ID" and "known sequence" are the same public decimal
-string because `RepairSessionEvent.id = sequence::text`.
+string because `BikeSessionEvent.id = sequence::text`.
 
 Invalid cursors:
 
@@ -178,7 +178,7 @@ V1 heartbeat rules:
 
 - Heartbeat cadence should be less than the configured `timeout_seconds`.
 - A heartbeat uses `event: heartbeat`.
-- The `data` field is a full `RepairSessionEvent` whose event-specific payload
+- The `data` field is a full `BikeSessionEvent` whose event-specific payload
   is `{"ok":true}`.
 - Heartbeats participate in the same sequence as all other session events.
 - A heartbeat is persisted before its SSE frame is written.
@@ -187,11 +187,11 @@ V1 heartbeat rules:
 
 If an implementation also uses SSE comment keepalives for infrastructure
 compatibility, those comments are transport-only and are not OpenAPI events.
-Only `event: heartbeat` frames are public `RepairSessionEvent` values.
+Only `event: heartbeat` frames are public `BikeSessionEvent` values.
 
 ## Diagnostic Event Types
 
-The diagnostic slice uses these OpenAPI `RepairSessionEventType` values:
+The diagnostic slice uses these OpenAPI `BikeSessionEventType` values:
 
 - `turn.started`
 - `assistant.delta`
@@ -315,3 +315,6 @@ artifact ID as described above; `retryable` means a later attempt to process
 that same artifact may succeed, not that the accepted turn will be retried
 inline. Fatal infrastructure failures may terminate the connection without an
 event; clients recover by reconnecting from the last processed event ID.
+
+Inspection uses this same event stream and generic session envelope. See
+`../inspection-sessions.md` §15 for inspection payloads and progress snapshots.

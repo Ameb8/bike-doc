@@ -57,7 +57,7 @@ POST /v1/artifacts
 For diagnostic V1:
 
 - `purpose` must be `diagnostic_photo`.
-- `repair_session_id` is required.
+- `session_id` is required.
 - `bike_id` must be omitted or `null`.
 - `file` is required.
 - `client_artifact_id` is optional and acts as a user-scoped idempotency key.
@@ -69,8 +69,7 @@ The route returns:
   "artifact": {
     "id": "art_123",
     "user_id": "usr_123",
-    "repair_session_id": "rs_123",
-    "bike_id": null,
+    "bike_id": "bike_123",
     "purpose": "diagnostic_photo",
     "media_type": "image",
     "mime_type": "image/jpeg",
@@ -96,22 +95,26 @@ owner-scoped `ArtifactRef` metadata.
 The OpenAPI `ArtifactPurpose` enum remains broader than diagnostic V1:
 
 - `diagnostic_photo`
+- `inspection_photo`
 - `verification_photo`
 - `bike_profile_photo`
 - `repair_reference`
 - `other`
 
-V1 upload behavior is only required for `diagnostic_photo`. Other purposes may
+V1 upload behavior supports `diagnostic_photo` and `inspection_photo`. Other purposes may
 return `422 validation_error` until their owning feature specs define behavior.
 This keeps the API contract stable without accidentally committing to future
 workflows.
 
+The public artifact projection contains its derived `bike_id` and does not expose session associations. Finding handoff associates ready evidence without copying bytes.
+
 Parent-resource rules must match `openapi.yaml` and
 `api-db-diagnostic.md`:
 
-| Purpose | `repair_session_id` | `bike_id` | Diagnostic V1 behavior |
+| Purpose | `session_id` | `bike_id` | Diagnostic V1 behavior |
 |---|---:|---:|---|
-| `diagnostic_photo` | Required | Must be null | Supported |
+| `diagnostic_photo` | Required | Must be null | Supported for repair |
+| `inspection_photo` | Required | Must be null | Supported for inspection |
 | `verification_photo` | Required | Must be null | May return `422` until execution spec exists |
 | `bike_profile_photo` | Must be null | Required | May return `422` until bike profile photo spec exists |
 | `repair_reference` | Optional | Optional | May return `422` until reference ingestion spec exists |
@@ -215,7 +218,7 @@ The service must follow the idempotency behavior from
 For artifacts, semantic equality includes:
 
 - `purpose`
-- `repair_session_id`
+- `session_id`
 - `bike_id`
 - normalized public `filename`
 - `content_sha256`
@@ -235,8 +238,8 @@ Required diagnostic upload persistence:
 
 - `id`: generated app ID with `art_` prefix
 - `user_id`: authenticated user
-- `repair_session_id`: target repair session
-- `bike_id`: `null`
+- session association: target owned repair session, provenance `uploaded`
+- `bike_id`: bike derived from the session
 - `client_artifact_id`: supplied key or `null`
 - `request_hash`: supplied-key hash or `null`
 - `purpose`: `diagnostic_photo`
@@ -328,12 +331,12 @@ This spec only defines the object key convention.
 Suggested object name:
 
 ```text
-users/{user_id}/repair-sessions/{repair_session_id}/artifacts/{artifact_id}/{content_sha256}.{ext}
+users/{user_id}/sessions/{session_id}/artifacts/{artifact_id}/{content_sha256}.{ext}
 ```
 
 Where:
 
-- `user_id`, `repair_session_id`, and `artifact_id` are app-owned IDs
+- `user_id`, `session_id`, and `artifact_id` are app-owned IDs
 - `content_sha256` is the uploaded content hash
 - `ext` is `jpg` for `image/jpeg`
 - `ext` is `png` for `image/png`
@@ -445,7 +448,7 @@ Stage 9 implementation should include focused tests for:
 
 - successful JPEG diagnostic upload
 - successful PNG diagnostic upload
-- `repair_session_id` required for `diagnostic_photo`
+- `session_id` required for `diagnostic_photo`
 - `bike_id` rejected for `diagnostic_photo`
 - missing or not-owned session returns `404`
 - unsupported MIME type returns `422`

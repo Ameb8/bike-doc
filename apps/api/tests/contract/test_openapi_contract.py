@@ -31,6 +31,14 @@ def _load_canonical_openapi() -> dict[str, Any]:
     return yaml.safe_load(OPENAPI_PATH.read_text())
 
 
+@cache
+def _load_legacy_openapi() -> dict[str, Any]:
+    # Retain the implementation drift gate until the coordinated backend cutover.
+    return yaml.safe_load(
+        (Path(__file__).parent / "fixtures/pre_inspection_openapi.yaml").read_text()
+    )
+
+
 def _json_schema_with_openapi_nullability(value: Any) -> Any:
     """Translate the OpenAPI 3.0 nullable extension for schema validation."""
 
@@ -363,7 +371,7 @@ def _assert_diagnostic_contract(
 
 
 def test_diagnostic_openapi_operations_match_canonical_contract(app: FastAPI) -> None:
-    _assert_diagnostic_contract(app.openapi(), _load_canonical_openapi())
+    _assert_diagnostic_contract(app.openapi(), _load_legacy_openapi())
 
 
 @pytest.mark.parametrize(
@@ -427,7 +435,7 @@ def test_diagnostic_contract_gate_rejects_public_drift(
     elif mutation == "report_schema":
         schemas["PhaseReportEnvelope"]["properties"]["payload"] = {"type": "object"}
     with pytest.raises(AssertionError):
-        _assert_diagnostic_contract(document, _load_canonical_openapi())
+        _assert_diagnostic_contract(document, _load_legacy_openapi())
 
 
 def test_diagnostic_contract_gate_accepts_inline_response_references(
@@ -446,4 +454,140 @@ def test_diagnostic_contract_gate_accepts_inline_response_references(
             }
         },
     }
-    _assert_diagnostic_contract(document, _load_canonical_openapi())
+    _assert_diagnostic_contract(document, _load_legacy_openapi())
+
+
+def test_inspection_public_contract() -> None:
+    document = _load_canonical_openapi()
+    paths = document["paths"]
+    base = "/v1/sessions"
+    for suffix, method in (
+        ("", "get"),
+        ("", "post"),
+        ("/{sessionId}", "get"),
+        ("/{sessionId}/turns", "post"),
+        ("/{sessionId}/events", "get"),
+        ("/{sessionId}/decision", "post"),
+        ("/{sessionId}/completion", "post"),
+        ("/{sessionId}/cancellation", "post"),
+        ("/{sessionId}/reports", "get"),
+        ("/{sessionId}/reports/{reportId}", "get"),
+    ):
+        assert method in paths[base + suffix]
+    assert not any(path.startswith("/v1/repair-sessions") for path in paths)
+    schemas = document["components"]["schemas"]
+    assert set(schemas["SessionWorkflow"]["enum"]) == {"repair", "inspection"}
+    assert {"bike_id", "workflow"} <= set(schemas["BikeSessionCreate"]["required"])
+    assert {"workflow", "inspection_progress", "checklist_version", "origin"} <= set(
+        schemas["BikeSession"]["required"]
+    )
+    for field in ("inspection_progress", "checklist_version", "origin"):
+        assert schemas["BikeSession"]["properties"][field]["nullable"] is True
+    assert "inspection_photo" in schemas["ArtifactPurpose"]["enum"]
+    assert "inspection" in schemas["PhaseReportType"]["enum"]
+    assert (
+        schemas["PhaseReportEnvelope"]["properties"]["payload"]["discriminator"][
+            "mapping"
+        ]["inspection_report.v1"]
+        == "#/components/schemas/InspectionReportV1"
+    )
+    for name in ("TurnAccepted", "BikeSessionEvent", "PhaseReportEnvelope"):
+        assert "session_id" in schemas[name]["required"]
+    for suffix in (
+        "",
+        "/{sessionId}/turns",
+        "/{sessionId}/completion",
+        "/{sessionId}/cancellation",
+    ):
+        responses = paths[base + suffix]["post"]["responses"]
+        assert {"404", "409", "422"} <= responses.keys()
+        for status in ("404", "409", "422"):
+            assert responses[status]["$ref"].startswith("#/components/responses/")
+    assert _validate_canonical_schema("BikeSessionCreate", {"bike_id": "b"})
+    assert (
+        _validate_canonical_schema(
+            "BikeSessionCreate", {"bike_id": "b", "workflow": "inspection"}
+        )
+        == []
+    )
+    assert _validate_canonical_schema(
+        "FindingOrigin",
+        {
+            "type": "inspection_finding",
+            "inspection_session_id": "s",
+            "finding_id": "f",
+            "extra": 1,
+        },
+    )
+    assert (
+        _validate_canonical_schema(
+            "InspectionProgress",
+            {
+                "completed_checks": 0,
+                "total_applicable_checks": 1,
+                "current_section": None,
+            },
+        )
+        == []
+    )
+    assert _validate_canonical_schema("InspectionCancellationCreate", {})
+
+
+def test_all_local_openapi_references_resolve() -> None:
+    document = _load_canonical_openapi()
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            if "$ref" in value:
+                _resolve(value, document)
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(document)
+
+
+def test_inspection_report_requires_complete_versioned_payload() -> None:
+    report = {
+        "schema_version": "inspection_report.v1",
+        "inspection_session_id": "ses_1",
+        "checklist_version": "general_inspection.v1",
+        "scope": "guided_stationary_full_bike",
+        "outcome": "incomplete",
+        "summary": "Some checks were skipped.",
+        "ride_guidance": "not_assessed",
+        "coverage": [
+            {
+                "area": "brakes",
+                "status": "skipped",
+                "evidence_summary": "Skipped",
+                "check_ids": ["front_brake"],
+                "artifact_ids": [],
+            }
+        ],
+        "findings": [],
+        "limitations": [
+            {
+                "code": "skipped",
+                "area": "brakes",
+                "check_ids": ["front_brake"],
+                "description": "Skipped",
+                "artifact_ids": [],
+            }
+        ],
+        "safety_flags": [],
+        "key_artifact_ids": [],
+    }
+    assert _validate_canonical_schema("InspectionReportV1", report) == []
+    for field, value in (
+        ("scope", "unknown"),
+        ("ride_guidance", "safe"),
+        ("schema_version", "inspection_report.v2"),
+    ):
+        invalid = deepcopy(report)
+        invalid[field] = value
+        assert _validate_canonical_schema("InspectionReportV1", invalid)
+    del report["coverage"]
+    assert _validate_canonical_schema("InspectionReportV1", report)

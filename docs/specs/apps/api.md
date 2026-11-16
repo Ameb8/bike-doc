@@ -262,7 +262,7 @@ The intended route grouping is:
 | `bikes.py` | bike profiles and repair history reads |
 | `artifacts.py` | media upload and artifact metadata |
 | `repair_sessions.py` | session create, lookup, list, completion |
-| `turns.py` | `POST /v1/repair-sessions/{sessionId}/turns` |
+| `turns.py` | `POST /v1/sessions/{sessionId}/turns` |
 | `events.py` | SSE stream endpoint |
 | `decisions.py` | DIY/shop/not-now decision route |
 | `reports.py` | phase report reads |
@@ -421,11 +421,11 @@ objects outside provider implementations.
 
 ## 6. Phase and Session Model
 
-The backend owns product-level repair sessions. ADK sessions are internal
-implementation details.
+The backend owns product-level bike sessions, including repair and inspection workflows. ADK sessions are internal
+implementation details. The generic cutover is specified in `../inspection-sessions.md`.
 
 ```text
-RepairSession
+BikeSession (repair workflow)
   diagnostic phase -> ADK session A -> DiagnosticReport
   planning phase   -> ADK session B -> PlanReport
   execution phase  -> ADK session C -> ExecutionReport

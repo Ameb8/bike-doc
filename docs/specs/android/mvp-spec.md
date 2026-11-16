@@ -1552,3 +1552,6 @@ Finish/Cancel distinction, safety presentation, and finding action gating.
 - Offline-authoritative inspection state
 - Grouping multiple inspection findings into one repair handoff
 - Cancelling an inspection while a turn is running
+
+Conversation-history contract work (#169) extends the generic `/v1/sessions`
+contract; it must not restore repair-only paths or parent fields.

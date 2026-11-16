@@ -140,7 +140,7 @@ paths:
       summary: Delete a bike profile
       description: |
         Soft-deletes an owned bike profile. If the authenticated user still has
-        any repair-session history for that bike, the request is rejected with
+        any bike-session history for that bike, the request is rejected with
         `409 Conflict` and `error.code: bike_repair_history_conflict`.
       operationId: deleteBikeProfile
       responses:
@@ -195,12 +195,16 @@ paths:
         V1 uses server-proxied uploads for simplicity. The backend stores the
         binary in GCS and returns an artifact reference usable in repair turns.
 
-        `repair_session_id` and `bike_id` are conditionally required based on
+        Inspection and diagnostic photos use an owned session association;
+        inspection photos use inspection_photo. The server derives the bike and
+        rejects purposes incompatible with the workflow. Handoff associates
+        eligible ready evidence without copying bytes. `session_id` and `bike_id`
+        are conditionally required based on
         `purpose`:
 
-        - `diagnostic_photo` / `verification_photo`: `repair_session_id` is
+        - `diagnostic_photo` / `verification_photo` / `inspection_photo`: `session_id` is
           required; `bike_id` must be omitted.
-        - `bike_profile_photo`: `bike_id` is required; `repair_session_id`
+        - `bike_profile_photo`: `bike_id` is required; `session_id`
           must be omitted.
         - `repair_reference` / `other`: both are optional.
 
@@ -219,7 +223,7 @@ paths:
                   format: binary
                 purpose:
                   $ref: "#/components/schemas/ArtifactPurpose"
-                repair_session_id:
+                session_id:
                   type: string
                   nullable: true
                 bike_id:
@@ -267,20 +271,25 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /v1/repair-sessions:
+  /v1/sessions:
     get:
       tags: [Repair Sessions]
-      summary: List repair sessions
-      operationId: listRepairSessions
+      summary: List bike sessions
+      description: Both bike_id and workflow are optional and combinable. Without workflow, both workflows are returned; results are owner-scoped and newest first.
+      operationId: listBikeSessions
       parameters:
         - name: bike_id
           in: query
           schema:
             type: string
+        - name: workflow
+          in: query
+          schema:
+            $ref: "#/components/schemas/SessionWorkflow"
         - name: status
           in: query
           schema:
-            $ref: "#/components/schemas/RepairSessionStatus"
+            $ref: "#/components/schemas/BikeSessionStatus"
         - name: limit
           in: query
           required: false
@@ -292,7 +301,7 @@ paths:
         - $ref: "#/components/parameters/PageCursor"
       responses:
         "200":
-          description: Repair sessions
+          description: Owner-scoped bike sessions, newest first; optional bike and workflow filters may be combined.
           content:
             application/json:
               schema:
@@ -302,30 +311,39 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/RepairSession"
+                      $ref: "#/components/schemas/BikeSession"
                   next_cursor:
                     type: string
                     nullable: true
                     description: Pass as `cursor` to fetch the next page. Null when no more results.
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
     post:
       tags: [Repair Sessions]
-      summary: Create a repair session
-      operationId: createRepairSession
+      summary: Create a bike session
+      description: |
+        Workflow is required and unknown fields are rejected. Inspection starts
+        in inspection/created with a snapshotted checklist and progress. Exact
+        client_session_id retries return the original
+        session; conflicting reuse yields idempotency_conflict. Only one active
+        inspection per bike is allowed; active_inspection_exists returns the
+        owned session_id. Origin is accepted only for repair finding handoff.
+      operationId: createBikeSession
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RepairSessionCreate"
+              $ref: "#/components/schemas/BikeSessionCreate"
       responses:
         "201":
-          description: Repair session created
+          description: Bike session created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepairSession"
+                $ref: "#/components/schemas/BikeSession"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -335,32 +353,35 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
-  /v1/repair-sessions/{sessionId}:
+  /v1/sessions/{sessionId}:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     get:
       tags: [Repair Sessions]
-      summary: Get repair-session state
-      operationId: getRepairSession
+      summary: Get bike-session state
+      operationId: getBikeSession
       responses:
         "200":
-          description: Repair session
+          description: Bike session
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RepairSession"
+                $ref: "#/components/schemas/BikeSession"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /v1/repair-sessions/{sessionId}/turns:
+  /v1/sessions/{sessionId}/turns:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     post:
       tags: [Turns and Events]
       summary: Submit a user turn
       description: |
+        Inspection artifacts must be ready, owned, associated with this session,
+        inspection-purpose and an accepted image type. Inspection acceptance
+        records durable work atomically; exact retries create no new work.
         Accepts a user text/photo turn and starts backend processing for the
         session's current phase. The response includes the event cursor the
         client should pass to `GET /events?after=...`.
@@ -373,7 +394,7 @@ paths:
         conversational context across turns. That context is discarded — not
         carried forward — when the session transitions to the next phase; see
         the `phase.transitioned` event.
-      operationId: createRepairSessionTurn
+      operationId: createBikeSessionTurn
       requestBody:
         required: true
         content:
@@ -396,14 +417,23 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
-  /v1/repair-sessions/{sessionId}/events:
+  /v1/sessions/{sessionId}/events:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     get:
       tags: [Turns and Events]
-      summary: Stream persisted repair-session events
+      summary: Stream persisted bike-session events
       description: |
-        Opens a server-sent event stream for the repair session.
+        Opens a server-sent event stream for the bike session.
+
+        Events are persisted before fan-out, use decimal sequence cursors, and
+        replay before live delivery. `after` overrides Last-Event-ID. Heartbeats
+        and timeout support reconnect; unknown additive event types are ignored
+        while advancing the cursor. Inspection uses phase inspection for
+        turn.started and safety flags, inspection/inspection_report.v1 for
+        phase.report.created, inspection to completed for phase.transitioned,
+        and the authoritative progress snapshot in turn.completed. No custom
+        inspection progress event is emitted.
 
         The `after` query parameter is the last event id the client fully
         processed. The server sends newer persisted events first, then keeps the
@@ -413,9 +443,9 @@ paths:
         SSE wire format:
 
         - `id`: event id, monotonically increasing within the session
-        - `event`: one of the `RepairSessionEventType` values
-        - `data`: JSON-encoded `RepairSessionEvent`
-      operationId: streamRepairSessionEvents
+        - `event`: one of the `BikeSessionEventType` values
+        - `data`: JSON-encoded `BikeSessionEvent`
+      operationId: streamBikeSessionEvents
       parameters:
         - name: after
           in: query
@@ -451,7 +481,7 @@ paths:
                   value: |
                     id: 42
                     event: input.requested
-                    data: {"id":"42","session_id":"rs_123","turn_id":"turn_123","type":"input.requested","sequence":42,"created_at":"2026-06-20T12:00:00Z","data":{"input_request":{"id":"req_123","type":"photo","prompt":"Upload a rear-drive-side photo of the derailleur.","required":true,"accepted_media_types":["image/jpeg","image/png","image/webp"],"choices":[],"created_at":"2026-06-20T12:00:00Z"}}}
+                    data: {"id":"42","session_id":"ses_123","turn_id":"turn_123","type":"input.requested","sequence":42,"created_at":"2026-06-20T12:00:00Z","data":{"input_request":{"id":"req_123","type":"photo","prompt":"Upload a rear-drive-side photo of the derailleur.","required":true,"accepted_media_types":["image/jpeg","image/png","image/webp"],"choices":[],"created_at":"2026-06-20T12:00:00Z"}}}
         "404":
           $ref: "#/components/responses/NotFound"
         "401":
@@ -472,7 +502,7 @@ paths:
         - error
         - heartbeat
 
-  /v1/repair-sessions/{sessionId}/decision:
+  /v1/sessions/{sessionId}/decision:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     post:
@@ -480,7 +510,8 @@ paths:
       summary: Record the user's DIY or shop decision
       description: |
         The AI plan report recommends a path, but the user's decision is stored
-        separately as authoritative user state. Choosing `shop` transitions the
+        separately as authoritative user state. Inspection sessions are rejected
+        with session_state_conflict. Choosing `shop` transitions the
         session to `shop_referred` and may create a `ShopReferralReport`.
 
         Safety severity is server-enforced here, independent of model output:
@@ -512,11 +543,13 @@ paths:
                 required: [session]
                 properties:
                   session:
-                    $ref: "#/components/schemas/RepairSession"
+                    $ref: "#/components/schemas/BikeSession"
                   shop_referral_report:
                     nullable: true
                     allOf:
                       - $ref: "#/components/schemas/PhaseReportEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -524,24 +557,82 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
-  /v1/repair-sessions/{sessionId}/completion:
+  /v1/sessions/{sessionId}/completion:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     post:
       tags: [Repair Sessions]
-      summary: Complete or close a repair session
+      summary: Complete a bike session
       description: |
-        Finalizes the session and persists any repair-history update.
-      operationId: completeRepairSession
+        Repair completion preserves its existing behavior. Inspection finish_early
+        is allowed in created, awaiting_user or blocked_safety; it marks pending
+        checks skipped and atomically persists a report and completed session.
+        Unresolved conditional checks are provisionally applicable and skipped;
+        per-check limitations and one ended_early limitation per affected area
+        preserve the coverage gap. No model is invoked. Normal completion uses
+        the inspection workflow's completion tool.
+        Exact client_completion_id retries return the original result; conflicting
+        reuse yields idempotency_conflict. A running turn yields session_busy.
+      operationId: completeBikeSession
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RepairCompletionCreate"
+              oneOf:
+                - $ref: "#/components/schemas/RepairCompletionCreate"
+                - $ref: "#/components/schemas/InspectionCompletionCreate"
       responses:
         "200":
           description: Session completed or closed
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required: [session]
+                    properties:
+                      session:
+                        $ref: "#/components/schemas/BikeSession"
+                      repair_history_entry:
+                        nullable: true
+                        allOf:
+                          - $ref: "#/components/schemas/RepairHistoryEntry"
+                  - type: object
+                    additionalProperties: false
+                    required: [session, inspection_report]
+                    properties:
+                      session:
+                        $ref: "#/components/schemas/BikeSession"
+                      inspection_report:
+                        $ref: "#/components/schemas/PhaseReportEnvelope"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /v1/sessions/{sessionId}/cancellation:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [Sessions]
+      summary: Cancel an inspection between turns
+      description: Exact retries and already-cancelled sessions return the snapshot; no report is created. Running turns yield session_busy; completed or incompatible sessions yield session_state_conflict.
+      operationId: cancelSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectionCancellationCreate"
+      responses:
+        "200":
+          description: Cancelled session
           content:
             application/json:
               schema:
@@ -549,11 +640,9 @@ paths:
                 required: [session]
                 properties:
                   session:
-                    $ref: "#/components/schemas/RepairSession"
-                  repair_history_entry:
-                    nullable: true
-                    allOf:
-                      - $ref: "#/components/schemas/RepairHistoryEntry"
+                    $ref: "#/components/schemas/BikeSession"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -561,13 +650,13 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
-  /v1/repair-sessions/{sessionId}/reports:
+  /v1/sessions/{sessionId}/reports:
     parameters:
       - $ref: "#/components/parameters/SessionId"
     get:
       tags: [Reports]
-      summary: List phase reports for a repair session
-      operationId: listRepairSessionReports
+      summary: List phase reports for a bike session
+      operationId: listBikeSessionReports
       parameters:
         - $ref: "#/components/parameters/PageLimit"
         - $ref: "#/components/parameters/PageCursor"
@@ -593,14 +682,14 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /v1/repair-sessions/{sessionId}/reports/{reportId}:
+  /v1/sessions/{sessionId}/reports/{reportId}:
     parameters:
       - $ref: "#/components/parameters/SessionId"
       - $ref: "#/components/parameters/ReportId"
     get:
       tags: [Reports]
       summary: Get a phase report
-      operationId: getRepairSessionReport
+      operationId: getBikeSessionReport
       responses:
         "200":
           description: Phase report
@@ -707,7 +796,12 @@ components:
               type: string
               example: validation_error
               description: |
-                Machine-readable error code. Notable values used by this API
+                Inspection errors: 404 not_found hides foreign resources; 409
+                active_inspection_exists and finding_already_handed_off have
+                exactly {"session_id": "ses_..."} details; session_busy,
+                session_state_conflict, idempotency_conflict, and
+                artifact_not_ready are 409; malformed workflow, filter or
+                purpose is 422 validation_error. Machine-readable error code. Notable values used by this API
                 include `validation_error`, `blocking_safety_flag` (decision
                 rejected due to an active blocking-severity safety flag), and
                 `safety_ack_required` (decision requires
@@ -755,7 +849,7 @@ components:
         - id
         - user_id
         - display_name
-        - has_repair_sessions
+        - has_sessions
         - schema_version
         - profile_revision
         - identity
@@ -777,9 +871,9 @@ components:
           type: string
         display_name:
           type: string
-        has_repair_sessions:
+        has_sessions:
           type: boolean
-          description: True when the authenticated user owns one or more repair sessions for this bike.
+          description: True when the authenticated user owns one or more bike sessions for this bike.
         schema_version:
           type: string
           enum: [bike_profile.v2]
@@ -1225,7 +1319,7 @@ components:
           type: string
         bike_id:
           type: string
-        repair_session_id:
+        session_id:
           type: string
           nullable: true
         title:
@@ -1258,6 +1352,7 @@ components:
       type: string
       enum:
         - diagnostic_photo
+        - inspection_photo
         - verification_photo
         - bike_profile_photo
         - repair_reference
@@ -1268,6 +1363,7 @@ components:
       required:
         - id
         - user_id
+        - bike_id
         - purpose
         - media_type
         - mime_type
@@ -1280,9 +1376,6 @@ components:
           type: string
         user_id:
           type: string
-        repair_session_id:
-          type: string
-          nullable: true
         bike_id:
           type: string
           nullable: true
@@ -1318,11 +1411,11 @@ components:
           type: string
           format: date-time
 
-    RepairSessionPhase:
+    BikeSessionPhase:
       type: string
-      enum: [diagnostic, planning, execution, completed, shop_referred, cancelled]
+      enum: [diagnostic, planning, execution, inspection, completed, shop_referred, cancelled]
 
-    RepairSessionStatus:
+    BikeSessionStatus:
       type: string
       enum:
         - created
@@ -1356,12 +1449,22 @@ components:
           nullable: true
           minimum: 1
 
-    RepairSession:
+    BikeSession:
+      description: |
+        For inspection, phase inspection permits created, running, awaiting_user,
+        blocked_safety, failed or cancelled; completed phase requires completed
+        status and a durable report. Repair uses its existing phase/status rules.
+        Inspection progress and checklist version are null for repair; origin is
+        null except for a repair created from an eligible inspection finding.
       type: object
       required:
         - id
         - user_id
         - bike_id
+        - workflow
+        - inspection_progress
+        - checklist_version
+        - origin
         - phase
         - status
         - safety_state
@@ -1376,10 +1479,24 @@ components:
           type: string
         bike_id:
           type: string
+        workflow:
+          $ref: "#/components/schemas/SessionWorkflow"
+        inspection_progress:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/InspectionProgress"
+        checklist_version:
+          type: string
+          nullable: true
+          description: Snapshotted checklist version for inspection; null for repair.
+        origin:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/FindingOrigin"
         phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         status:
-          $ref: "#/components/schemas/RepairSessionStatus"
+          $ref: "#/components/schemas/BikeSessionStatus"
         safety_state:
           $ref: "#/components/schemas/SafetyState"
         current_input_request:
@@ -1409,7 +1526,11 @@ components:
         - plan_report_id
         - execution_report_id
         - shop_referral_report_id
+        - inspection_report_id
       properties:
+        inspection_report_id:
+          type: string
+          nullable: true
         diagnostic_report_id:
           type: string
           nullable: true
@@ -1423,10 +1544,15 @@ components:
           type: string
           nullable: true
 
-    RepairSessionCreate:
+    BikeSessionCreate:
       type: object
-      required: [bike_id]
+      additionalProperties: false
+      required: [bike_id, workflow]
       properties:
+        workflow:
+          $ref: "#/components/schemas/SessionWorkflow"
+        origin:
+          $ref: "#/components/schemas/FindingOrigin"
         bike_id:
           type: string
         client_session_id:
@@ -1509,22 +1635,22 @@ components:
 
     TurnAccepted:
       type: object
-      required: [turn_id, repair_session_id, start_event_id, event_stream_url, session]
+      required: [turn_id, session_id, start_event_id, event_stream_url, session]
       properties:
         turn_id:
           type: string
-        repair_session_id:
+        session_id:
           type: string
         start_event_id:
           type: string
           description: Pass this as `after` to stream events for this turn.
         event_stream_url:
           type: string
-          example: /v1/repair-sessions/rs_123/events?after=41
+          example: /v1/sessions/ses_123/events?after=41
         session:
-          $ref: "#/components/schemas/RepairSession"
+          $ref: "#/components/schemas/BikeSession"
 
-    RepairSessionEventType:
+    BikeSessionEventType:
       type: string
       enum:
         - turn.started
@@ -1540,7 +1666,7 @@ components:
         - error
         - heartbeat
 
-    RepairSessionEvent:
+    BikeSessionEvent:
       type: object
       required: [id, session_id, type, sequence, created_at, data]
       properties:
@@ -1552,7 +1678,7 @@ components:
           type: string
           nullable: true
         type:
-          $ref: "#/components/schemas/RepairSessionEventType"
+          $ref: "#/components/schemas/BikeSessionEventType"
         sequence:
           type: integer
           minimum: 1
@@ -1581,7 +1707,7 @@ components:
         turn_id:
           type: string
         phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
 
     AssistantDeltaEventData:
       type: object
@@ -1632,7 +1758,7 @@ components:
         schema_version:
           type: string
         phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         summary:
           type: string
 
@@ -1641,11 +1767,11 @@ components:
       required: [from_phase, to_phase, status]
       properties:
         from_phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         to_phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         status:
-          $ref: "#/components/schemas/RepairSessionStatus"
+          $ref: "#/components/schemas/BikeSessionStatus"
 
     SafetyEscalatedEventData:
       type: object
@@ -1691,7 +1817,7 @@ components:
         turn_id:
           type: string
         session:
-          $ref: "#/components/schemas/RepairSession"
+          $ref: "#/components/schemas/BikeSession"
 
     ErrorEventData:
       type: object
@@ -1718,13 +1844,13 @@ components:
 
     PhaseReportType:
       type: string
-      enum: [diagnostic, plan, execution, shop_referral]
+      enum: [diagnostic, plan, execution, shop_referral, inspection]
 
     PhaseReportEnvelope:
       type: object
       required:
         - id
-        - repair_session_id
+        - session_id
         - type
         - schema_version
         - phase
@@ -1736,7 +1862,7 @@ components:
       properties:
         id:
           type: string
-        repair_session_id:
+        session_id:
           type: string
         type:
           $ref: "#/components/schemas/PhaseReportType"
@@ -1748,7 +1874,7 @@ components:
             `payload.schema_version`; diagnostic reports use either
             `diagnostic_report.v1` or `diagnostic_report.v2`.
         phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         summary:
           type: string
         safety_flags:
@@ -1769,6 +1895,7 @@ components:
             - $ref: "#/components/schemas/PlanReportV1"
             - $ref: "#/components/schemas/ExecutionReportV1"
             - $ref: "#/components/schemas/ShopReferralReportV1"
+            - $ref: "#/components/schemas/InspectionReportV1"
           discriminator:
             propertyName: schema_version
             mapping:
@@ -1777,6 +1904,7 @@ components:
               plan_report.v1: "#/components/schemas/PlanReportV1"
               execution_report.v1: "#/components/schemas/ExecutionReportV1"
               shop_referral_report.v1: "#/components/schemas/ShopReferralReportV1"
+              inspection_report.v1: "#/components/schemas/InspectionReportV1"
 
     Confidence:
       type: string
@@ -1802,7 +1930,7 @@ components:
             `acknowledged_safety_flags`. `warning` requires
             `acknowledged_safety_flags: true` to accept a `diy` decision.
         phase:
-          $ref: "#/components/schemas/RepairSessionPhase"
+          $ref: "#/components/schemas/BikeSessionPhase"
         message:
           type: string
         blocks_repair_instructions:
@@ -2582,6 +2710,182 @@ components:
         notes:
           type: string
           nullable: true
+
+    SessionWorkflow:
+      type: string
+      enum: [repair, inspection]
+
+    FindingOrigin:
+      type: object
+      additionalProperties: false
+      required: [type, inspection_session_id, finding_id]
+      description: Only repair creation accepts origin. The completed owned source finding must be in the report and eligible for start_diagnostic; at most one repair may originate from it. Only ready images directly cited by the finding are associated, without copying bytes or transcripts.
+      properties:
+        type:
+          type: string
+          enum: [inspection_finding]
+        inspection_session_id:
+          type: string
+        finding_id:
+          type: string
+
+    InspectionProgress:
+      type: object
+      required: [completed_checks, total_applicable_checks, current_section]
+      description: Counts are derived from durable results; completed cannot exceed total. Unresolved conditional checks count as applicable. Current section is null when none remain pending.
+      properties:
+        completed_checks:
+          type: integer
+          minimum: 0
+        total_applicable_checks:
+          type: integer
+          minimum: 0
+        current_section:
+          type: string
+          nullable: true
+
+    InspectionCompletionCreate:
+      type: object
+      additionalProperties: false
+      required: [schema_version, reason, client_completion_id]
+      properties:
+        schema_version:
+          type: string
+          enum: [inspection_completion.v1]
+        reason:
+          type: string
+          enum: [finish_early]
+        client_completion_id:
+          type: string
+          minLength: 1
+
+    InspectionCancellationCreate:
+      type: object
+      additionalProperties: false
+      required: [client_cancellation_id]
+      properties:
+        client_cancellation_id:
+          type: string
+          minLength: 1
+
+    InspectionReportV1:
+      type: object
+      additionalProperties: false
+      required: [schema_version, inspection_session_id, checklist_version, scope, outcome, summary, ride_guidance, coverage, findings, limitations, safety_flags, key_artifact_ids]
+      description: Deterministically derived from durable state. Guidance is not a safety certification. See inspection-sessions.md section 12 for derivation and evidence ordering.
+      properties:
+        schema_version:
+          type: string
+          enum: [inspection_report.v1]
+        inspection_session_id:
+          type: string
+        checklist_version:
+          type: string
+        scope:
+          type: string
+          enum: [guided_stationary_full_bike]
+        outcome:
+          type: string
+          enum: [no_actionable_findings, monitoring_recommended, maintenance_recommended, diagnostic_follow_up_recommended, shop_assessment_recommended, unsafe_to_ride, incomplete]
+        summary:
+          type: string
+          maxLength: 1000
+        ride_guidance:
+          type: string
+          enum: [no_known_blocking_issue, use_caution, do_not_ride, professional_assessment_required, not_assessed]
+        coverage:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionCoverageV1"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionFindingV1"
+        limitations:
+          type: array
+          items:
+            $ref: "#/components/schemas/InspectionLimitationV1"
+        safety_flags:
+          type: array
+          items:
+            $ref: "#/components/schemas/SafetyFlag"
+        key_artifact_ids:
+          type: array
+          maxItems: 12
+          items:
+            type: string
+
+    InspectionCoverageV1:
+      type: object
+      required: [area, status, evidence_summary, check_ids, artifact_ids]
+      properties:
+        area:
+          type: string
+        status:
+          type: string
+          enum: [assessed, partially_assessed, skipped, unable_to_assess, not_applicable]
+        evidence_summary:
+          type: string
+        check_ids:
+          type: array
+          items:
+            type: string
+        artifact_ids:
+          type: array
+          items:
+            type: string
+
+    InspectionFindingV1:
+      type: object
+      required: [finding_id, area, component, observation, condition, urgency, confidence, supporting_check_ids, artifact_ids, recommended_next_action]
+      properties:
+        finding_id:
+          type: string
+        area:
+          type: string
+        component:
+          type: string
+        observation:
+          type: string
+        condition:
+          type: string
+        urgency:
+          type: string
+          enum: [routine, soon, before_next_ride, immediate]
+        confidence:
+          $ref: "#/components/schemas/Confidence"
+        supporting_check_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        artifact_ids:
+          type: array
+          items:
+            type: string
+        recommended_next_action:
+          type: string
+          enum: [monitor, routine_maintenance, start_diagnostic, stop_riding, shop_assessment]
+
+    InspectionLimitationV1:
+      type: object
+      required: [code, area, check_ids, description, artifact_ids]
+      properties:
+        code:
+          type: string
+          enum: [skipped, unable_to_assess, poor_visibility, contradictory_evidence, unsafe_to_continue, ended_early, other]
+        area:
+          type: string
+        check_ids:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        artifact_ids:
+          type: array
+          items:
+            type: string
 
     RepairDecisionCreate:
       type: object

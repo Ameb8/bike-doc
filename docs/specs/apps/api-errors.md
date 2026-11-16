@@ -51,6 +51,9 @@ The implementation should keep the mapping centralized in
 | Authenticated identity cannot map to a user | `401` | `user_mapping_required` |
 | Owner-scoped resource missing or not owned | `404` | `not_found` |
 | Idempotency payload conflict | `409` | `idempotency_conflict` |
+| Active inspection already exists | `409` | `active_inspection_exists` |
+| Finding already handed off | `409` | `finding_already_handed_off` |
+| Outstanding turn blocks completion or cancellation | `409` | `session_busy` |
 | State-machine conflict | `409` | `session_state_conflict` |
 | Referenced diagnostic artifact is still being prepared | `409` | `artifact_not_ready` |
 | Uploaded payload too large | `413` | `payload_too_large` |
@@ -91,3 +94,8 @@ errors.
 After a `200 OK` SSE stream is open, recoverable processing failures should be
 persisted and emitted as public `error` events when possible. Fatal unexpected
 stream failures should be logged and the stream closed.
+
+For `active_inspection_exists` and `finding_already_handed_off`, details contain
+exactly `{"session_id": "ses_..."}` for the owned existing session. Missing or
+foreign bikes, sessions, findings, reports and artifacts return `404 not_found`
+without disclosing foreign identifiers. See `../inspection-sessions.md` §16.4.
